@@ -1,40 +1,47 @@
 from flask import Blueprint, request, jsonify
-from marshmallow import ValidationError
 from app import db
 from app.models.user import User
-from app.schemas import UserRegistrationSchema
 
 auth_bp = Blueprint('auth', __name__)
 
 @auth_bp.route('/register', methods=['POST'])
 def register():
-    schema = UserRegistrationSchema()
-    
     try:
-        # Validate and deserialize input
-        data = schema.load(request.get_json() or {})
+        # Get JSON data from request
+        data = request.get_json()
+        
+        # Basic validation
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+        
+        if not data.get('username'):
+            return jsonify({'error': 'Username is required'}), 400
+            
+        if not data.get('email'):
+            return jsonify({'error': 'Email is required'}), 400
+            
+        if not data.get('password'):
+            return jsonify({'error': 'Password is required'}), 400
+        
+        username = data['username'].strip()
+        email = data['email'].strip().lower()
+        password = data['password']
         
         # Check if user already exists
-        if User.query.filter_by(username=data['username']).first():
-            return jsonify({
-                'error': 'Validation failed',
-                'details': {'username': ['Username already exists']}
-            }), 409
+        if User.query.filter_by(username=username).first():
+            return jsonify({'error': 'Username already exists'}), 409
         
-        if User.query.filter_by(email=data['email']).first():
-            return jsonify({
-                'error': 'Validation failed',
-                'details': {'email': ['Email already exists']}
-            }), 409
+        if User.query.filter_by(email=email).first():
+            return jsonify({'error': 'Email already exists'}), 409
         
         # Create new user
         user = User(
-            username=data['username'],
-            email=data['email'],
-            first_name=data['first_name'],
-            last_name=data['last_name']
+            username=username,
+            email=email,
+            first_name=data.get('first_name', '').strip(),
+            last_name=data.get('last_name', '').strip()
         )
-        user.set_password(data['password'])
+        user.set_password(password)
         
         # Save to database
         db.session.add(user)
@@ -45,12 +52,7 @@ def register():
             'user': user.to_dict()
         }), 201
         
-    except ValidationError as e:
-        return jsonify({
-            'error': 'Validation failed',
-            'details': e.messages
-        }), 400
-        
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': 'Registration failed'}), 500
+
