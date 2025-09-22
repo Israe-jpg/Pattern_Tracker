@@ -66,3 +66,25 @@ class UserRegistrationSchema(Schema):
         
         if errors:
             raise ValidationError(errors)
+
+class UserLoginSchema(Schema):
+    email = fields.Email(
+        required=True,
+        validate=validate.Email(error="Invalid email address")
+    )
+    
+    password = fields.Str(
+        required=True,
+        validate=validate.Length(min=8, error="Password must be at least 8 characters")
+    )
+    
+    @post_load
+    def clean_data(self, data, **kwargs):
+        """Clean and normalize data after validation"""
+        # Strip whitespace
+        for key, value in data.items():
+            if isinstance(value, str):
+                data[key] = value.strip()
+        return data
+    
+    

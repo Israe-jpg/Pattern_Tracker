@@ -1,8 +1,9 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import create_access_token, create_refresh_token
+from marshmallow import ValidationError
 from app import db
 from app.models.user import User
-
+from app.schemas.user_schemas import UserRegistrationSchema, UserLoginSchema
 
 
 auth_bp = Blueprint('auth', __name__)
@@ -13,22 +14,16 @@ def register():
         # Get JSON data from request
         data = request.get_json()
         
-        # Basic validation
-        if not data:
-            return jsonify({'error': 'No data provided'}), 400
+        # Validate input using schema
+        schema = UserRegistrationSchema()
+        try:
+            validated_data = schema.load(data)
+        except ValidationError as err:
+            return jsonify({'error': 'Validation failed', 'details': err.messages}), 400
         
-        if not data.get('username'):
-            return jsonify({'error': 'Username is required'}), 400
-            
-        if not data.get('email'):
-            return jsonify({'error': 'Email is required'}), 400
-            
-        if not data.get('password'):
-            return jsonify({'error': 'Password is required'}), 400
-        
-        username = data['username'].strip()
-        email = data['email'].strip().lower()
-        password = data['password']
+        username = validated_data['username']
+        email = validated_data['email']
+        password = validated_data['password']
         
         # Check if user already exists
         if User.query.filter_by(username=username).first():
@@ -65,18 +60,15 @@ def login():
         # Get JSON data from request
         data = request.get_json()
         
-        # Basic validation
-        if not data:
-            return jsonify({'error': 'No data provided'}), 400
+        # Validate input using schema
+        schema = UserLoginSchema()
+        try:
+            validated_data = schema.load(data)
+        except ValidationError as err:
+            return jsonify({'error': 'Validation failed', 'details': err.messages}), 400
         
-        if not data.get('email'):
-            return jsonify({'error': 'Email is required'}), 400
-            
-        if not data.get('password'):
-            return jsonify({'error': 'Password is required'}), 400
-        
-        email = data['email'].strip().lower()
-        password = data['password']
+        email = validated_data['email']  # Already cleaned by schema
+        password = validated_data['password']
         
         # Find user by email
         user = User.query.filter_by(email=email).first()
