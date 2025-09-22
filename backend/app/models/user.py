@@ -19,7 +19,6 @@ class User(db.Model):
     
     # Timestamps
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     is_active = db.Column(db.Boolean, default=True)
     
     def set_password(self, password):
