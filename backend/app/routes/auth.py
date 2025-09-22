@@ -1,6 +1,9 @@
 from flask import Blueprint, request, jsonify
+from flask_jwt_extended import create_access_token, create_refresh_token
 from app import db
 from app.models.user import User
+
+
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -56,3 +59,43 @@ def register():
         db.session.rollback()
         return jsonify({'error': 'Registration failed'}), 500
 
+@auth_bp.route('/login', methods=['POST'])
+def login():
+    try:
+        # Get JSON data from request
+        data = request.get_json()
+        
+        # Basic validation
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+        
+        if not data.get('email'):
+            return jsonify({'error': 'Email is required'}), 400
+            
+        if not data.get('password'):
+            return jsonify({'error': 'Password is required'}), 400
+        
+        email = data['email'].strip().lower()
+        password = data['password']
+        
+        # Find user by email
+        user = User.query.filter_by(email=email).first()
+        
+        # Check if user exists and password is correct
+        if not user or not user.check_password(password):
+            return jsonify({'error': 'Invalid email or password'}), 401
+        
+        
+        # Create JWT tokens
+        access_token = create_access_token(identity=user.id)
+        refresh_token = create_refresh_token(identity=user.id)
+        
+        return jsonify({
+            'message': 'Login successful',
+            'access_token': access_token,
+            'refresh_token': refresh_token,
+            'user': user.to_dict()
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': 'Login failed'}), 500
