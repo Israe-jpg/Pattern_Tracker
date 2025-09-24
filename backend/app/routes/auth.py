@@ -1,9 +1,10 @@
 from flask import Blueprint, request, jsonify
-from flask_jwt_extended import create_access_token, create_refresh_token
+from flask_jwt_extended import create_access_token, create_refresh_token, get_jwt_identity, jwt_required
 from marshmallow import ValidationError
 from app import db
 from app.models.user import User
 from app.schemas.user_schemas import UserRegistrationSchema, UserLoginSchema
+
 
 
 auth_bp = Blueprint('auth', __name__)
@@ -78,9 +79,10 @@ def login():
             return jsonify({'error': 'Invalid email or password'}), 401
         
         
-        # Create JWT tokens
-        access_token = create_access_token(identity=user.id)
-        refresh_token = create_refresh_token(identity=user.id)
+        # Create JWT tokens 
+        user_identity = str(user.id)
+        access_token = create_access_token(identity=user_identity)
+        refresh_token = create_refresh_token(identity=user_identity)
         
         return jsonify({
             'message': 'Login successful',
@@ -91,3 +93,33 @@ def login():
         
     except Exception as e:
         return jsonify({'error': 'Login failed'}), 500
+
+@auth_bp.route('/logout', methods=['POST'])
+@jwt_required()
+def logout():
+    """
+    Logout endpoint - for JWT tokens, this is mainly for client-side cleanup.
+    In a stateless JWT system, the client should simply delete the token.
+    """
+    current_user_id = get_jwt_identity()  
+    
+    # Since JWT is stateless, we can't truly "logout" server-side without a blacklist
+    # For now, it just returns success - client should delete the token
+    return jsonify({
+        'message': 'Logout successful',
+        'user_id': current_user_id,
+        'note': 'Please delete the JWT token from client storage'
+    }), 200
+
+@auth_bp.route('/refresh', methods=['POST'])
+@jwt_required(refresh=True)
+def refresh():
+    #Refresh access token using refresh token
+
+    current_user_id = get_jwt_identity()
+    new_access_token = create_access_token(identity=current_user_id)
+    
+    return jsonify({
+        'message': 'Token refreshed successfully',
+        'access_token': new_access_token
+    }), 200
