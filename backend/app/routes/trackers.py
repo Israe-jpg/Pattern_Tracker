@@ -12,6 +12,7 @@ from app.schemas.user_schemas import UserRegistrationSchema, UserLoginSchema
 
 trackers_bp = Blueprint('trackers', __name__)
 
+#setup default trackers for user
 @trackers_bp.route('/setup-default-trackers', methods=['POST'])
 @jwt_required()  
 def setup_default_trackers():
@@ -57,7 +58,7 @@ def setup_default_trackers():
     }), 201
 
 
-
+#get current user's trackers
 @trackers_bp.route('/my-trackers', methods=['GET'])
 @jwt_required()
 def get_my_trackers():
@@ -69,3 +70,30 @@ def get_my_trackers():
         'total_count': len(trackers)
     }), 200
 
+#delete a tracker from the user's trackers list
+@trackers_bp.route('/delete-tracker/<int:tracker_id>', methods=['DELETE'])
+@jwt_required()
+def delete_tracker(tracker_id):
+    current_user_id = get_jwt_identity()
+    tracker = Tracker.query.filter_by(id=tracker_id, user_id=current_user_id).first()
+    if not tracker:
+        return jsonify({'error': 'Tracker not found'}), 404
+    db.session.delete(tracker)
+    db.session.commit()
+    return jsonify({'message': 'Tracker deleted successfully'}), 200
+
+#update the default tracker from the list of user's trackers
+@trackers_bp.route('/update-default-tracker/<int:tracker_id>', methods=['PUT'])
+@jwt_required()
+def update_default_tracker(tracker_id):
+    current_user_id = get_jwt_identity()
+    predefault_tracker = Tracker.query.filter_by(user_id=current_user_id, is_default=True).first()
+    if not predefault_tracker:
+        return jsonify({'error': 'Predefault tracker not found'}), 404
+    predefault_tracker.is_default = False
+    tracker = Tracker.query.filter_by(id=tracker_id, user_id=current_user_id).first()
+    if not tracker:
+        return jsonify({'error': 'Tracker not found'}), 404
+    tracker.is_default = True
+    db.session.commit()
+    return jsonify({'message': 'Tracker updated successfully'}), 200
