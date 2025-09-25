@@ -16,9 +16,9 @@ class Tracker(db.Model):
             'id': self.id,
             'user_id': self.user_id,
             'category_id': self.category_id,
-            'data': self.data.to_dict(),
             'created_at': self.created_at.isoformat(),
-            'is_default': self.is_default
+            'is_default': self.is_default,
+            'entries_count': len(self.data)  
         }
     
     def __repr__(self):
