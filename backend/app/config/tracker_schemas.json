@@ -1,0 +1,646 @@
+{
+  "baseline": {
+    "mood": {
+      "overall": {
+        "type": "integer", 
+        "range": [1, 10],
+        "labels": {
+          "1": "Terrible",
+          "3": "Poor", 
+          "5": "Neutral",
+          "7": "Good",
+          "10": "Excellent"
+        }
+      },
+      "notes": {
+        "type": "string", 
+        "optional": true, 
+        "max_length": 200
+      }
+    },
+    "energy": {
+      "level": {
+        "type": "integer", 
+        "range": [1, 10],
+        "labels": {
+          "1": "Exhausted",
+          "3": "Low", 
+          "5": "Moderate",
+          "7": "High",
+          "10": "Energized"
+        }
+      },
+      "consistency": {
+        "type": "string", 
+        "enum": ["steady", "fluctuating", "crashed"], 
+        "optional": true,
+        "labels": {
+          "steady": "Steady throughout day",
+          "fluctuating": "Up and down",
+          "crashed": "Energy crashed"
+        }
+      }
+    },
+    "sleep": {
+      "quality": {
+        "type": "integer", 
+        "range": [1, 10],
+        "labels": {
+          "1": "Terrible",
+          "3": "Poor", 
+          "5": "Average",
+          "7": "Good",
+          "10": "Excellent"
+        }
+      },
+      "hours": {
+        "type": "float", 
+        "range": [0, 24], 
+        "step": 0.5
+      },
+      "interruptions": {
+        "type": "integer", 
+        "range": [0, 10], 
+        "optional": true,
+        "labels": {
+          "0": "None",
+          "1-2": "Few",
+          "3-5": "Several",
+          "6+": "Many"
+        }
+      }
+    },
+    "stress": {
+      "level": {
+        "type": "integer", 
+        "range": [1, 10],
+        "labels": {
+          "1": "Very relaxed",
+          "3": "Low stress", 
+          "5": "Moderate",
+          "7": "High stress",
+          "10": "Overwhelmed"
+        }
+      },
+      "triggers": {
+        "type": "array", 
+        "items": "string", 
+        "enum": ["work", "relationships", "health", "finances", "family"], 
+        "optional": true,
+        "labels": {
+          "work": "Work/Career",
+          "relationships": "Relationships",
+          "health": "Health concerns",
+          "finances": "Money/Finances",
+          "family": "Family issues"
+        }
+      }
+    },
+    "physical": {
+      "overall_health": {
+        "type": "integer", 
+        "range": [1, 10],
+        "labels": {
+          "1": "Very poor",
+          "3": "Poor", 
+          "5": "Average",
+          "7": "Good",
+          "10": "Excellent"
+        }
+      },
+      "activity_level": {
+        "type": "string", 
+        "enum": ["sedentary", "light", "moderate", "active", "very_active"],
+        "labels": {
+          "sedentary": "Sedentary (little/no exercise)",
+          "light": "Light activity",
+          "moderate": "Moderate activity",
+          "active": "Active",
+          "very_active": "Very active"
+        }
+      },
+      "pain_level": {
+        "type": "integer", 
+        "range": [0, 10], 
+        "optional": true,
+        "labels": {
+          "0": "No pain",
+          "1-3": "Mild pain",
+          "4-6": "Moderate pain",
+          "7-9": "Severe pain",
+          "10": "Extreme pain"
+        }
+      }
+    },
+    "hydration": {
+      "water_glasses": {
+        "type": "integer", 
+        "range": [0, 20],
+        "labels": {
+          "0-2": "Very low",
+          "3-5": "Low",
+          "6-8": "Good",
+          "9-12": "Great",
+          "13+": "Excellent"
+        }
+      },
+      "coffee_cups": {
+        "type": "integer", 
+        "range": [0, 10], 
+        "optional": true
+      }
+    },
+    "nutrition": {
+      "meal_regularity": {
+        "type": "string", 
+        "enum": ["very_irregular", "irregular", "regular", "very_regular"],
+        "labels": {
+          "very_irregular": "Very irregular",
+          "irregular": "Irregular",
+          "regular": "Regular",
+          "very_regular": "Very regular"
+        }
+      },
+      "appetite": {
+        "type": "integer", 
+        "range": [1, 10], 
+        "optional": true,
+        "labels": {
+          "1": "No appetite",
+          "3": "Low appetite", 
+          "5": "Normal",
+          "7": "Good appetite",
+          "10": "Very hungry"
+        }
+      }
+    },
+    "social": {
+      "interaction_level": {
+        "type": "integer", 
+        "range": [1, 10],
+        "labels": {
+          "1": "Very isolated",
+          "3": "Low interaction", 
+          "5": "Moderate",
+          "7": "Social",
+          "10": "Very social"
+        }
+      }
+    }
+  },
+
+  "period_tracker": {
+    "primary_data": {
+      "average_cycle_length": {
+        "type": "integer", 
+        "range": [21, 45], 
+        "default": 28
+      },
+      "average_period_length": {
+        "type": "integer", 
+        "range": [2, 10], 
+        "default": 5
+      },
+      "last_period_start_date": {
+        "type": "string", 
+        "format": "date"
+      },
+      "birth_control_method": {
+        "type": "string", 
+        "enum": ["none", "pill", "iud", "implant", "patch", "ring", "injection"], 
+        "optional": true,
+        "labels": {
+          "none": "None",
+          "pill": "Birth control pill",
+          "iud": "IUD",
+          "implant": "Implant",
+          "patch": "Patch",
+          "ring": "Ring",
+          "injection": "Injection"
+        }
+      },
+      "tracking_ovulation": {
+        "type": "boolean", 
+        "default": false
+      },
+      "trying_to_conceive": {
+        "type": "boolean", 
+        "default": false
+      }
+    },
+    "calculated_data": {
+      "current_cycle_day": {
+        "type": "integer", 
+        "auto_calculated": true
+      },
+      "cycle_phase": {
+        "type": "string", 
+        "enum": ["menstrual", "follicular", "ovulation", "luteal"], 
+        "auto_calculated": true,
+        "labels": {
+          "menstrual": "Menstrual phase",
+          "follicular": "Follicular phase",
+          "ovulation": "Ovulation",
+          "luteal": "Luteal phase"
+        }
+      },
+      "predicted_ovulation": {
+        "type": "string", 
+        "format": "date", 
+        "auto_calculated": true
+      },
+      "predicted_next_period": {
+        "type": "string", 
+        "format": "date", 
+        "auto_calculated": true
+      }
+    },
+    "menstruating": {
+      "flow": {
+        "level": {
+          "type": "string", 
+          "enum": ["spotting", "light", "medium", "heavy", "very_heavy"],
+          "labels": {
+            "spotting": "Spotting",
+            "light": "Light flow",
+            "medium": "Medium flow",
+            "heavy": "Heavy flow",
+            "very_heavy": "Very heavy flow"
+          }
+        },
+        "color": {
+          "type": "string", 
+          "enum": ["bright_red", "dark_red", "brown", "pink"], 
+          "optional": true,
+          "labels": {
+            "bright_red": "Bright red",
+            "dark_red": "Dark red",
+            "brown": "Brown",
+            "pink": "Pink"
+          }
+        }
+      },
+      "symptoms": {
+        "physical": {
+          "type": "array", 
+          "items": "string", 
+          "enum": ["cramps", "bloating", "headache", "nausea", "breast_tenderness", "back_pain", "fatigue"],
+          "labels": {
+            "cramps": "Cramps",
+            "bloating": "Bloating",
+            "headache": "Headache",
+            "nausea": "Nausea",
+            "breast_tenderness": "Breast tenderness",
+            "back_pain": "Back pain",
+            "fatigue": "Fatigue"
+          }
+        },
+        "emotional": {
+          "type": "array", 
+          "items": "string", 
+          "enum": ["irritable", "sad", "anxious", "mood_swings", "crying"], 
+          "optional": true,
+          "labels": {
+            "irritable": "Irritable",
+            "sad": "Sad",
+            "anxious": "Anxious",
+            "mood_swings": "Mood swings",
+            "crying": "Crying spells"
+          }
+        },
+        "pain_level": {
+          "type": "integer", 
+          "range": [0, 10],
+          "labels": {
+            "0": "No pain",
+            "1-3": "Mild pain",
+            "4-6": "Moderate pain",
+            "7-9": "Severe pain",
+            "10": "Extreme pain"
+          }
+        }
+      },
+      "products": {
+        "type_used": {
+          "type": "array", 
+          "items": "string", 
+          "enum": ["pads", "tampons", "menstrual_cup", "period_underwear"], 
+          "optional": true,
+          "labels": {
+            "pads": "Pads",
+            "tampons": "Tampons",
+            "menstrual_cup": "Menstrual cup",
+            "period_underwear": "Period underwear"
+          }
+        },
+        "changes_count": {
+          "type": "integer", 
+          "range": [0, 20], 
+          "optional": true
+        }
+      }
+    },
+    "not_menstruating": {
+      "discharge": {
+        "amount": {
+          "type": "string", 
+          "enum": ["none", "light", "moderate", "heavy"], 
+          "optional": true,
+          "labels": {
+            "none": "None",
+            "light": "Light",
+            "moderate": "Moderate",
+            "heavy": "Heavy"
+          }
+        },
+        "consistency": {
+          "type": "string", 
+          "enum": ["dry", "sticky", "creamy", "egg_white", "watery"], 
+          "optional": true,
+          "labels": {
+            "dry": "Dry",
+            "sticky": "Sticky",
+            "creamy": "Creamy",
+            "egg_white": "Egg white",
+            "watery": "Watery"
+          }
+        }
+      },
+      "symptoms": {
+        "physical": {
+          "type": "array", 
+          "items": "string", 
+          "enum": ["breast_tenderness", "bloating", "acne", "headache", "fatigue", "increased_appetite"], 
+          "optional": true,
+          "labels": {
+            "breast_tenderness": "Breast tenderness",
+            "bloating": "Bloating",
+            "acne": "Acne",
+            "headache": "Headache",
+            "fatigue": "Fatigue",
+            "increased_appetite": "Increased appetite"
+          }
+        },
+        "emotional": {
+          "type": "array", 
+          "items": "string", 
+          "enum": ["mood_swings", "irritable", "anxious", "increased_libido", "decreased_libido"], 
+          "optional": true,
+          "labels": {
+            "mood_swings": "Mood swings",
+            "irritable": "Irritable",
+            "anxious": "Anxious",
+            "increased_libido": "Increased libido",
+            "decreased_libido": "Decreased libido"
+          }
+        }
+      },
+      "fertility_tracking": {
+        "basal_temperature": {
+          "type": "float", 
+          "range": [95.0, 102.0], 
+          "optional": true
+        },
+        "ovulation_test": {
+          "type": "string", 
+          "enum": ["negative", "positive", "peak"], 
+          "optional": true,
+          "labels": {
+            "negative": "Negative",
+            "positive": "Positive",
+            "peak": "Peak"
+          }
+        },
+        "sexual_activity": {
+          "type": "boolean", 
+          "optional": true
+        }
+      },
+      "contraception": {
+        "taken": {
+          "type": "boolean", 
+          "optional": true
+        },
+        "time_taken": {
+          "type": "string", 
+          "format": "time", 
+          "optional": true
+        }
+      }
+    }
+  },
+
+  "workout_tracker": {
+    "workout": {
+      "did_workout": {
+        "type": "boolean"
+      },
+      "activities": {
+        "type": "array",
+        "items": {
+          "exercise_type": {
+            "type": "string", 
+            "enum": ["cardio", "strength", "yoga", "pilates", "swimming", "cycling", "running", "walking", "sports", "other"],
+            "labels": {
+              "cardio": "Cardio",
+              "strength": "Strength training",
+              "yoga": "Yoga",
+              "pilates": "Pilates",
+              "swimming": "Swimming",
+              "cycling": "Cycling",
+              "running": "Running",
+              "walking": "Walking",
+              "sports": "Sports",
+              "other": "Other"
+            }
+          },
+          "duration_minutes": {
+            "type": "integer", 
+            "range": [1, 300]
+          },
+          "intensity": {
+            "type": "integer", 
+            "range": [1, 10],
+            "labels": {
+              "1-2": "Very light",
+              "3-4": "Light",
+              "5-6": "Moderate",
+              "7-8": "Hard",
+              "9-10": "Very hard"
+            }
+          },
+          "calories_burned": {
+            "type": "integer", 
+            "range": [1, 1000], 
+            "optional": true
+          }
+        }
+      },
+      "satisfaction": {
+        "type": "integer", 
+        "range": [1, 10], 
+        "optional": true,
+        "labels": {
+          "1": "Very unsatisfied",
+          "3": "Unsatisfied", 
+          "5": "Neutral",
+          "7": "Satisfied",
+          "10": "Very satisfied"
+        }
+      },
+      "notes": {
+        "type": "string", 
+        "max_length": 200, 
+        "optional": true
+      }
+    },
+    "nutrition": {
+      "calories": {
+        "type": "integer", 
+        "range": [0, 5000], 
+        "optional": true
+      },
+      "meals_count": {
+        "type": "integer", 
+        "range": [0, 10]
+      },
+      "nutrition_quality": {
+        "type": "integer", 
+        "range": [1, 10],
+        "labels": {
+          "1": "Very poor",
+          "3": "Poor", 
+          "5": "Average",
+          "7": "Good",
+          "10": "Excellent"
+        }
+      },
+      "protein_adequate": {
+        "type": "boolean", 
+        "optional": true
+      },
+      "vegetables_servings": {
+        "type": "integer", 
+        "range": [0, 15], 
+        "optional": true
+      },
+      "cravings": {
+        "type": "array", 
+        "items": "string", 
+        "enum": ["sweet", "salty", "fatty", "carbs", "none"], 
+        "optional": true,
+        "labels": {
+          "sweet": "Sweet foods",
+          "salty": "Salty foods",
+          "fatty": "Fatty foods",
+          "carbs": "Carbohydrates",
+          "none": "No cravings"
+        }
+      },
+      "supplements": {
+        "type": "array", 
+        "items": "string", 
+        "optional": true
+      }
+    },
+    "body": {
+      "weight": {
+        "type": "float", 
+        "range": [30, 300], 
+        "optional": true
+      },
+      "body_satisfaction": {
+        "type": "integer", 
+        "range": [1, 10], 
+        "optional": true,
+        "labels": {
+          "1": "Very unsatisfied",
+          "3": "Unsatisfied", 
+          "5": "Neutral",
+          "7": "Satisfied",
+          "10": "Very satisfied"
+        }
+      }
+    }
+  },
+
+  "symptom_tracker": {
+    "symptoms": {
+      "has_symptoms": {
+        "type": "boolean"
+      },
+      "pain": {
+        "locations": {
+          "type": "array", 
+          "items": "string", 
+          "enum": ["head", "neck", "back", "chest", "abdomen", "arms", "legs", "joints", "muscles"],
+          "labels": {
+            "head": "Head",
+            "neck": "Neck",
+            "back": "Back",
+            "chest": "Chest",
+            "abdomen": "Abdomen",
+            "arms": "Arms",
+            "legs": "Legs",
+            "joints": "Joints",
+            "muscles": "Muscles"
+          }
+        },
+        "intensity": {
+          "type": "integer", 
+          "range": [0, 10],
+          "labels": {
+            "0": "No pain",
+            "1-3": "Mild pain",
+            "4-6": "Moderate pain",
+            "7-9": "Severe pain",
+            "10": "Extreme pain"
+          }
+        },
+        "type": {
+          "type": "array", 
+          "items": "string", 
+          "enum": ["sharp", "dull", "throbbing", "burning", "cramping", "aching"], 
+          "optional": true,
+          "labels": {
+            "sharp": "Sharp",
+            "dull": "Dull",
+            "throbbing": "Throbbing",
+            "burning": "Burning",
+            "cramping": "Cramping",
+            "aching": "Aching"
+          }
+        }
+      },
+      "other": {
+        "digestive": {
+          "type": "array", 
+          "items": "string", 
+          "enum": ["nausea", "vomiting", "bloating", "diarrhea", "constipation", "stomach_pain"], 
+          "optional": true,
+          "labels": {
+            "nausea": "Nausea",
+            "vomiting": "Vomiting",
+            "bloating": "Bloating",
+            "diarrhea": "Diarrhea",
+            "constipation": "Constipation",
+            "stomach_pain": "Stomach pain"
+          }
+        },
+        "neurological": {
+          "type": "array", 
+          "items": "string", 
+          "enum": ["headache", "dizziness", "brain_fog", "fatigue", "insomnia"], 
+          "optional": true,
+          "labels": {
+            "headache": "Headache",
+            "dizziness": "Dizziness",
+            "brain_fog": "Brain fog",
+            "fatigue": "Fatigue",
+            "insomnia": "Insomnia"
+          }
+        }
+      }
+    }
+  }
+}

@@ -45,6 +45,39 @@ def upgrade():
     sa.ForeignKeyConstraint(['tracker_id'], ['trackers.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
+    # add default tracker categories
+    from sqlalchemy.sql import table, column
+    from sqlalchemy import String, Integer, JSON, DateTime, Boolean
+    from datetime import datetime
+
+    tracker_categories = table('tracker_categories',
+        column('id', Integer),
+        column('name', String),
+        column('data_schema', JSON),
+        column('created_at', DateTime),
+        column('is_active', Boolean)
+    )
+    #Period tracker
+    op.execute(tracker_categories.insert().values(
+        name='Period Tracker',
+        data_schema='{"type": "object", "properties": {"period_start": {"type": "date"}, "period_end": {"type": "date"}}}',
+        created_at=datetime.now(),
+        is_active=True
+    ))
+    #Workout tracker
+    op.execute(tracker_categories.insert().values(
+        name='Workout Tracker',
+        data_schema='{"type": "object", "properties": {"workout_date": {"type": "date"}, "workout_type": {"type": "string"}, "workout_duration": {"type": "number"}, "workout_intensity": {"type": "string"}, "workout_distance": {"type": "number"}, "workout_calories": {"type": "number"}}}',
+        created_at=datetime.now(),
+        is_active=True
+    ))
+    #Symptom tracker
+    op.execute(tracker_categories.insert().values(
+        name='Symptom Tracker',
+        data_schema='{"type": "object", "properties": {"symptom_date": {"type": "date"}, "symptom_type": {"type": "string"}, "symptom_duration": {"type": "number"}, "symptom_intensity": {"type": "string"}, "symptom_distance": {"type": "number"}, "symptom_calories": {"type": "number"}}}',
+        created_at=datetime.now(),
+        is_active=True
+    ))
     # ### end Alembic commands ###
 
 
