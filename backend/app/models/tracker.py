@@ -2,7 +2,7 @@ from datetime import datetime
 from app import db
 
 class Tracker(db.Model):
-    __tablename__ = 'user_trackers'
+    __tablename__ = 'trackers'
     
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
@@ -16,7 +16,7 @@ class Tracker(db.Model):
             'id': self.id,
             'user_id': self.user_id,
             'category_id': self.category_id,
-            'data': [data.to_dict() for data in self.data],
+            'data': self.data.to_dict(),
             'created_at': self.created_at.isoformat(),
             'is_default': self.is_default
         }
