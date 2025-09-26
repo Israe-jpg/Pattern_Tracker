@@ -8,7 +8,8 @@ from app.models.tracker import Tracker
 from app.models.tracking_data import TrackingData
 from app.models.tracker_category import TrackerCategory
 from app.schemas.user_schemas import UserRegistrationSchema, UserLoginSchema
-# from app.schemas.tracker_schemas import TrackerSchema, TrackingDataSchema
+from app.schemas.tracker_schemas import TrackerSchema
+
 
 
 trackers_bp = Blueprint('trackers', __name__)
@@ -106,9 +107,13 @@ def create_custom_tracker():
     current_user_id = get_jwt_identity()
     
     # Validate input
-    #add validation schema later
+    schema = TrackerSchema()
+    try:
+        validated_data = schema.load(request.json)
+    except ValidationError as err:
+        return jsonify({'error': 'Validation failed', 'details': err.messages}), 400
     
-    category_name = request.json['name'].strip()
+    category_name = validated_data['name'].strip()
     
     # get baseline schema
     from app.config import tracker_config
@@ -117,7 +122,7 @@ def create_custom_tracker():
     # Combine baseline with custom schema
     combined_schema = {
         'baseline': baseline_schema,
-        'custom_tracker': request.json['data_schema']
+        'custom_tracker': validated_data['data_schema']
     }
     
     # Create custom tracker category
