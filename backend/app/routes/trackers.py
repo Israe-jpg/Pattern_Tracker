@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import create_access_token, create_refresh_token, get_jwt_identity, jwt_required
 from marshmallow import ValidationError
+from datetime import datetime
 from app import db
 from app.models.user import User
 from app.models.tracker import Tracker
@@ -97,3 +98,45 @@ def update_default_tracker(tracker_id):
     tracker.is_default = True
     db.session.commit()
     return jsonify({'message': 'Tracker updated successfully'}), 200
+
+#Create a custom tracker for the user
+@trackers_bp.route('/create-custom-tracker', methods=['POST'])
+@jwt_required()
+def create_custom_tracker():
+    current_user_id = get_jwt_identity()
+    
+    # Validate input
+    #add validation schema later
+    
+    category_name = request.json['name'].strip()
+    
+    # get baseline schema
+    from app.config import tracker_config
+    baseline_schema = tracker_config.get_schema('baseline')
+    
+    # Combine baseline with custom schema
+    combined_schema = {
+        'baseline': baseline_schema,
+        'custom_tracker': request.json['data_schema']
+    }
+    
+    # Create custom tracker category
+    custom_tracker_category = TrackerCategory(
+        name=category_name,
+        data_schema=combined_schema,  
+        created_at=datetime.now(),
+        is_active=True
+    )
+    db.session.add(custom_tracker_category)
+    db.session.flush()  # This generates the ID of the category without committing so we can use later
+    
+    # Create custom tracker
+    custom_tracker = Tracker(
+        user_id=current_user_id,
+        category_id=custom_tracker_category.id, 
+        is_default=False
+    )
+    db.session.add(custom_tracker)
+    db.session.commit()  # Commit both category and tracker
+    return jsonify({'message': 'Custom tracker created successfully'}), 201
+
