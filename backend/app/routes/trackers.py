@@ -81,6 +81,10 @@ def delete_tracker(tracker_id):
     if not tracker:
         return jsonify({'error': 'Tracker not found'}), 404
     db.session.delete(tracker)
+    if not tracker.is_default:
+        custom_tracker_category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
+        if custom_tracker_category:
+            db.session.delete(custom_tracker_category)
     db.session.commit()
     return jsonify({'message': 'Tracker deleted successfully'}), 200
 
@@ -144,4 +148,6 @@ def create_custom_tracker():
     db.session.add(custom_tracker)
     db.session.commit()  # Commit both category and tracker
     return jsonify({'message': 'Custom tracker created successfully'}), 201
+
+
 
