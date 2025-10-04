@@ -8,7 +8,7 @@ from app.models.tracker import Tracker
 from app.models.tracking_data import TrackingData
 from app.models.tracker_category import TrackerCategory
 from app.schemas.user_schemas import UserRegistrationSchema, UserLoginSchema
-from app.schemas.tracker_schemas import TrackerSchema, TrackerUpdateSchema, TrackerPatchSchema
+from app.schemas.tracker_schemas import TrackerSchema, TrackerUpdateSchema, TrackerPatchSchema, TrackerFieldSchema
 
 
 
@@ -195,7 +195,13 @@ def create_tracker_field(tracker_id):
     if category.name in default_categories:
         return jsonify({'error': 'Cannot modify default tracker fields'}), 403
     
-    data = request.json
+    # Validate input with schema
+    schema = TrackerFieldSchema()
+    try:
+        validated_data = schema.load(request.json)
+    except ValidationError as err:
+        return jsonify({'error': 'Validation failed', 'details': err.messages}), 400
+    
     from app.models.tracker_field import TrackerField
     
     # Get next order number
@@ -203,18 +209,11 @@ def create_tracker_field(tracker_id):
         category_id=tracker.category_id
     ).scalar() or 0
     
+    # Create field with validated data
     field = TrackerField(
         category_id=tracker.category_id,
-        field_name=data.get('field_name'),
-        field_type=data.get('field_type', 'string'),
-        is_required=data.get('is_required', False),
-        display_label=data.get('display_label'),
-        help_text=data.get('help_text'),
-        placeholder=data.get('placeholder'),
-        validation_rules=data.get('validation_rules'),
-        display_options=data.get('display_options'),
         field_order=max_order + 1,
-        field_group=data.get('field_group', 'custom')
+        **validated_data  # Use validated and cleaned data
     )
     
     db.session.add(field)
