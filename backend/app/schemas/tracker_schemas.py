@@ -13,4 +13,14 @@ class TrackerSchema(Schema):
             if isinstance(value, str):
                 data[key] = value.strip()
         return data
+
+
+class TrackerUpdateSchema(Schema):
+    """Schema for updating tracker data_schema only"""
+    data_schema = fields.Dict(required=True)
+
+
+class TrackerPatchSchema(Schema):
+    """Schema for patching specific fields in tracker"""
+    field_updates = fields.Dict(required=True)
     
