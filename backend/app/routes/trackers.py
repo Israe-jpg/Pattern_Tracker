@@ -154,7 +154,7 @@ def create_custom_tracker():
 #Data schema routes
 
 # Get all fields for a tracker
-@trackers_bp.route('/<int:tracker_id>/fields', methods=['GET'])
+@trackers_bp.route('/<int:tracker_id>/get-all-fields', methods=['GET'])
 @jwt_required()
 def get_tracker_fields(tracker_id):
     """Get all fields for a specific tracker with full details"""
@@ -176,8 +176,10 @@ def get_tracker_fields(tracker_id):
     }), 200
 
 
+
 # Create a new field
-@trackers_bp.route('/<int:tracker_id>/fields', methods=['POST'])
+
+@trackers_bp.route('/<int:tracker_id>/create-field', methods=['POST'])
 @jwt_required()
 def create_tracker_field(tracker_id):
     """Create a new field for a tracker"""
@@ -225,7 +227,7 @@ def create_tracker_field(tracker_id):
 
 
 # Update a specific field
-@trackers_bp.route('/<int:tracker_id>/fields/<int:field_id>', methods=['PUT'])
+@trackers_bp.route('/<int:tracker_id>/update-field/<int:field_id>', methods=['PUT'])
 @jwt_required()
 def update_tracker_field(tracker_id, field_id):
     """Update a specific field"""
@@ -274,7 +276,7 @@ def update_tracker_field(tracker_id, field_id):
 
 
 # Delete a field
-@trackers_bp.route('/<int:tracker_id>/fields/<int:field_id>', methods=['DELETE'])
+@trackers_bp.route('/<int:tracker_id>/delete-field/<int:field_id>', methods=['DELETE'])
 @jwt_required()
 def delete_tracker_field(tracker_id, field_id):
     """Delete a specific field"""
@@ -302,7 +304,7 @@ def delete_tracker_field(tracker_id, field_id):
 
 
 # Reorder fields
-@trackers_bp.route('/<int:tracker_id>/fields/reorder', methods=['PUT'])
+@trackers_bp.route('/<int:tracker_id>/reorder-fields', methods=['PUT'])
 @jwt_required()
 def reorder_tracker_fields(tracker_id):
     """Reorder fields for a tracker"""
