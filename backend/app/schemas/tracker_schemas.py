@@ -1,32 +1,8 @@
 from marshmallow import Schema, fields, validate, ValidationError, post_load
 import re
 
-class TrackerSchema(Schema):
-    name = fields.Str(required=True)
-    data_schema = fields.Dict(required=True)
-
-    @post_load
-    def clean_data(self, data, **kwargs):
-        """Clean and normalize data after validation"""
-        # Strip whitespace
-        for key, value in data.items():
-            if isinstance(value, str):
-                data[key] = value.strip()
-        return data
-
-
-class TrackerUpdateSchema(Schema):
-    """Schema for updating tracker data_schema only"""
-    data_schema = fields.Dict(required=True)
-
-
-class TrackerPatchSchema(Schema):
-    """Schema for patching specific fields in tracker"""
-    field_updates = fields.Dict(required=True)
-
-
 class TrackerFieldSchema(Schema):
-    """Schema for creating/updating tracker fields with type-specific validation"""
+    
     field_name = fields.Str(required=True, validate=validate.Length(min=1, max=100))
     field_parent = fields.Str(allow_none=True, validate=validate.Length(max=100))
     field_full_path = fields.Str(allow_none=True, validate=validate.Length(max=200))
@@ -110,4 +86,68 @@ class TrackerFieldSchema(Schema):
             data.pop('choice_labels', None)
             
         return data
+
+
+class TrackerSchema(Schema):
+    name = fields.Str(required=True)
+    data_schema = TrackerFieldSchema(many=True)
+
+    @post_load
+    def clean_data(self, data, **kwargs):
+        # Strip whitespace
+        for key, value in data.items():
+            if isinstance(value, str):
+                data[key] = value.strip()
+        return data
+
+
+class TrackerUpdateSchema(Schema):
+    
+    data_schema = fields.Dict(required=True)
+
+
+class TrackerPatchSchema(Schema):
+    
+    field_updates = fields.Dict(required=True)
+
+
+class FieldOptionSchema(Schema):
+    
+    option_name = fields.Str(required=True, validate=[
+        validate.Length(min=1, max=100),
+        validate.Regexp(r'^[a-z][a-z0-9_]*$', error='Option name must be lowercase, start with letter, and contain only letters, numbers, and underscores')
+    ])
+    option_type = fields.Str(required=True, validate=validate.OneOf([
+        'rating', 'single_choice', 'multiple_choice', 'yes_no', 'number_input', 'text', 'notes'
+    ]))
+    option_order = fields.Int(missing=0)
+    is_required = fields.Bool(missing=False)
+    display_label = fields.Str(allow_none=True, validate=validate.Length(max=200))
+    help_text = fields.Str(allow_none=True)
+    placeholder = fields.Str(allow_none=True, validate=validate.Length(max=200))
+    default_value = fields.Str(allow_none=True)
+    min_value = fields.Int(allow_none=True)
+    max_value = fields.Int(allow_none=True)
+    max_length = fields.Int(allow_none=True)
+    step = fields.Float(allow_none=True)
+    choices = fields.List(fields.Str(), allow_none=True)
+    choice_labels = fields.Dict(allow_none=True)
+    validation_rules = fields.Dict(allow_none=True)
+    display_options = fields.Dict(allow_none=True)
+
+
+class CustomCategorySchema(Schema):
+    
+    name = fields.Str(required=True, validate=validate.Length(min=1, max=80))
+    custom_fields = fields.List(fields.Nested('CustomFieldSchema'), required=True)
+
+
+class CustomFieldSchema(Schema):
+    field_name = fields.Str(required=True, validate=[
+        validate.Length(min=1, max=100),
+        validate.Regexp(r'^[a-z][a-z0-9_]*$', error='Field name must be lowercase, start with letter, and contain only letters, numbers, and underscores')
+    ])
+    display_label = fields.Str(allow_none=True, validate=validate.Length(max=200))
+    help_text = fields.Str(allow_none=True)
+    options = fields.List(fields.Nested(FieldOptionSchema), required=True, validate=validate.Length(min=1))
     
