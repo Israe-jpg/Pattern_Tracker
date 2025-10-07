@@ -1,0 +1,221 @@
+import json
+import os
+from app import db
+from app.models.tracker_category import TrackerCategory
+from app.models.tracker_field import TrackerField
+from app.models.field_option import FieldOption
+
+class CategoryService:
+    
+    @staticmethod
+    def get_baseline_schema():
+        config_path = os.path.join(os.path.dirname(__file__), '..', 'config', 'tracker_schemas.json')
+        
+        with open(config_path, 'r') as f:
+            schemas = json.load(f)
+        
+        return schemas.get('baseline', {})
+    
+    @staticmethod
+    def create_custom_category(name, custom_fields_data):
+        """
+        Create a new custom category with baseline schema + custom fields
+        
+        Args:
+            name: Category name
+            custom_fields_data: List of custom field definitions
+                Example:
+                [
+                    {
+                        "field_name": "Mood",
+                        "display_label": "How was your mood today?",
+                        "options": [
+                            {
+                                "option_name": "overall_mood",
+                                "option_type": "rating",
+                                "min_value": 1,
+                                "max_value": 10,
+                                "is_required": True
+                            },
+                            {
+                                "option_name": "mood_notes",
+                                "option_type": "text",
+                                "max_length": 200,
+                                "is_required": False
+                            }
+                        ]
+                    }
+                ]
+        """
+        try:
+            # Get baseline schema
+            baseline_schema = CategoryService.get_baseline_schema()
+            
+            # Create the category with combined schema
+            combined_schema = {
+                "baseline": baseline_schema,
+                "custom": {}
+            }
+            
+            # Build custom schema from field definitions
+            for field_data in custom_fields_data:
+                field_name = field_data['field_name']  
+                combined_schema["custom"][field_name] = {}
+                
+                for option_data in field_data.get('options', []):
+                    option_name = option_data['option_name']
+                    option_schema = CategoryService._build_option_schema(option_data)
+                    combined_schema["custom"][field_name][option_name] = option_schema
+            
+            # Create category
+            category = TrackerCategory(
+                name=name,
+                data_schema=combined_schema,
+                is_active=True
+            )
+            db.session.add(category)
+            db.session.flush()  # in order to get the id
+            
+            # Create baseline fields
+            CategoryService._create_baseline_fields(category.id, baseline_schema)
+            
+            # Create custom fields
+            CategoryService._create_custom_fields(category.id, custom_fields_data)
+            
+            db.session.commit()
+            return category
+            
+        except Exception as e:
+            db.session.rollback()
+            raise e
+    
+    @staticmethod
+    def _build_option_schema(option_data):
+        schema = {
+            'type': FieldOption.OPTION_TYPE_MAPPING.get(option_data['option_type'], 'string'),
+            'optional': not option_data.get('is_required', False)
+        }
+        
+        # Add validation rules based on option type
+        if option_data.get('min_value') is not None and option_data.get('max_value') is not None:
+            schema['range'] = [option_data['min_value'], option_data['max_value']]
+        
+        if option_data.get('max_length'):
+            schema['max_length'] = option_data['max_length']
+        
+        if option_data.get('choices'):
+            schema['enum'] = option_data['choices']
+        
+        if option_data.get('choice_labels'):
+            schema['labels'] = option_data['choice_labels']
+        
+        return schema
+    
+    @staticmethod
+    def _create_baseline_fields(category_id, baseline_schema):
+        field_order = 0
+        
+        for field_name, field_options in baseline_schema.items():
+            # Create the main field - keep field_name as JSON key (lowercase)
+            tracker_field = TrackerField(
+                category_id=category_id,
+                field_name=field_name,  
+                field_group='baseline',
+                field_order=field_order,
+                display_label=f"Track your {field_name.replace('_', ' ')}",
+                is_active=True
+            )
+            db.session.add(tracker_field)
+            db.session.flush()  
+            
+            # Create options for this field
+            option_order = 0
+            for option_name, option_config in field_options.items():
+                field_option = FieldOption(
+                    tracker_field_id=tracker_field.id,
+                    option_name=option_name,
+                    option_type=CategoryService._map_json_type_to_option_type(option_config.get('type', 'string')),
+                    option_order=option_order,
+                    is_required=not option_config.get('optional', True),
+                    min_value=option_config.get('range', [None, None])[0] if option_config.get('range') else None,
+                    max_value=option_config.get('range', [None, None])[1] if option_config.get('range') else None,
+                    max_length=option_config.get('max_length'),
+                    step=option_config.get('step'),
+                    choices=option_config.get('enum'),
+                    choice_labels=option_config.get('labels'),
+                    is_active=True
+                )
+                db.session.add(field_option)
+                option_order += 1
+            
+            field_order += 1
+    
+    @staticmethod
+    def _create_custom_fields(category_id, custom_fields_data):
+
+        # Get the highest field_order from baseline fields
+        max_order = db.session.query(db.func.max(TrackerField.field_order)).filter_by(category_id=category_id).scalar() or 0
+        field_order = max_order + 1
+        
+        for field_data in custom_fields_data:
+            # Create the main field
+            tracker_field = TrackerField(
+                category_id=category_id,
+                field_name=field_data['field_name'],
+                field_group='custom',
+                field_order=field_order,
+                display_label=field_data.get('display_label', field_data['field_name']),
+                help_text=field_data.get('help_text'),
+                is_active=True
+            )
+            db.session.add(tracker_field)
+            db.session.flush()  
+            
+            # Create options for this field
+            option_order = 0
+            for option_data in field_data.get('options', []):
+                field_option = FieldOption(
+                    tracker_field_id=tracker_field.id,
+                    option_name=option_data['option_name'],
+                    option_type=option_data['option_type'],
+                    option_order=option_order,
+                    is_required=option_data.get('is_required', False),
+                    display_label=option_data.get('display_label'),
+                    help_text=option_data.get('help_text'),
+                    placeholder=option_data.get('placeholder'),
+                    default_value=option_data.get('default_value'),
+                    min_value=option_data.get('min_value'),
+                    max_value=option_data.get('max_value'),
+                    max_length=option_data.get('max_length'),
+                    step=option_data.get('step'),
+                    choices=option_data.get('choices'),
+                    choice_labels=option_data.get('choice_labels'),
+                    validation_rules=option_data.get('validation_rules'),
+                    display_options=option_data.get('display_options'),
+                    is_active=True
+                )
+                db.session.add(field_option)
+                option_order += 1
+            
+            field_order += 1
+    
+    @staticmethod
+    def _map_json_type_to_option_type(json_type):
+        mapping = {
+            'integer': 'rating',  
+            'string': 'single_choice',  
+            'array': 'multiple_choice',
+            'boolean': 'yes_no',
+            'float': 'number_input'
+        }
+        return mapping.get(json_type, 'single_choice')
+    
+    @staticmethod
+    def get_default_categories():
+        
+        return ['baseline', 'period_tracker', 'workout_tracker']
+    
+    @staticmethod
+    def is_default_category(category_name):
+        
+        return category_name.lower() in CategoryService.get_default_categories()
