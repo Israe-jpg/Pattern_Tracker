@@ -39,7 +39,7 @@ class FieldOption(db.Model):
     is_active = db.Column(db.Boolean, default=True)
     
     # Relationships
-    tracker_field = db.relationship('TrackerField', backref='options')
+    tracker_field = db.relationship('TrackerField')
     
     # Option type mappings
     OPTION_TYPE_MAPPING = {
