@@ -5,12 +5,14 @@ from datetime import datetime
 from app import db
 from app.models.user import User
 from app.models.tracker import Tracker
+from app.config import tracker_config
 from app.models.tracking_data import TrackingData
+from app.models.tracker_field import TrackerField
 from app.models.tracker_category import TrackerCategory
+from app.models.field_option import FieldOption
 from app.schemas.user_schemas import UserRegistrationSchema, UserLoginSchema
-from app.schemas.tracker_schemas import TrackerSchema, TrackerUpdateSchema, TrackerPatchSchema, TrackerFieldSchema
-
-
+from app.schemas.tracker_schemas import TrackerSchema, TrackerUpdateSchema, TrackerPatchSchema, TrackerFieldSchema, CustomCategorySchema
+from app.services.category_service import CategoryService
 
 trackers_bp = Blueprint('trackers', __name__)
 
@@ -104,55 +106,48 @@ def update_default_tracker(tracker_id):
     db.session.commit()
     return jsonify({'message': 'Tracker updated successfully'}), 200
 
-#Create a custom tracker for the user
-@trackers_bp.route('/create-custom-tracker', methods=['POST'])
+# Create a custom category with baseline + custom fields
+@trackers_bp.route('/create-custom-category', methods=['POST'])
 @jwt_required()
-def create_custom_tracker():
+def create_custom_category():
     current_user_id = get_jwt_identity()
     
     # Validate input
-    schema = TrackerSchema()
+    schema = CustomCategorySchema()
     try:
         validated_data = schema.load(request.json)
     except ValidationError as err:
         return jsonify({'error': 'Validation failed', 'details': err.messages}), 400
     
-    category_name = validated_data['name'].strip()
-    
-    # get baseline schema
-    from app.config import tracker_config
-    baseline_schema = tracker_config.get_schema('baseline')
-    
-    # Combine baseline with custom schema
-    combined_schema = {
-        'baseline': baseline_schema,
-        'custom_tracker': validated_data['data_schema']
-    }
-    
-    # Create custom tracker category
-    custom_tracker_category = TrackerCategory(
-        name=category_name,
-        data_schema=combined_schema,  
-        created_at=datetime.now(),
-        is_active=True
-    )
-    db.session.add(custom_tracker_category)
-    db.session.flush()  # This generates the ID of the category without committing so we can use later
-    
-    # Create custom tracker
-    custom_tracker = Tracker(
-        user_id=current_user_id,
-        category_id=custom_tracker_category.id, 
-        is_default=False
-    )
-    db.session.add(custom_tracker)
-    db.session.commit()  # Commit both category and tracker
-    return jsonify({'message': 'Custom tracker created successfully'}), 201
+    try:
+        # Create custom category using the service
+        category = CategoryService.create_custom_category(
+            name=validated_data['name'],
+            custom_fields_data=validated_data['custom_fields']
+        )
+        
+        # Create tracker for the user
+        tracker = Tracker(
+            user_id=current_user_id,
+            category_id=category.id,
+            is_default=False
+        )
+        db.session.add(tracker)
+        db.session.commit()
+        
+        return jsonify({
+            'message': 'Custom category and tracker created successfully',
+            'category': category.to_dict(),
+            'tracker_id': tracker.id
+        }), 201
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Failed to create custom category: {str(e)}'}), 500
 
 
 
 #Data schema routes
-
 # Get all fields for a tracker
 @trackers_bp.route('/<int:tracker_id>/get-all-fields', methods=['GET'])
 @jwt_required()
@@ -163,182 +158,40 @@ def get_tracker_fields(tracker_id):
     tracker = Tracker.query.filter_by(id=tracker_id, user_id=current_user_id).first()
     if not tracker:
         return jsonify({'error': 'Tracker not found'}), 404
-    
-    from app.models.tracker_field import TrackerField
-    fields = TrackerField.query.filter_by(
-        category_id=tracker.category_id, 
-        is_active=True
-    ).order_by(TrackerField.field_order).all()
-    
+    tracker_category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
+    if not tracker_category:
+        return jsonify({'error': 'Tracker category not found'}), 404
+    data_schema = tracker_category.get_schema()
     return jsonify({
-        'fields': [field.to_dict() for field in fields],
-        'total_count': len(fields)
+        'data_schema': data_schema
     }), 200
 
-
-
-# Create a new field
-
-@trackers_bp.route('/<int:tracker_id>/create-field', methods=['POST'])
-@jwt_required()
-def create_tracker_field(tracker_id):
-    """Create a new field for a tracker"""
-    current_user_id = get_jwt_identity()
-    
-    tracker = Tracker.query.filter_by(id=tracker_id, user_id=current_user_id).first()
-    if not tracker:
-        return jsonify({'error': 'Tracker not found'}), 404
-    
-    # Prevent modifying default trackers
-    category = TrackerCategory.query.get(tracker.category_id)
-    default_categories = ['Period Tracker', 'Workout Tracker', 'Symptom Tracker']
-    if category.name in default_categories:
-        return jsonify({'error': 'Cannot modify default tracker fields'}), 403
-    
-    # Validate input with schema
-    schema = TrackerFieldSchema()
-    try:
-        validated_data = schema.load(request.json)
-    except ValidationError as err:
-        return jsonify({'error': 'Validation failed', 'details': err.messages}), 400
-    
-    from app.models.tracker_field import TrackerField
-    
-    # Get next order number
-    max_order = db.session.query(db.func.max(TrackerField.field_order)).filter_by(
-        category_id=tracker.category_id
-    ).scalar() or 0
-    
-    # Create field with validated data
-    field = TrackerField(
-        category_id=tracker.category_id,
-        field_order=max_order + 1,
-        **validated_data  # Use validated and cleaned data
-    )
-    
-    db.session.add(field)
-    db.session.commit()
-    
-    return jsonify({
-        'message': 'Field created successfully',
-        'field': field.to_dict()
-    }), 201
-
-
-# Update a specific field
-@trackers_bp.route('/<int:tracker_id>/update-field/<int:field_id>', methods=['PUT'])
-@jwt_required()
-def update_tracker_field(tracker_id, field_id):
-    """Update a specific field"""
-    current_user_id = get_jwt_identity()
-    
-    tracker = Tracker.query.filter_by(id=tracker_id, user_id=current_user_id).first()
-    if not tracker:
-        return jsonify({'error': 'Tracker not found'}), 404
-    
-    from app.models.tracker_field import TrackerField
-    field = TrackerField.query.filter_by(id=field_id, category_id=tracker.category_id).first()
-    if not field:
-        return jsonify({'error': 'Field not found'}), 404
-    
-    # Prevent modifying default tracker fields
-    if field.field_group == 'baseline':
-        return jsonify({'error': 'Cannot modify baseline fields'}), 403
-    
-    data = request.json
-    
-    # Update field properties
-    if 'field_name' in data:
-        field.field_name = data['field_name']
-    if 'field_type' in data:
-        field.field_type = data['field_type']
-    if 'is_required' in data:
-        field.is_required = data['is_required']
-    if 'display_label' in data:
-        field.display_label = data['display_label']
-    if 'help_text' in data:
-        field.help_text = data['help_text']
-    if 'placeholder' in data:
-        field.placeholder = data['placeholder']
-    if 'validation_rules' in data:
-        field.validation_rules = data['validation_rules']
-    if 'display_options' in data:
-        field.display_options = data['display_options']
-    
-    field.updated_at = datetime.utcnow()
-    db.session.commit()
-    
-    return jsonify({
-        'message': 'Field updated successfully',
-        'field': field.to_dict()
-    }), 200
-
-
-# Delete a field
-@trackers_bp.route('/<int:tracker_id>/delete-field/<int:field_id>', methods=['DELETE'])
-@jwt_required()
-def delete_tracker_field(tracker_id, field_id):
-    """Delete a specific field"""
-    current_user_id = get_jwt_identity()
-    
-    tracker = Tracker.query.filter_by(id=tracker_id, user_id=current_user_id).first()
-    if not tracker:
-        return jsonify({'error': 'Tracker not found'}), 404
-    
-    from app.models.tracker_field import TrackerField
-    field = TrackerField.query.filter_by(id=field_id, category_id=tracker.category_id).first()
-    if not field:
-        return jsonify({'error': 'Field not found'}), 404
-    
-    # Prevent deleting baseline fields
-    if field.field_group == 'baseline':
-        return jsonify({'error': 'Cannot delete baseline fields'}), 403
-    
-    # Soft delete
-    field.is_active = False
-    field.updated_at = datetime.utcnow()
-    db.session.commit()
-    
-    return jsonify({'message': 'Field deleted successfully'}), 200
-
-
-# Reorder fields
-@trackers_bp.route('/<int:tracker_id>/reorder-fields', methods=['PUT'])
-@jwt_required()
-def reorder_tracker_fields(tracker_id):
-    """Reorder fields for a tracker"""
-    current_user_id = get_jwt_identity()
-    
-    tracker = Tracker.query.filter_by(id=tracker_id, user_id=current_user_id).first()
-    if not tracker:
-        return jsonify({'error': 'Tracker not found'}), 404
-    
-    field_orders = request.json.get('field_orders', [])  # [{"field_id": 1, "order": 1}, ...]
-    
-    from app.models.tracker_field import TrackerField
-    
-    for item in field_orders:
-        field = TrackerField.query.filter_by(
-            id=item['field_id'], 
-            category_id=tracker.category_id
-        ).first()
-        if field and field.field_group != 'baseline':  # Don't reorder baseline fields
-            field.field_order = item['order']
-    
-    db.session.commit()
-    
-    return jsonify({'message': 'Fields reordered successfully'}), 200
-
-
-# Get available field types for form builder
-@trackers_bp.route('/field-types', methods=['GET'])
-@jwt_required()
-def get_field_types():
-    """Get all available field types for the form builder"""
-    from app.models.tracker_field import TrackerField
-    
-    return jsonify({
-        'field_types': TrackerField.get_available_field_types()
-    }), 200
-
-
+# Create a new field for a tracker
+# @trackers_bp.route('/<int:tracker_id>/create-field', methods=['POST'])
+# @jwt_required()
+# def create_field(tracker_id):
+#     current_user_id = get_jwt_identity()
+#     tracker = Tracker.query.filter_by(id=tracker_id, user_id=current_user_id).first()
+#     if not tracker:
+#         return jsonify({'error': 'Tracker not found'}), 404
+#     tracker_category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
+#     if not tracker_category:
+#         return jsonify({'error': 'Tracker category not found'}), 404
+#     data_schema = tracker_category.get_schema()
+#     schema = TrackerFieldSchema()
+#     try:
+#         validated_data = schema.load(request.json)
+#     except ValidationError as err:
+#         return jsonify({'error': 'Validation failed', 'details': err.messages}), 400
+#     new_field = TrackerField(
+#         category_id=tracker_category.id,
+#         **validated_data)
+#     db.session.add(new_field)
+#     db.session.flush()
+#     new_field.field_order = new_field.id
+#     db.session.commit()
+#     data_schema[validated_data['field_group']].append(new_field)
+#     tracker_category.data_schema = data_schema
+#     db.session.update(tracker_category)
+#     db.session.commit()
+#     return jsonify({'message': 'Field created successfully'}), 201
