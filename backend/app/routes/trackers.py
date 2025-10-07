@@ -16,6 +16,8 @@ from app.services.category_service import CategoryService
 
 trackers_bp = Blueprint('trackers', __name__)
 
+#TRACKER ROUTES
+
 #setup default trackers for user
 @trackers_bp.route('/setup-default-trackers', methods=['POST'])
 @jwt_required()  
@@ -106,6 +108,9 @@ def update_default_tracker(tracker_id):
     db.session.commit()
     return jsonify({'message': 'Tracker updated successfully'}), 200
 
+
+#CUSTOM TRACKERS ROUTES
+
 # Create a custom category with baseline + custom fields
 @trackers_bp.route('/create-custom-category', methods=['POST'])
 @jwt_required()
@@ -147,12 +152,13 @@ def create_custom_category():
 
 
 
-#Data schema routes
-# Get all fields for a tracker
-@trackers_bp.route('/<int:tracker_id>/get-all-fields', methods=['GET'])
+#DATA SCHEMA ROUTES
+
+# Get data schema of a tracker
+@trackers_bp.route('/<int:tracker_id>/get-data-schema', methods=['GET'])
 @jwt_required()
 def get_tracker_fields(tracker_id):
-    """Get all fields for a specific tracker with full details"""
+    
     current_user_id = get_jwt_identity()
     
     tracker = Tracker.query.filter_by(id=tracker_id, user_id=current_user_id).first()
@@ -161,37 +167,31 @@ def get_tracker_fields(tracker_id):
     tracker_category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
     if not tracker_category:
         return jsonify({'error': 'Tracker category not found'}), 404
-    data_schema = tracker_category.get_schema()
+    data_schema = tracker_category.data_schema
     return jsonify({
         'data_schema': data_schema
     }), 200
 
-# Create a new field for a tracker
-# @trackers_bp.route('/<int:tracker_id>/create-field', methods=['POST'])
-# @jwt_required()
-# def create_field(tracker_id):
-#     current_user_id = get_jwt_identity()
-#     tracker = Tracker.query.filter_by(id=tracker_id, user_id=current_user_id).first()
-#     if not tracker:
-#         return jsonify({'error': 'Tracker not found'}), 404
-#     tracker_category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
-#     if not tracker_category:
-#         return jsonify({'error': 'Tracker category not found'}), 404
-#     data_schema = tracker_category.get_schema()
-#     schema = TrackerFieldSchema()
-#     try:
-#         validated_data = schema.load(request.json)
-#     except ValidationError as err:
-#         return jsonify({'error': 'Validation failed', 'details': err.messages}), 400
-#     new_field = TrackerField(
-#         category_id=tracker_category.id,
-#         **validated_data)
-#     db.session.add(new_field)
-#     db.session.flush()
-#     new_field.field_order = new_field.id
-#     db.session.commit()
-#     data_schema[validated_data['field_group']].append(new_field)
-#     tracker_category.data_schema = data_schema
-#     db.session.update(tracker_category)
-#     db.session.commit()
-#     return jsonify({'message': 'Field created successfully'}), 201
+# Create a new field in the data schema of a tracker
+
+
+# Update a field of the data schema of a tracker
+
+
+# Delete a field of the data schema of a tracker
+
+
+#OPTION FIELD ROUTES
+
+# Create a new option field for a tracker
+
+
+
+# Update an option field of a tracker
+
+
+# Delete an option field of a tracker
+
+
+
+
