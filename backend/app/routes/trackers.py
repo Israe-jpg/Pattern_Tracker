@@ -11,7 +11,7 @@ from app.models.tracker_field import TrackerField
 from app.models.tracker_category import TrackerCategory
 from app.models.field_option import FieldOption
 from app.schemas.user_schemas import UserRegistrationSchema, UserLoginSchema
-from app.schemas.tracker_schemas import TrackerSchema, TrackerUpdateSchema, TrackerPatchSchema, TrackerFieldSchema, CustomCategorySchema
+from app.schemas.tracker_schemas import TrackerSchema, TrackerUpdateSchema, TrackerPatchSchema, TrackerFieldSchema, CustomCategorySchema, FieldOptionSchema
 from app.services.category_service import CategoryService
 
 trackers_bp = Blueprint('trackers', __name__)
@@ -150,8 +150,6 @@ def create_custom_category():
         db.session.rollback()
         return jsonify({'error': f'Failed to create custom category: {str(e)}'}), 500
 
-
-
 #DATA SCHEMA ROUTES
 
 # Get data schema of a tracker
@@ -173,19 +171,51 @@ def get_tracker_fields(tracker_id):
     }), 200
 
 # Create a new field in the data schema of a tracker
-
-
-# Update a field of the data schema of a tracker
-
-
-# Delete a field of the data schema of a tracker
-
-
-#OPTION FIELD ROUTES
-
-# Create a new option field for a tracker
-
-
+@trackers_bp.route('/<int:tracker_id>/create-new-field', methods=['POST'])
+@jwt_required()
+def create_new_field(tracker_id):
+    current_user_id = get_jwt_identity()
+    tracker = Tracker.query.filter_by(id=tracker_id, user_id=current_user_id).first()
+    if not tracker:
+        return jsonify({'error': 'Tracker not found'}), 404
+    
+    tracker_category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
+    if not tracker_category:
+        return jsonify({'error': 'Tracker category not found'}), 404
+    
+    if CategoryService.is_default_category(tracker_category.name):
+        return jsonify({'error': 'Cannot modify default categories'}), 403
+    
+    try:
+        field_data = request.json.get('field_data', {})
+        options_data = request.json.get('options', [])
+        
+        if not field_data.get('field_name') or not options_data:
+            return jsonify({'error': 'field_data and options are required'}), 400
+        
+        # Validate options
+        option_schema = FieldOptionSchema()
+        validated_options = []
+        for option_data in options_data:
+            try:
+                validated_options.append(option_schema.load(option_data))
+            except ValidationError as err:
+                return jsonify({'error': 'Option validation failed', 'details': err.messages}), 400
+        
+        # One service call handles everything
+        new_field = CategoryService.create_new_field(
+            tracker_category,
+            field_data,
+            validated_options
+        )
+        
+        return jsonify({
+            'message': 'Field created successfully',
+            'field': new_field.to_dict()
+        }), 201
+        
+    except Exception as e:
+        return jsonify({'error': f'Failed to create field: {str(e)}'}), 500
 
 # Update an option field of a tracker
 
