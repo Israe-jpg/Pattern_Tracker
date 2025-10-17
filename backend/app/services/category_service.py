@@ -149,7 +149,96 @@ class CategoryService:
                 option_order += 1
             
             field_order += 1
-    
+    @staticmethod
+    def create_new_field(tracker_category, field_data, validated_options):
+        """
+        Add a single custom field to an existing category.
+        Creates TrackerField + FieldOptions + updates schema
+        
+        Args:
+            tracker_category: The TrackerCategory instance
+            field_data: Dict with field_name, display_label, help_text
+            validated_options: List of validated option dictionaries
+        
+        Returns:
+            The created TrackerField
+        """
+        try:
+            field_name = field_data['field_name']
+            
+            # Get the highest field_order in this category
+            max_order = db.session.query(db.func.max(TrackerField.field_order)).filter_by(
+                category_id=tracker_category.id
+            ).scalar() or 0
+            
+            # Create the TrackerField
+            tracker_field = TrackerField(
+                category_id=tracker_category.id,
+                field_name=field_name,
+                field_group='custom',
+                field_order=max_order + 1,
+                display_label=field_data.get('display_label', field_name),
+                help_text=field_data.get('help_text'),
+                is_active=True
+            )
+            db.session.add(tracker_field)
+            db.session.flush()  # Get the ID
+            
+            # Create FieldOptions
+            for option_order, option_data in enumerate(validated_options):
+                field_option = FieldOption(
+                    tracker_field_id=tracker_field.id,
+                    option_name=option_data['option_name'],
+                    option_type=option_data['option_type'],
+                    option_order=option_order,
+                    is_required=option_data.get('is_required', False),
+                    display_label=option_data.get('display_label'),
+                    help_text=option_data.get('help_text'),
+                    placeholder=option_data.get('placeholder'),
+                    default_value=option_data.get('default_value'),
+                    min_value=option_data.get('min_value'),
+                    max_value=option_data.get('max_value'),
+                    max_length=option_data.get('max_length'),
+                    step=option_data.get('step'),
+                    choices=option_data.get('choices'),
+                    choice_labels=option_data.get('choice_labels'),
+                    validation_rules=option_data.get('validation_rules'),
+                    display_options=option_data.get('display_options'),
+                    is_active=True
+                )
+                db.session.add(field_option)
+            
+            db.session.commit()
+            
+            # Query fresh category from database to ensure active session
+            from app.models.tracker_category import TrackerCategory
+            fresh_category = TrackerCategory.query.filter_by(id=tracker_category.id).first()
+            
+            # Update the data schema
+            data_schema = dict(fresh_category.data_schema) if fresh_category.data_schema else {}
+            if 'custom' not in data_schema:
+                data_schema['custom'] = {}
+            
+            data_schema['custom'][field_name] = {}
+            
+            for validated_option in validated_options:
+                option_schema = CategoryService._build_option_schema(validated_option)
+                data_schema['custom'][field_name][validated_option['option_name']] = option_schema
+            
+            # Update schema with proper change detection
+            fresh_category.data_schema = data_schema
+            from sqlalchemy.orm.attributes import flag_modified
+            flag_modified(fresh_category, 'data_schema')
+            
+            db.session.add(fresh_category)
+            db.session.commit()
+            
+            return tracker_field
+            
+        except Exception as e:
+            db.session.rollback()
+            raise e
+
     @staticmethod
     def _create_custom_fields(category_id, custom_fields_data):
 
