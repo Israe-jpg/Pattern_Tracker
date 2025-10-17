@@ -240,60 +240,81 @@ class CategoryService:
             raise e
 
     @staticmethod
-    def update_field_schema(tracker_field, option_data):
+    def create_new_option(tracker_field, option_data):
         """
-        Update the data schema of a field.
+        Add a new option to an existing field.
         
         Args:
             tracker_field: The TrackerField instance
             option_data: Dict with option details
-        """
-    @staticmethod
-    def update_order_of_field(tracker_field):
-        """
-        Update the order of a field.
         
-        Args:
-            tracker_field: The TrackerField instance
+        Returns:
+            The created FieldOption
         """
         try:
-            tracker_field.field_order += 1
-            db.session.add(tracker_field)
+            # Get the highest option_order for this field
+            max_order = db.session.query(db.func.max(FieldOption.option_order)).filter_by(
+                tracker_field_id=tracker_field.id
+            ).scalar() or 0
+            
+            # Create the FieldOption with proper defaults
+            field_option = FieldOption(
+                tracker_field_id=tracker_field.id,
+                option_name=option_data['option_name'],
+                option_type=option_data['option_type'],
+                option_order=max_order + 1,
+                is_required=option_data.get('is_required', False),
+                display_label=option_data.get('display_label'),
+                help_text=option_data.get('help_text'),
+                placeholder=option_data.get('placeholder'),
+                default_value=option_data.get('default_value'),
+                min_value=option_data.get('min_value'),
+                max_value=option_data.get('max_value'),
+                max_length=option_data.get('max_length'),
+                step=option_data.get('step'),
+                choices=option_data.get('choices'),
+                choice_labels=option_data.get('choice_labels'),
+                validation_rules=option_data.get('validation_rules'),
+                display_options=option_data.get('display_options'),
+                is_active=option_data.get('is_active', True)
+            )
+            
+            db.session.add(field_option)
             db.session.commit()
-            return tracker_field
-        except Exception as e:
-            db.session.rollback()
-            raise e
-    @staticmethod
-    def delete_field(tracker_field):
-        """
-        Delete a field.
-        
-        Args:
-            tracker_field: The TrackerField instance
-        """
-        try:
-            db.session.delete(tracker_field)
+            
+            # Update the data schema to include the new option
+            # Query fresh category from database to ensure active session
+            fresh_category = TrackerCategory.query.filter_by(id=tracker_field.category_id).first()
+            
+            # Update the schema
+            data_schema = dict(fresh_category.data_schema) if fresh_category.data_schema else {}
+            if 'custom' not in data_schema:
+                data_schema['custom'] = {}
+            if tracker_field.field_name not in data_schema['custom']:
+                data_schema['custom'][tracker_field.field_name] = {}
+            
+            # Add the new option to the schema
+            option_schema = CategoryService._build_option_schema(option_data)
+            data_schema['custom'][tracker_field.field_name][option_data['option_name']] = option_schema
+            
+            # Update schema with proper change detection
+            fresh_category.data_schema = data_schema
+            from sqlalchemy.orm.attributes import flag_modified
+            flag_modified(fresh_category, 'data_schema')
+            
+            db.session.add(fresh_category)
             db.session.commit()
-    @staticmethod
-    def delete_option_from_field(field_option):
-        """
-        Delete an option from a field.
-        
-        Args:
-            field_option: The FieldOption instance
-        """
-        try:
-            db.session.delete(field_option)
-            db.session.commit()
+            
             return field_option
+            
         except Exception as e:
             db.session.rollback()
             raise e
+    
     @staticmethod
-    def add_option_to_field(tracker_field, option_data):
+    def add_option_to_schema(tracker_field, option_data):
         """
-        Add a new option to a field.
+        Add a new option to the data schema of a field.
         
         Args:
             tracker_field: The TrackerField instance
