@@ -145,7 +145,6 @@ def create_custom_category():
             'category': category.to_dict(),
             'tracker_id': tracker.id
         }), 201
-        
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': f'Failed to create custom category: {str(e)}'}), 500
@@ -216,6 +215,38 @@ def create_new_field(tracker_id):
         
     except Exception as e:
         return jsonify({'error': f'Failed to create field: {str(e)}'}), 500
+
+#Create a new option in a field of the data schema of a tracker
+@trackers_bp.route('/<int:tracker_field_id>/create-new-option', methods=['POST'])
+@jwt_required()
+def create_new_option(tracker_field_id):
+    current_user_id = get_jwt_identity()
+    
+    # Find the field and verify it belongs to the user's tracker
+    tracker_field = TrackerField.query.filter_by(id=tracker_field_id).first()
+    if not tracker_field:
+        return jsonify({'error': 'Tracker field not found'}), 404
+    
+    # Verify the field belongs to a category that has a tracker owned by the user
+    tracker = Tracker.query.filter_by(category_id=tracker_field.category_id, user_id=current_user_id).first()
+    if not tracker:
+        return jsonify({'error': 'Tracker field not found'}), 404
+    try:
+        option_data = request.json.get('option_data', {})
+        if not option_data.get('option_name'):
+            return jsonify({'error': 'option_name is required'}), 400
+        new_option = CategoryService.create_new_option(
+            tracker_field,
+            option_data
+        )
+        
+        return jsonify({
+            'message': 'Option created successfully',
+            'option': new_option.to_dict()
+        }), 201
+        
+    except Exception as e:
+        return jsonify({'error': f'Failed to create option: {str(e)}'}), 500
 
 # Update an option field of a tracker
 
