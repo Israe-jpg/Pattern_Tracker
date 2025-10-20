@@ -328,11 +328,11 @@ class CategoryService:
             db.session.delete(field_option)
             db.session.commit() 
             if category:
-            CategoryService._remove_option_from_schema(
-                category, 
-                field_option.tracker_field.field_name, 
-                field_option.option_name
-            )
+                CategoryService._remove_option_from_schema(
+                    category, 
+                    field_option.tracker_field.field_name, 
+                    field_option.option_name
+                )
         
         except Exception as e:
             db.session.rollback()
