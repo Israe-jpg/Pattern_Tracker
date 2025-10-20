@@ -324,16 +324,22 @@ class CategoryService:
             if not field_option:
                 raise ValueError("Field option not found")
             
+            # Get category and field info before deletion
             category = TrackerCategory.query.filter_by(id=field_option.tracker_field.category_id).first()
+            field_name = field_option.tracker_field.field_name
+            option_name = field_option.option_name
+            
+            # Delete the option
             db.session.delete(field_option)
             db.session.commit() 
+            
+            # Update the category's data schema
             if category:
                 CategoryService._remove_option_from_schema(
                     category, 
-                    field_option.tracker_field.field_name, 
-                    field_option.option_name
+                    field_name, 
+                    option_name
                 )
-        
         except Exception as e:
             db.session.rollback()
             raise e
@@ -354,10 +360,21 @@ class CategoryService:
                 data_schema['custom'] = {}
             if field_name not in data_schema['custom']:
                 data_schema['custom'][field_name] = {}
-            data_schema['custom'][field_name].pop(option_name)
-            category.data_schema = data_schema
-            db.session.add(category)
-            db.session.commit()
+            
+            # Remove the option if it exists
+            if option_name in data_schema['custom'][field_name]:
+                data_schema['custom'][field_name].pop(option_name)
+                
+                # If no options left for this field, remove the field entirely
+                if not data_schema['custom'][field_name]:
+                    del data_schema['custom'][field_name]
+                
+                # Update the schema with proper change detection
+                category.data_schema = data_schema
+                from sqlalchemy.orm.attributes import flag_modified
+                flag_modified(category, 'data_schema')
+                db.session.add(category)
+                db.session.commit()
         except Exception as e:
             db.session.rollback()
             raise e
