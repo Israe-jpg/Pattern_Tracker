@@ -312,6 +312,33 @@ class CategoryService:
             raise e
     
     @staticmethod
+    def delete_option_from_field(option_data):
+        """
+        Delete an option from a field.
+        
+        Args:
+            option_data: Dict with option details
+        """
+        try:
+            field_option = FieldOption.query.filter_by(id=option_data['id']).first()
+            if not field_option:
+                raise ValueError("Field option not found")
+            
+            category = TrackerCategory.query.filter_by(id=field_option.tracker_field.category_id).first()
+            db.session.delete(field_option)
+            db.session.commit() 
+            if category:
+            CategoryService._remove_option_from_schema(
+                category, 
+                field_option.tracker_field.field_name, 
+                field_option.option_name
+            )
+        
+        except Exception as e:
+            db.session.rollback()
+            raise e
+
+    @staticmethod
     def add_option_to_schema(tracker_field, option_data):
         """
         Add a new option to the data schema of a field.

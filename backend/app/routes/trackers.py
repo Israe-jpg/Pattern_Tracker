@@ -252,7 +252,21 @@ def create_new_option(tracker_field_id):
 
 
 # Delete an option field of a tracker
-
-
-
-
+@trackers_bp.route('/<int:option_id>/delete-option', methods=['DELETE'])
+@jwt_required()
+def delete_option(option_id):
+    current_user_id = get_jwt_identity()
+    option = FieldOption.query.filter_by(id=option_id).first()
+    if not option:
+        return jsonify({'error': 'Option not found'}), 404
+    
+    tracker = Tracker.query.filter_by(category_id=option.tracker_field.category_id, user_id=current_user_id).first()
+    if not tracker:
+        return jsonify({'error': 'Tracker not found'}), 404
+    try:
+        CategoryService.delete_option_from_field(option)
+        db.session.commit()
+        return jsonify({'message': 'Option deleted successfully'}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Failed to delete option: {str(e)}'}), 500
