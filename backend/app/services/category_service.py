@@ -339,6 +339,30 @@ class CategoryService:
             raise e
 
     @staticmethod
+    def _remove_option_from_schema(category, field_name, option_name):
+        """
+        Remove an option from the data schema of a field.
+        
+        Args:
+            category: The TrackerCategory instance
+            field_name: The name of the field
+            option_name: The name of the option
+        """
+        try:
+            data_schema = dict(category.data_schema) if category.data_schema else {}
+            if 'custom' not in data_schema:
+                data_schema['custom'] = {}
+            if field_name not in data_schema['custom']:
+                data_schema['custom'][field_name] = {}
+            data_schema['custom'][field_name].pop(option_name)
+            category.data_schema = data_schema
+            db.session.add(category)
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            raise e
+
+    @staticmethod
     def add_option_to_schema(tracker_field, option_data):
         """
         Add a new option to the data schema of a field.
