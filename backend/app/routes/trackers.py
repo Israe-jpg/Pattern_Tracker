@@ -1,55 +1,130 @@
 from flask import Blueprint, request, jsonify
-from flask_jwt_extended import create_access_token, create_refresh_token, get_jwt_identity, jwt_required
+from flask_jwt_extended import get_jwt_identity, jwt_required
 from marshmallow import ValidationError
-from datetime import datetime
+from typing import Tuple, Dict, Any
+
 from app import db
 from app.models.user import User
 from app.models.tracker import Tracker
-from app.config import tracker_config
-from app.models.tracking_data import TrackingData
 from app.models.tracker_field import TrackerField
 from app.models.tracker_category import TrackerCategory
 from app.models.field_option import FieldOption
-from app.schemas.user_schemas import UserRegistrationSchema, UserLoginSchema
-from app.schemas.tracker_schemas import TrackerSchema, TrackerUpdateSchema, TrackerPatchSchema, TrackerFieldSchema, CustomCategorySchema, FieldOptionSchema
+from app.schemas.tracker_schemas import (
+    CustomCategorySchema, FieldOptionSchema
+)
 from app.services.category_service import CategoryService
 
 trackers_bp = Blueprint('trackers', __name__)
 
-#TRACKER ROUTES
 
-#setup default trackers for user
-@trackers_bp.route('/setup-default-trackers', methods=['POST'])
-@jwt_required()  
-def setup_default_trackers():
-    current_user_id = get_jwt_identity()
-    user = User.query.filter_by(id=current_user_id).first()
-    
+# HELPER FUNCTIONS
+
+
+def get_current_user() -> Tuple[User, int]:
+    user_id = get_jwt_identity()
+    user = User.query.filter_by(id=user_id).first()
     if not user:
-        return jsonify({'error': 'User not found'}), 404
+        raise ValueError("User not found")
+    return user, user_id
+
+
+def verify_tracker_ownership(tracker_id: int, user_id: int) -> Tracker:
+    tracker = Tracker.query.filter_by(id=tracker_id, user_id=user_id).first()
+    if not tracker:
+        raise ValueError("Tracker not found")
+    return tracker
+
+
+def verify_field_ownership(tracker_field_id: int, user_id: int) -> TrackerField:
+    tracker_field = TrackerField.query.filter_by(id=tracker_field_id).first()
+    if not tracker_field:
+        raise ValueError("Tracker field not found")
     
-    # Check if user already has trackers 
-    existing_trackers = Tracker.query.filter_by(user_id=current_user_id).all()
+    # Verify field belongs to user's tracker
+    tracker = Tracker.query.filter_by(
+        category_id=tracker_field.category_id,
+        user_id=user_id
+    ).first()
+    if not tracker:
+        raise ValueError("Unauthorized - field does not belong to your tracker")
+    
+    return tracker_field
+
+
+def verify_option_ownership(option_id: int, user_id: int) -> FieldOption:
+    option = FieldOption.query.filter_by(id=option_id).first()
+    if not option:
+        raise ValueError("Option not found")
+    
+    # Verify option belongs to user's tracker
+    tracker = Tracker.query.filter_by(
+        category_id=option.tracker_field.category_id,
+        user_id=user_id
+    ).first()
+    if not tracker:
+        raise ValueError("Unauthorized - option does not belong to your tracker")
+    
+    return option
+
+
+def error_response(message: str, status_code: int = 400, details: Dict[str, Any] = None) -> Tuple[Dict, int]:
+    response = {'error': message}
+    if details:
+        response['details'] = details
+    return jsonify(response), status_code
+
+
+def success_response(message: str, data: Dict[str, Any] = None, status_code: int = 200) -> Tuple[Dict, int]:
+    response = {'message': message}
+    if data:
+        response.update(data)
+    return jsonify(response), status_code
+
+
+# TRACKER SETUP ROUTES
+
+
+@trackers_bp.route('/setup-default-trackers', methods=['POST'])
+@jwt_required()
+def setup_default_trackers():
+    try:
+        user, user_id = get_current_user()
+    except ValueError:
+        return error_response("User not found", 404)
+    
+    # Check if user already has trackers
+    existing_trackers = Tracker.query.filter_by(user_id=user_id).all()
     if existing_trackers:
-        return jsonify({
-            'message': 'Trackers already configured',
-            'trackers': [{'id': t.id, 'category_id': t.category_id, 'is_default': t.is_default} for t in existing_trackers]
-        }), 200
+        return success_response(
+            "Trackers already configured",
+            {
+                'trackers': [
+                    {'id': t.id, 'category_id': t.category_id, 'is_default': t.is_default}
+                    for t in existing_trackers
+                ]
+            },
+            200
+        )
     
-    # Default to female if gender not set (for testing)
-    user_gender = user.gender if user.gender else 'female'
+    # Determine default category based on gender
+    user_gender = user.gender or 'female'  # Default to female for testing
+    is_female = user_gender.lower() == 'female'
     
-    if user_gender == 'female':
+    # Get categories based on gender
+    if is_female:
         categories = TrackerCategory.query.all()
-        default_name = 'Period Tracker'  
+        default_name = 'Period Tracker'
     else:
-        categories = TrackerCategory.query.filter(TrackerCategory.name != 'Period Tracker').all()
-        default_name = 'Workout Tracker' 
+        categories = TrackerCategory.query.filter(
+            TrackerCategory.name != 'Period Tracker'
+        ).all()
+        default_name = 'Workout Tracker'
     
+    # Create trackers
     trackers_created = 0
     for category in categories:
         tracker = Tracker(
-            user_id=current_user_id, 
+            user_id=user_id,
             category_id=category.id,
             is_default=(category.name == default_name)
         )
@@ -57,75 +132,114 @@ def setup_default_trackers():
         trackers_created += 1
     
     db.session.commit()
-    return jsonify({
-        'message': 'Default trackers setup successfully',
-        'trackers_created': trackers_created,
-        'user_gender': user_gender
-    }), 201
+    
+    return success_response(
+        "Default trackers setup successfully",
+        {
+            'trackers_created': trackers_created,
+            'user_gender': user_gender
+        },
+        201
+    )
 
 
-#get current user's trackers
+# TRACKER MANAGEMENT ROUTES
+
+
 @trackers_bp.route('/my-trackers', methods=['GET'])
 @jwt_required()
 def get_my_trackers():
-    current_user_id = get_jwt_identity()
-    trackers = Tracker.query.filter_by(user_id=current_user_id).all()
+    try:
+        _, user_id = get_current_user()
+    except ValueError:
+        return error_response("User not found", 404)
     
-    return jsonify({
-        'trackers': [t.to_dict() for t in trackers],
-        'total_count': len(trackers)
-    }), 200
+    trackers = Tracker.query.filter_by(user_id=user_id).all()
+    
+    return success_response(
+        "Trackers retrieved successfully",
+        {
+            'trackers': [t.to_dict() for t in trackers],
+            'total_count': len(trackers)
+        }
+    )
 
-#delete a tracker from the user's trackers list
+
 @trackers_bp.route('/delete-tracker/<int:tracker_id>', methods=['DELETE'])
 @jwt_required()
-def delete_tracker(tracker_id):
-    current_user_id = get_jwt_identity()
-    tracker = Tracker.query.filter_by(id=tracker_id, user_id=current_user_id).first()
-    if not tracker:
-        return jsonify({'error': 'Tracker not found'}), 404
-    db.session.delete(tracker)
-    if not tracker.is_default:
-        custom_tracker_category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
-        if custom_tracker_category:
-            db.session.delete(custom_tracker_category)
-    db.session.commit()
-    return jsonify({'message': 'Tracker deleted successfully'}), 200
+def delete_tracker(tracker_id: int):
+    try:
+        _, user_id = get_current_user()
+        tracker = verify_tracker_ownership(tracker_id, user_id)
+    except ValueError as e:
+        return error_response(str(e), 404 if "not found" in str(e) else 403)
+    
+    try:
+        db.session.delete(tracker)
+        
+        # Delete associated custom category if not default
+        if not tracker.is_default:
+            category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
+            if category:
+                db.session.delete(category)
+        
+        db.session.commit()
+        return success_response("Tracker deleted successfully")
+    except Exception as e:
+        db.session.rollback()
+        return error_response(f"Failed to delete tracker: {str(e)}", 500)
 
-#update the default tracker from the list of user's trackers
+
 @trackers_bp.route('/update-default-tracker/<int:tracker_id>', methods=['PUT'])
 @jwt_required()
-def update_default_tracker(tracker_id):
-    current_user_id = get_jwt_identity()
-    predefault_tracker = Tracker.query.filter_by(user_id=current_user_id, is_default=True).first()
-    if not predefault_tracker:
-        return jsonify({'error': 'Predefault tracker not found'}), 404
-    predefault_tracker.is_default = False
-    tracker = Tracker.query.filter_by(id=tracker_id, user_id=current_user_id).first()
-    if not tracker:
-        return jsonify({'error': 'Tracker not found'}), 404
-    tracker.is_default = True
-    db.session.commit()
-    return jsonify({'message': 'Tracker updated successfully'}), 200
+def update_default_tracker(tracker_id: int):
+    try:
+        _, user_id = get_current_user()
+        
+        # Get current default tracker
+        predefault_tracker = Tracker.query.filter_by(
+            user_id=user_id,
+            is_default=True
+        ).first()
+        if not predefault_tracker:
+            return error_response("No current default tracker found", 404)
+        
+        # Get new default tracker
+        new_default = verify_tracker_ownership(tracker_id, user_id)
+    except ValueError as e:
+        return error_response(str(e), 404)
+    
+    try:
+        predefault_tracker.is_default = False
+        new_default.is_default = True
+        db.session.commit()
+        
+        return success_response("Default tracker updated successfully")
+    except Exception as e:
+        db.session.rollback()
+        return error_response(f"Failed to update default tracker: {str(e)}", 500)
 
 
-#CUSTOM TRACKERS ROUTES
+# CUSTOM CATEGORY ROUTES
 
-# Create a custom category with baseline + custom fields
+
 @trackers_bp.route('/create-custom-category', methods=['POST'])
 @jwt_required()
 def create_custom_category():
-    current_user_id = get_jwt_identity()
+    try:
+        _, user_id = get_current_user()
+    except ValueError:
+        return error_response("User not found", 404)
     
     # Validate input
-    schema = CustomCategorySchema()
     try:
+        schema = CustomCategorySchema()
         validated_data = schema.load(request.json)
     except ValidationError as err:
-        return jsonify({'error': 'Validation failed', 'details': err.messages}), 400
+        return error_response("Validation failed", 400, err.messages)
     
     try:
-        # Create custom category using the service
+        # Create custom category
         category = CategoryService.create_custom_category(
             name=validated_data['name'],
             custom_fields_data=validated_data['custom_fields']
@@ -133,141 +247,146 @@ def create_custom_category():
         
         # Create tracker for the user
         tracker = Tracker(
-            user_id=current_user_id,
+            user_id=user_id,
             category_id=category.id,
             is_default=False
         )
         db.session.add(tracker)
         db.session.commit()
         
-        return jsonify({
-            'message': 'Custom category and tracker created successfully',
-            'category': category.to_dict(),
-            'tracker_id': tracker.id
-        }), 201
+        return success_response(
+            "Custom category and tracker created successfully",
+            {
+                'category': category.to_dict(),
+                'tracker_id': tracker.id
+            },
+            201
+        )
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': f'Failed to create custom category: {str(e)}'}), 500
+        return error_response(f"Failed to create custom category: {str(e)}", 500)
 
-#DATA SCHEMA ROUTES
 
-# Get data schema of a tracker
+# DATA SCHEMA ROUTES
+
+#Fields
+
 @trackers_bp.route('/<int:tracker_id>/get-data-schema', methods=['GET'])
 @jwt_required()
-def get_tracker_fields(tracker_id):
-    
-    current_user_id = get_jwt_identity()
-    
-    tracker = Tracker.query.filter_by(id=tracker_id, user_id=current_user_id).first()
-    if not tracker:
-        return jsonify({'error': 'Tracker not found'}), 404
-    tracker_category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
-    if not tracker_category:
-        return jsonify({'error': 'Tracker category not found'}), 404
-    data_schema = tracker_category.data_schema
-    return jsonify({
-        'data_schema': data_schema
-    }), 200
-
-# Create a new field in the data schema of a tracker
-@trackers_bp.route('/<int:tracker_id>/create-new-field', methods=['POST'])
-@jwt_required()
-def create_new_field(tracker_id):
-    current_user_id = get_jwt_identity()
-    tracker = Tracker.query.filter_by(id=tracker_id, user_id=current_user_id).first()
-    if not tracker:
-        return jsonify({'error': 'Tracker not found'}), 404
-    
-    tracker_category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
-    if not tracker_category:
-        return jsonify({'error': 'Tracker category not found'}), 404
-    
-    if CategoryService.is_default_category(tracker_category.name):
-        return jsonify({'error': 'Cannot modify default categories'}), 403
+def get_tracker_schema(tracker_id: int):
+    try:
+        _, user_id = get_current_user()
+        tracker = verify_tracker_ownership(tracker_id, user_id)
+    except ValueError as e:
+        return error_response(str(e), 404)
     
     try:
+        category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
+        if not category:
+            return error_response("Tracker category not found", 404)
+        
+        return success_response(
+            "Data schema retrieved successfully",
+            {'data_schema': category.data_schema}
+        )
+    except Exception as e:
+        return error_response(f"Failed to retrieve schema: {str(e)}", 500)
+
+
+@trackers_bp.route('/<int:tracker_id>/create-new-field', methods=['POST'])
+@jwt_required()
+def create_new_field(tracker_id: int):
+    try:
+        _, user_id = get_current_user()
+        tracker = verify_tracker_ownership(tracker_id, user_id)
+    except ValueError as e:
+        return error_response(str(e), 404)
+    
+    try:
+        category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
+        if not category:
+            return error_response("Tracker category not found", 404)
+        
+        # Prevent modification of default categories
+        if CategoryService.is_default_category(category.name):
+            return error_response("Cannot modify default categories", 403)
+        
+        # Extract and validate request data
         field_data = request.json.get('field_data', {})
         options_data = request.json.get('options', [])
         
         if not field_data.get('field_name') or not options_data:
-            return jsonify({'error': 'field_data and options are required'}), 400
+            return error_response("field_data with field_name and options array are required", 400)
         
         # Validate options
         option_schema = FieldOptionSchema()
         validated_options = []
+        
         for option_data in options_data:
             try:
                 validated_options.append(option_schema.load(option_data))
             except ValidationError as err:
-                return jsonify({'error': 'Option validation failed', 'details': err.messages}), 400
+                return error_response("Option validation failed", 400, err.messages)
         
-        # One service call handles everything
+        # Create field
         new_field = CategoryService.create_new_field(
-            tracker_category,
+            category,
             field_data,
             validated_options
         )
         
-        return jsonify({
-            'message': 'Field created successfully',
-            'field': new_field.to_dict()
-        }), 201
-        
+        return success_response(
+            "Field created successfully",
+            {'field': new_field.to_dict()},
+            201
+        )
     except Exception as e:
-        return jsonify({'error': f'Failed to create field: {str(e)}'}), 500
+        return error_response(f"Failed to create field: {str(e)}", 500)
 
-#Create a new option in a field of the data schema of a tracker
+#Options
 @trackers_bp.route('/<int:tracker_field_id>/create-new-option', methods=['POST'])
 @jwt_required()
-def create_new_option(tracker_field_id):
-    current_user_id = get_jwt_identity()
+def create_new_option(tracker_field_id: int):
+    try:
+        _, user_id = get_current_user()
+        tracker_field = verify_field_ownership(tracker_field_id, user_id)
+    except ValueError as e:
+        status = 403 if "Unauthorized" in str(e) else 404
+        return error_response(str(e), status)
     
-    # Find the field and verify it belongs to the user's tracker
-    tracker_field = TrackerField.query.filter_by(id=tracker_field_id).first()
-    if not tracker_field:
-        return jsonify({'error': 'Tracker field not found'}), 404
-    
-    # Verify the field belongs to a category that has a tracker owned by the user
-    tracker = Tracker.query.filter_by(category_id=tracker_field.category_id, user_id=current_user_id).first()
-    if not tracker:
-        return jsonify({'error': 'Tracker field not found'}), 404
     try:
         option_data = request.json.get('option_data', {})
+        
         if not option_data.get('option_name'):
-            return jsonify({'error': 'option_name is required'}), 400
-        new_option = CategoryService.create_new_option(
-            tracker_field,
-            option_data
+            return error_response("option_name is required", 400)
+        
+        if not option_data.get('option_type'):
+            return error_response("option_type is required", 400)
+        
+        # Create option
+        new_option = CategoryService.create_new_option(tracker_field, option_data)
+        
+        return success_response(
+            "Option created successfully",
+            {'option': new_option.to_dict()},
+            201
         )
-        
-        return jsonify({
-            'message': 'Option created successfully',
-            'option': new_option.to_dict()
-        }), 201
-        
     except Exception as e:
-        return jsonify({'error': f'Failed to create option: {str(e)}'}), 500
-
-# Update an option field of a tracker
+        return error_response(f"Failed to create option: {str(e)}", 500)
 
 
-# Delete an option field of a tracker
 @trackers_bp.route('/<int:option_id>/delete-option', methods=['DELETE'])
 @jwt_required()
-def delete_option(option_id):
-    current_user_id = get_jwt_identity()
-    option = FieldOption.query.filter_by(id=option_id).first()
-    if not option:
-        return jsonify({'error': 'Option not found'}), 404
-    
-    # Verify the option belongs to a tracker owned by the user
-    tracker = Tracker.query.filter_by(category_id=option.tracker_field.category_id, user_id=current_user_id).first()
-    if not tracker:
-        return jsonify({'error': 'Unauthorized - option does not belong to your tracker'}), 403
+def delete_option(option_id: int):
+    try:
+        _, user_id = get_current_user()
+        verify_option_ownership(option_id, user_id)
+    except ValueError as e:
+        status = 403 if "Unauthorized" in str(e) else 404
+        return error_response(str(e), status)
     
     try:
-        # Pass the correct parameter format (dict with 'id' key)
-        CategoryService.delete_option_from_field({'id': option_id})
-        return jsonify({'message': 'Option deleted successfully'}), 200
+        CategoryService.delete_option_from_field(option_id)
+        return success_response("Option deleted successfully")
     except Exception as e:
-        return jsonify({'error': f'Failed to delete option: {str(e)}'}), 500
+        return error_response(f"Failed to delete option: {str(e)}", 500)
