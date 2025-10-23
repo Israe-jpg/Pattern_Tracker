@@ -1,6 +1,7 @@
 import json
 import os
 from typing import Dict, List, Any, Optional
+from sqlalchemy.orm.attributes import flag_modified
 from app import db
 from app.models.tracker_category import TrackerCategory
 from app.models.tracker_field import TrackerField
@@ -8,17 +9,14 @@ from app.models.field_option import FieldOption
 
 
 class SchemaManager:
-    #handles data schema operations
     
     @staticmethod
     def build_option_schema(option_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Convert option data to schema format."""
         schema = {
             'type': FieldOption.OPTION_TYPE_MAPPING.get(option_data['option_type'], 'string'),
             'optional': not option_data.get('is_required', False)
         }
         
-        # Add validation rules based on option type
         if 'min_value' in option_data and 'max_value' in option_data:
             schema['range'] = [option_data['min_value'], option_data['max_value']]
         
@@ -38,27 +36,54 @@ class SchemaManager:
     @staticmethod
     def update_category_schema(category: TrackerCategory, field_name: str, 
                                options_dict: Dict[str, Dict[str, Any]]) -> None:
-        data_schema = category.data_schema or {}
+        data_schema = dict(category.data_schema) if category.data_schema else {}
         
         if 'custom' not in data_schema:
             data_schema['custom'] = {}
+        else:
+            data_schema['custom'] = dict(data_schema['custom'])
         
         data_schema['custom'][field_name] = options_dict
+        
         category.data_schema = data_schema
+        flag_modified(category, 'data_schema')
+    
+    @staticmethod
+    def add_option_to_schema(category: TrackerCategory, field_name: str,
+                            option_name: str, option_schema: Dict[str, Any]) -> None:
+        data_schema = dict(category.data_schema) if category.data_schema else {}
+        
+        if 'custom' not in data_schema:
+            data_schema['custom'] = {}
+        else:
+            data_schema['custom'] = dict(data_schema['custom'])
+        
+        if field_name not in data_schema['custom']:
+            data_schema['custom'][field_name] = {}
+        else:
+            data_schema['custom'][field_name] = dict(data_schema['custom'][field_name])
+        
+        data_schema['custom'][field_name][option_name] = option_schema
+        
+        category.data_schema = data_schema
+        flag_modified(category, 'data_schema')
     
     @staticmethod
     def remove_option_from_schema(category: TrackerCategory, field_name: str, 
                                   option_name: str) -> None:
-        data_schema = category.data_schema or {}
+        data_schema = dict(category.data_schema) if category.data_schema else {}
         
         if 'custom' in data_schema and field_name in data_schema['custom']:
+            data_schema['custom'] = dict(data_schema['custom'])
+            data_schema['custom'][field_name] = dict(data_schema['custom'][field_name])
+            
             data_schema['custom'][field_name].pop(option_name, None)
             
-            # Clean up empty field
             if not data_schema['custom'][field_name]:
                 del data_schema['custom'][field_name]
             
             category.data_schema = data_schema
+            flag_modified(category, 'data_schema')
 
 
 class FieldOptionBuilder:
@@ -78,14 +103,13 @@ class FieldOptionBuilder:
         for field in cls.OPTION_FIELDS:
             if field in option_data:
                 kwargs[field] = option_data[field]
-            elif field not in ('option_name', 'option_type'):  # Required fields
+            elif field not in ('option_name', 'option_type'):
                 kwargs[field] = option_data.get(field)
         
         return FieldOption(**kwargs)
 
 
 class CategoryService:
-    #Service for managing tracker categories and their fields
     
     CONFIG_PATH = os.path.join(os.path.dirname(__file__), '..', 'config', 'tracker_schemas.json')
     TYPE_MAPPING = {
@@ -212,17 +236,14 @@ class CategoryService:
                 )
                 db.session.add(field_option)
             
-            db.session.commit()
+            db.session.flush()
             
-            # Build schema options dict
             options_dict = {
                 opt['option_name']: SchemaManager.build_option_schema(opt)
                 for opt in validated_options
             }
             
-            # Update schema
-            fresh_category = TrackerCategory.query.filter_by(id=tracker_category.id).first()
-            SchemaManager.update_category_schema(fresh_category, field_name, options_dict)
+            SchemaManager.update_category_schema(tracker_category, field_name, options_dict)
             db.session.commit()
             
             return tracker_field
@@ -241,20 +262,18 @@ class CategoryService:
                 tracker_field.id, option_data, max_order + 1, is_active=True
             )
             db.session.add(field_option)
-            db.session.commit()
+            db.session.flush()
             
-            # Update schema
-            fresh_category = TrackerCategory.query.filter_by(id=tracker_field.category_id).first()
-            option_schema = SchemaManager.build_option_schema(option_data)
+            category = TrackerCategory.query.filter_by(id=tracker_field.category_id).first()
+            if category:
+                option_schema = SchemaManager.build_option_schema(option_data)
+                SchemaManager.add_option_to_schema(
+                    category,
+                    tracker_field.field_name,
+                    option_data['option_name'],
+                    option_schema
+                )
             
-            data_schema = fresh_category.data_schema or {}
-            if 'custom' not in data_schema:
-                data_schema['custom'] = {}
-            if tracker_field.field_name not in data_schema['custom']:
-                data_schema['custom'][tracker_field.field_name] = {}
-            
-            data_schema['custom'][tracker_field.field_name][option_data['option_name']] = option_schema
-            fresh_category.data_schema = data_schema
             db.session.commit()
             
             return field_option
@@ -272,12 +291,16 @@ class CategoryService:
             field = field_option.tracker_field
             category = TrackerCategory.query.filter_by(id=field.category_id).first()
             
+            option_name = field_option.option_name
+            field_name = field.field_name
+            
             db.session.delete(field_option)
-            db.session.commit()
+            db.session.flush()
             
             if category:
-                SchemaManager.remove_option_from_schema(category, field.field_name, field_option.option_name)
-                db.session.commit()
+                SchemaManager.remove_option_from_schema(category, field_name, option_name)
+            
+            db.session.commit()
         except Exception as e:
             db.session.rollback()
             raise
