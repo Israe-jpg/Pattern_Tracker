@@ -358,6 +358,27 @@ def delete_field(tracker_field_id: int):
     except Exception as e:
         return error_response(f"Failed to delete field: {str(e)}", 500)
 
+@trackers_bp.route('/<int:tracker_field_id>/update-field-display-label', methods=['PUT'])
+@jwt_required()
+def update_field_display_label(tracker_field_id: int):
+    try:
+        _, user_id = get_current_user()
+        tracker_field = verify_field_ownership(tracker_field_id, user_id)
+    except ValueError as e:
+        return error_response(str(e), 404)
+    
+    try:
+        new_label = request.json.get('new_label')
+        if not new_label:
+            return error_response("new_label is required", 400)
+        
+        CategoryService.update_field_display_label(tracker_field_id, new_label)
+        return success_response("Field display label updated successfully")
+    except Exception as e:
+        return error_response(f"Failed to update field display label: {str(e)}", 500)
+
+
+
 #Options
 @trackers_bp.route('/<int:tracker_field_id>/create-new-option', methods=['POST'])
 @jwt_required()

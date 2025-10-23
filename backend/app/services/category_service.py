@@ -95,7 +95,7 @@ class SchemaManager:
             
         category.data_schema = data_schema
         flag_modified(category, 'data_schema')
-        
+
 
 class FieldOptionBuilder:
     
@@ -292,6 +292,19 @@ class CategoryService:
             db.session.rollback()
             raise
     
+    @staticmethod
+    def update_field_display_label(field_id: int, new_label: str) -> None:
+        try:
+            field = TrackerField.query.filter_by(id=field_id).first()
+            if not field:
+                raise ValueError("Field not found")
+            
+            field.display_label = new_label
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            raise
+
     @staticmethod
     def delete_option_from_field(option_id: int) -> None:
         try:
