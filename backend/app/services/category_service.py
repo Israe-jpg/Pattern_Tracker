@@ -306,6 +306,19 @@ class CategoryService:
             raise
 
     @staticmethod
+    def update_field_help_text(field_id: int, new_help_text: str) -> None:
+        try:
+            field = TrackerField.query.filter_by(id=field_id).first()
+            if not field:
+                raise ValueError("Field not found")
+            
+            field.help_text = new_help_text
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            raise
+
+    @staticmethod
     def delete_option_from_field(option_id: int) -> None:
         try:
             field_option = FieldOption.query.filter_by(id=option_id).first()

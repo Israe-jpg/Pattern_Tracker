@@ -377,7 +377,24 @@ def update_field_display_label(tracker_field_id: int):
     except Exception as e:
         return error_response(f"Failed to update field display label: {str(e)}", 500)
 
-
+@trackers_bp.route('/<int:tracker_field_id>/update-field-help-text', methods=['PUT'])
+@jwt_required()
+def update_field_help_text(tracker_field_id: int):
+    try:
+        _, user_id = get_current_user()
+        tracker_field = verify_field_ownership(tracker_field_id, user_id)
+    except ValueError as e:
+        return error_response(str(e), 404)
+    
+    try:
+        new_help_text = request.json.get('new_help_text')
+        if not new_help_text:
+            return error_response("new_help_text is required", 400)
+        
+        CategoryService.update_field_help_text(tracker_field_id, new_help_text)
+        return success_response("Field help text updated successfully")
+    except Exception as e:
+        return error_response(f"Failed to update field help text: {str(e)}", 500)
 
 #Options
 @trackers_bp.route('/<int:tracker_field_id>/create-new-option', methods=['POST'])
