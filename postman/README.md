@@ -1,68 +1,87 @@
-# Pattern Tracker APIs Testing
+# Health Tracker API - Postman Collection
 
-This folder has the Postman collection for testing our Health Tracker API. Right now it covers the basic authentication stuff, but I'll keep adding more endpoints as I build them.
+This collection contains all the API endpoints for the Health Tracker application. It's organized into logical groups to make testing easier.
 
-## What's in here
+## Getting Started
 
-- `pattern_tracker_apis.postman_collection.json` - The main collection with all our API tests
-- `README.md` - This file
+1. **Import the collection** into Postman
+2. **Start your backend server** (usually runs on `http://localhost:5000`)
+3. **Get your auth token** by logging in first
+4. **Update the Bearer token** in the collection settings
 
-## Getting started
+## API Endpoints Overview
 
-### Import the collection
+### Authentication
 
-1. Open Postman
-2. Hit the Import button
-3. Choose the JSON file from this folder
+- **Register** - Create a new user account
+- **Login** - Get your access token
+- **Logout** - End your session
 
-### Set up your environment
+### Trackers (Main Categories)
 
-You'll want to create an environment in Postman with:
+- **Setup Default Trackers** - Initialize baseline, period, and workout trackers
+- **Get My Trackers** - See all your available trackers
+- **Delete Tracker** - Remove a tracker from your list
+- **Change Default Tracker** - Set which tracker is your main one
+- **Create Custom Tracker** - Build your own tracking category
 
-- `base_url` set to `http://localhost:5000` (or wherever you're running the API)
+### Tracker Fields
 
-### Update the test data
+- **Get Field Schema** - See all fields in a specific tracker
+- **Create New Field** - Add a custom field to a tracker
+- **Delete Field** - Remove a field from a tracker
+- **Update Field Label** - Change how a field appears
+- **Update Field Help Text** - Modify the help description
 
-Before running tests, change the dummy data in the requests:
+### Field Options
 
-- Put in a real email instead of `demo@example.com`
-- Use your actual password instead of `your_password_here`
+- **Create New Option** - Add input options to a field
+- **Delete Option** - Remove an option from a field
+- **Update Option Info** - Modify option details
 
-## How to test the API
+### Health Check
 
-### Start with the health check
+- **Health Check** - Verify the API is running
 
-Hit the `/api/health` endpoint first to make sure everything's running. No auth needed for this one.
+## Authentication Flow
 
-### Register a new user
+1. **Register** with your details
+2. **Login** to get your token
+3. **Copy the token** from the login response
+4. **Update the Bearer token** in all requests (or set it in collection variables)
 
-Use the register endpoint to create a test account. You'll need to fill in the username, email, password, and name fields.
+## Tips for Testing
 
-### Log in
+- **Start with authentication** - Always login first
+- **Use realistic data** - The examples show proper field structures
+- **Check responses** - Look for success/error messages
+- **Update IDs** - Replace placeholder IDs with real ones from responses
 
-Once you have an account, use the login endpoint. This gives you back an access token (and refresh token). Copy that access token - you'll need it for the logout test.
+## Common Field Types
 
-### Test logout
+- **rating** - 1-10 scale inputs
+- **single_choice** - Pick one option
+- **multiple_choice** - Pick multiple options
+- **number_input** - Numeric values
+- **text** - Text input
+- **yes_no** - Boolean choices
 
-For the logout endpoint, you need to be authenticated. Either:
+## Example Usage
 
-- Set the `access_token` variable in your environment, or
-- Manually paste the token into the Authorization tab
+1. **Register** → Get user account
+2. **Login** → Get access token
+3. **Setup Default Trackers** → Initialize your tracking setup
+4. **Create Custom Tracker** → Add your own tracking categories
+5. **Add Fields** → Customize what you want to track
+6. **Add Options** → Define how users input data
 
-## A few notes
+## Troubleshooting
 
-- Make sure your Flask server is running before testing
-- The logout endpoint expects a valid JWT token
-- I've cleaned out all the sensitive stuff from this collection so it's safe to commit
-- I'll keep updating this collection as I add more features
+- **401 Unauthorized** → Check your Bearer token
+- **404 Not Found** → Verify the endpoint URL
+- **400 Bad Request** → Check your request body format
+- **500 Server Error** → Check if the backend is running
 
-## Current endpoints
+---
 
-Right now we have:
-
-- Health check (GET /api/health)
-- User registration (POST /api/auth/register)
-- User login (POST /api/auth/login)
-- User logout (POST /api/auth/logout)
-
-More coming soon as I build out the health tracking features.
+**Happy Testing!**

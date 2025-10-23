@@ -1,10 +1,606 @@
 {
 	"info": {
+		"_postman_id": "68140da3-4b12-4582-8443-5eda7c026804",
 		"name": "pattern_tracker_apis",
-		"description": "API collection for Health Tracker application authentication endpoints",
-		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "47196512",
+		"_collection_link": "https://joint-operations-engineer-21805899-3122572.postman.co/workspace/safeknot~80e15ab3-a260-4c85-879a-d1152839e4f9/collection/47196512-68140da3-4b12-4582-8443-5eda7c026804?action=share&source=collection_link&creator=47196512"
 	},
 	"item": [
+		{
+			"name": "Authentification",
+			"item": [
+				{
+					"name": "register",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n  \"username\": \"testuser2\",\r\n  \"email\": \"test2@example.com\", \r\n  \"password\": \"Password1123\",\r\n  \"first_name\": \"Test2\",\r\n  \"last_name\": \"User\"\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:5000/api/auth/register",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "5000",
+							"path": [
+								"api",
+								"auth",
+								"register"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "login",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n  \"email\": \"test@example.com\",\r\n  \"password\": \"Password123\"\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:5000/api/auth/login",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "5000",
+							"path": [
+								"api",
+								"auth",
+								"login"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "logout",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc1ODcwODY1NSwianRpIjoiYmY2MDQ0N2YtOGYzOC00YjZjLWE0MjQtZDkyMDdlNTZmN2ZmIiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NTg3MDg2NTUsImV4cCI6MTc1ODcxMjI1NX0.uUEx3dj98Lo6FKkUCJSZfdxMXN5p7bSZPQ46q21tNCc",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:5000/api/auth/logout",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "5000",
+							"path": [
+								"api",
+								"auth",
+								"logout"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Trackers",
+			"item": [
+				{
+					"name": "setup default trackers",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MTIzMjAyNCwianRpIjoiZmU2Y2MzZjQtNjJkYi00YzM2LTgwZTUtNTVjMmUzYzcyMDg0IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjEyMzIwMjQsImV4cCI6MTc2MTIzNTYyNH0.XcTiFPNYdwIXZvZbFRjdDRc85rlg_WENLX7ayZaM7RQ",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:5000/api/trackers//setup-default-trackers",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "5000",
+							"path": [
+								"api",
+								"trackers",
+								"",
+								"setup-default-trackers"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "fetch user's available trackers",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MTIzMjAyNCwianRpIjoiZmU2Y2MzZjQtNjJkYi00YzM2LTgwZTUtNTVjMmUzYzcyMDg0IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjEyMzIwMjQsImV4cCI6MTc2MTIzNTYyNH0.XcTiFPNYdwIXZvZbFRjdDRc85rlg_WENLX7ayZaM7RQ",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:5000/api/trackers/my-trackers",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "5000",
+							"path": [
+								"api",
+								"trackers",
+								"my-trackers"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "delete a tracker from user's trackers list",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MTIzMjAyNCwianRpIjoiZmU2Y2MzZjQtNjJkYi00YzM2LTgwZTUtNTVjMmUzYzcyMDg0IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjEyMzIwMjQsImV4cCI6MTc2MTIzNTYyNH0.XcTiFPNYdwIXZvZbFRjdDRc85rlg_WENLX7ayZaM7RQ",
+									"type": "string"
+								}
+							]
+						},
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:5000/api/trackers/delete-tracker/19",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "5000",
+							"path": [
+								"api",
+								"trackers",
+								"delete-tracker",
+								"19"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "change the default tracker",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MTIzMjAyNCwianRpIjoiZmU2Y2MzZjQtNjJkYi00YzM2LTgwZTUtNTVjMmUzYzcyMDg0IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjEyMzIwMjQsImV4cCI6MTc2MTIzNTYyNH0.XcTiFPNYdwIXZvZbFRjdDRc85rlg_WENLX7ayZaM7RQ",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:5000/api/trackers/update-default-tracker/19",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "5000",
+							"path": [
+								"api",
+								"trackers",
+								"update-default-tracker",
+								"19"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "create custom tracker",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MTIzMjAyNCwianRpIjoiZmU2Y2MzZjQtNjJkYi00YzM2LTgwZTUtNTVjMmUzYzcyMDg0IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjEyMzIwMjQsImV4cCI6MTc2MTIzNTYyNH0.XcTiFPNYdwIXZvZbFRjdDRc85rlg_WENLX7ayZaM7RQ",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n  \"name\": \"Test Tracker\",\r\n  \"custom_fields\": [\r\n    {\r\n      \"field_name\": \"test\",\r\n      \"display_label\": \"How test were you today?\",\r\n      \"options\": [\r\n        {\r\n          \"option_name\": \"level\",\r\n          \"option_type\": \"single_choice\",\r\n          \"choices\": [\"very_low\", \"low\", \"moderate\", \"high\", \"very_high\"],\r\n          \"choice_labels\": {\r\n            \"very_low\": \"Very Low\",\r\n            \"low\": \"Low\",\r\n            \"moderate\": \"Moderate\",\r\n            \"high\": \"High\",\r\n            \"very_high\": \"Very High\"\r\n          },\r\n          \"is_required\": true\r\n        },\r\n        {\r\n          \"option_name\": \"test_completed\",\r\n          \"option_type\": \"number_input\",\r\n          \"min_value\": 0,\r\n          \"max_value\": 50,\r\n          \"is_required\": false\r\n        }\r\n      ]\r\n    },\r\n    {\r\n      \"field_name\": \"test_quality\",\r\n      \"display_label\": \"How was your focus quality?\",\r\n      \"options\": [\r\n        {\r\n          \"option_name\": \"rating\",\r\n          \"option_type\": \"rating\",\r\n          \"min_value\": 1,\r\n          \"max_value\": 10,\r\n          \"is_required\": true\r\n        },\r\n        {\r\n          \"option_name\": \"distractions\",\r\n          \"option_type\": \"multiple_choice\",\r\n          \"choices\": [\"phone\", \"social_media\", \"noise\", \"people\", \"thoughts\"],\r\n          \"choice_labels\": {\r\n            \"phone\": \"Phone notifications\",\r\n            \"social_media\": \"Social media\",\r\n            \"noise\": \"Environmental noise\",\r\n            \"people\": \"People interruptions\",\r\n            \"thoughts\": \"Racing thoughts\"\r\n          },\r\n          \"is_required\": false\r\n        }\r\n      ]\r\n    }\r\n  ]\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:5000/api/trackers/create-custom-category",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "5000",
+							"path": [
+								"api",
+								"trackers",
+								"create-custom-category"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Tracker_field",
+			"item": [
+				{
+					"name": "get all fields of a specific trackers",
+					"protocolProfileBehavior": {
+						"disableBodyPruning": true
+					},
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MTIzMjAyNCwianRpIjoiZmU2Y2MzZjQtNjJkYi00YzM2LTgwZTUtNTVjMmUzYzcyMDg0IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjEyMzIwMjQsImV4cCI6MTc2MTIzNTYyNH0.XcTiFPNYdwIXZvZbFRjdDRc85rlg_WENLX7ayZaM7RQ",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:5000/api/trackers/20/get-data-schema",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "5000",
+							"path": [
+								"api",
+								"trackers",
+								"20",
+								"get-data-schema"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "create a new field inside a data schema of a tracker",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MTIzMjAyNCwianRpIjoiZmU2Y2MzZjQtNjJkYi00YzM2LTgwZTUtNTVjMmUzYzcyMDg0IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjEyMzIwMjQsImV4cCI6MTc2MTIzNTYyNH0.XcTiFPNYdwIXZvZbFRjdDRc85rlg_WENLX7ayZaM7RQ",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n  \"field_data\": {\r\n    \"field_name\": \"new_test_field_added\",\r\n    \"display_label\": \"Test field after fix\"\r\n  },\r\n  \"options\": [\r\n    {\r\n      \"option_name\": \"rating\",\r\n      \"option_type\": \"rating\",\r\n      \"min_value\": 1,\r\n      \"max_value\": 10,\r\n      \"is_required\": true\r\n    }\r\n  ]\r\n}"
+						},
+						"url": {
+							"raw": "http://localhost:5000/api/trackers/20/create-new-field",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "5000",
+							"path": [
+								"api",
+								"trackers",
+								"20",
+								"create-new-field"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Delete a field",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MTIzMjAyNCwianRpIjoiZmU2Y2MzZjQtNjJkYi00YzM2LTgwZTUtNTVjMmUzYzcyMDg0IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjEyMzIwMjQsImV4cCI6MTc2MTIzNTYyNH0.XcTiFPNYdwIXZvZbFRjdDRc85rlg_WENLX7ayZaM7RQ",
+									"type": "string"
+								}
+							]
+						},
+						"method": "DELETE",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": ""
+						},
+						"url": {
+							"raw": "http://localhost:5000/api/trackers/43/delete-field",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "5000",
+							"path": [
+								"api",
+								"trackers",
+								"43",
+								"delete-field"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "update or change tracker field display label",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MTIzMjAyNCwianRpIjoiZmU2Y2MzZjQtNjJkYi00YzM2LTgwZTUtNTVjMmUzYzcyMDg0IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjEyMzIwMjQsImV4cCI6MTc2MTIzNTYyNH0.XcTiFPNYdwIXZvZbFRjdDRc85rlg_WENLX7ayZaM7RQ",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"new_label\":\"testt_updated\"\r\n}"
+						},
+						"url": {
+							"raw": "http://localhost:5000/api/trackers/40/update-field-display-label",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "5000",
+							"path": [
+								"api",
+								"trackers",
+								"40",
+								"update-field-display-label"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "update field's help text",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MTIzMjAyNCwianRpIjoiZmU2Y2MzZjQtNjJkYi00YzM2LTgwZTUtNTVjMmUzYzcyMDg0IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjEyMzIwMjQsImV4cCI6MTc2MTIzNTYyNH0.XcTiFPNYdwIXZvZbFRjdDRc85rlg_WENLX7ayZaM7RQ",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"new_help_text\":\"nex_help_text\"\r\n}"
+						},
+						"url": {
+							"raw": "http://localhost:5000/api/trackers/40/update-field-help-text",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "5000",
+							"path": [
+								"api",
+								"trackers",
+								"40",
+								"update-field-help-text"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Options",
+			"item": [
+				{
+					"name": "create a new option inside an existing field",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MDcxNjUzNywianRpIjoiZmQzNmVlZGEtYzA5MC00YTQ0LWI1YWEtNmE1ZDJiYzBlMTdjIiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjA3MTY1MzcsImV4cCI6MTc2MDcyMDEzN30.dfVuOq4h4i5Mba5sq-1ypRguQjHX9imFuitzqewR_CE",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n  \"option_data\": {\r\n    \"option_name\": \"beds\",\r\n    \"option_type\": \"text\",\r\n    \"is_required\": false,\r\n    \"display_label\": \"Additional Notes\",\r\n    \"help_text\": \"Add any additional comments\",\r\n    \"max_length\": 500,\r\n    \"placeholder\": \"Enter your notes here...\",\r\n    \"is_active\": true\r\n  }\r\n}"
+						},
+						"url": {
+							"raw": "http://localhost:5000/api/trackers/31/create-new-option",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "5000",
+							"path": [
+								"api",
+								"trackers",
+								"31",
+								"create-new-option"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "delete an option from a tracker field",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MDcxNjUzNywianRpIjoiZmQzNmVlZGEtYzA5MC00YTQ0LWI1YWEtNmE1ZDJiYzBlMTdjIiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjA3MTY1MzcsImV4cCI6MTc2MDcyMDEzN30.dfVuOq4h4i5Mba5sq-1ypRguQjHX9imFuitzqewR_CE",
+									"type": "string"
+								}
+							]
+						},
+						"method": "DELETE",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": ""
+						},
+						"url": {
+							"raw": "http://localhost:5000/api/trackers/43/delete-option",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "5000",
+							"path": [
+								"api",
+								"trackers",
+								"43",
+								"delete-option"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update option info",
+					"request": {
+						"method": "PATCH",
+						"header": []
+					},
+					"response": []
+				}
+			]
+		},
 		{
 			"name": "health",
 			"request": {
@@ -23,115 +619,6 @@
 					"path": [
 						"api",
 						"health"
-					]
-				}
-			},
-			"response": []
-		},
-		{
-			"name": "register",
-			"request": {
-				"auth": {
-					"type": "noauth"
-				},
-				"method": "POST",
-				"header": [
-					{
-						"key": "Content-Type",
-						"value": "application/json",
-						"type": "text"
-					}
-				],
-				"body": {
-					"mode": "raw",
-					"raw": "{\r\n  \"username\": \"demo_user\",\r\n  \"email\": \"demo@example.com\", \r\n  \"password\": \"your_password_here\",\r\n  \"first_name\": \"Demo\",\r\n  \"last_name\": \"User\"\r\n}",
-					"options": {
-						"raw": {
-							"language": "json"
-						}
-					}
-				},
-				"url": {
-					"raw": "http://localhost:5000/api/auth/register",
-					"protocol": "http",
-					"host": [
-						"localhost"
-					],
-					"port": "5000",
-					"path": [
-						"api",
-						"auth",
-						"register"
-					]
-				}
-			},
-			"response": []
-		},
-		{
-			"name": "login",
-			"request": {
-				"auth": {
-					"type": "noauth"
-				},
-				"method": "POST",
-				"header": [
-					{
-						"key": "Content-Type",
-						"value": "application/json",
-						"type": "text"
-					}
-				],
-				"body": {
-					"mode": "raw",
-					"raw": "{\r\n  \"email\": \"demo@example.com\",\r\n  \"password\": \"your_password_here\"\r\n}",
-					"options": {
-						"raw": {
-							"language": "json"
-						}
-					}
-				},
-				"url": {
-					"raw": "http://localhost:5000/api/auth/login",
-					"protocol": "http",
-					"host": [
-						"localhost"
-					],
-					"port": "5000",
-					"path": [
-						"api",
-						"auth",
-						"login"
-					]
-				}
-			},
-			"response": []
-		},
-		{
-			"name": "logout",
-			"request": {
-				"auth": {
-					"type": "bearer",
-					"bearer": [
-						{
-							"key": "token",
-							"value": "{{access_token}}",
-							"type": "string"
-						}
-					]
-				},
-				"method": "POST",
-				"header": [],
-				"url": {
-					"raw": "http://localhost:5000/api/auth/logout",
-					"protocol": "http",
-					"host": [
-						"localhost"
-					],
-					"port": "5000",
-					"path": [
-						"api",
-						"auth",
-						"logout"
 					]
 				}
 			},
