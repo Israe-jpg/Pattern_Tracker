@@ -85,6 +85,17 @@ class SchemaManager:
             category.data_schema = data_schema
             flag_modified(category, 'data_schema')
 
+    @staticmethod
+    def remove_field_from_schema(category: TrackerCategory, field_name: str) -> None:
+        data_schema = dict(category.data_schema) if category.data_schema else {}
+        
+        if 'custom' in data_schema and field_name in data_schema['custom']:
+            data_schema['custom'] = dict(data_schema['custom'])
+            del data_schema['custom'][field_name]
+            
+        category.data_schema = data_schema
+        flag_modified(category, 'data_schema')
+        
 
 class FieldOptionBuilder:
     
@@ -304,6 +315,29 @@ class CategoryService:
         except Exception as e:
             db.session.rollback()
             raise
+    
+    @staticmethod
+    def delete_field_from_category(field_id: int) -> None:
+        try:
+            field = TrackerField.query.filter_by(id=field_id).first()
+            if not field:
+                raise ValueError("Field not found")
+            
+            category = TrackerCategory.query.filter_by(id=field.category_id).first()
+            if not category:
+                raise ValueError("Category not found")
+            
+            db.session.delete(field)
+            db.session.flush()
+            
+            if category:
+                SchemaManager.remove_field_from_schema(category, field.field_name)
+            
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            raise
+
     
     @staticmethod
     def _config_to_option_data(option_name: str, option_config: Dict[str, Any]) -> Dict[str, Any]:

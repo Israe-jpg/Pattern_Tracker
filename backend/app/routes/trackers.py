@@ -343,6 +343,21 @@ def create_new_field(tracker_id: int):
     except Exception as e:
         return error_response(f"Failed to create field: {str(e)}", 500)
 
+@trackers_bp.route('/<int:tracker_field_id>/delete-field', methods=['DELETE'])
+@jwt_required()
+def delete_field(tracker_field_id: int):
+    try:
+        _, user_id = get_current_user()
+        tracker_field = verify_field_ownership(tracker_field_id, user_id)
+    except ValueError as e:
+        return error_response(str(e), 404)
+    
+    try:
+        CategoryService.delete_field_from_category(tracker_field_id)
+        return success_response("Field deleted successfully")
+    except Exception as e:
+        return error_response(f"Failed to delete field: {str(e)}", 500)
+
 #Options
 @trackers_bp.route('/<int:tracker_field_id>/create-new-option', methods=['POST'])
 @jwt_required()
