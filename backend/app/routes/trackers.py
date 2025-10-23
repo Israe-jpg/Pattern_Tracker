@@ -358,7 +358,7 @@ def delete_field(tracker_field_id: int):
     except Exception as e:
         return error_response(f"Failed to delete field: {str(e)}", 500)
 
-@trackers_bp.route('/<int:tracker_field_id>/update-field-display-label', methods=['PUT'])
+@trackers_bp.route('/<int:tracker_field_id>/update-field-display-label', methods=['PATCH'])
 @jwt_required()
 def update_field_display_label(tracker_field_id: int):
     try:
@@ -377,7 +377,7 @@ def update_field_display_label(tracker_field_id: int):
     except Exception as e:
         return error_response(f"Failed to update field display label: {str(e)}", 500)
 
-@trackers_bp.route('/<int:tracker_field_id>/update-field-help-text', methods=['PUT'])
+@trackers_bp.route('/<int:tracker_field_id>/update-field-help-text', methods=['PATCH'])
 @jwt_required()
 def update_field_help_text(tracker_field_id: int):
     try:
@@ -395,6 +395,9 @@ def update_field_help_text(tracker_field_id: int):
         return success_response("Field help text updated successfully")
     except Exception as e:
         return error_response(f"Failed to update field help text: {str(e)}", 500)
+
+
+
 
 #Options
 @trackers_bp.route('/<int:tracker_field_id>/create-new-option', methods=['POST'])
