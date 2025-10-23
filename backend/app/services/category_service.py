@@ -1,177 +1,179 @@
 import json
 import os
+from typing import Dict, List, Any, Optional
 from app import db
 from app.models.tracker_category import TrackerCategory
 from app.models.tracker_field import TrackerField
 from app.models.field_option import FieldOption
 
-class CategoryService:
+
+class SchemaManager:
+    #handles data schema operations
     
     @staticmethod
-    def get_baseline_schema():
-        config_path = os.path.join(os.path.dirname(__file__), '..', 'config', 'tracker_schemas.json')
-        
-        with open(config_path, 'r') as f:
-            schemas = json.load(f)
-        
-        return schemas.get('baseline', {})
-    
-    @staticmethod
-    def create_custom_category(name, custom_fields_data):
-        """
-        Create a new custom category with baseline schema + custom fields
-        
-        Args:
-            name: Category name
-            custom_fields_data: List of custom field definitions
-                Example:
-                [
-                    {
-                        "field_name": "Mood",
-                        "display_label": "How was your mood today?",
-                        "options": [
-                            {
-                                "option_name": "overall_mood",
-                                "option_type": "rating",
-                                "min_value": 1,
-                                "max_value": 10,
-                                "is_required": True
-                            },
-                            {
-                                "option_name": "mood_notes",
-                                "option_type": "text",
-                                "max_length": 200,
-                                "is_required": False
-                            }
-                        ]
-                    }
-                ]
-        """
-        try:
-            # Get baseline schema
-            baseline_schema = CategoryService.get_baseline_schema()
-            
-            # Create the category with combined schema
-            combined_schema = {
-                "baseline": baseline_schema,
-                "custom": {}
-            }
-            
-            # Build custom schema from field definitions
-            for field_data in custom_fields_data:
-                field_name = field_data['field_name']  
-                combined_schema["custom"][field_name] = {}
-                
-                for option_data in field_data.get('options', []):
-                    option_name = option_data['option_name']
-                    option_schema = CategoryService._build_option_schema(option_data)
-                    combined_schema["custom"][field_name][option_name] = option_schema
-            
-            # Create category
-            category = TrackerCategory(
-                name=name,
-                data_schema=combined_schema,
-                is_active=True
-            )
-            db.session.add(category)
-            db.session.flush()  # in order to get the id
-            
-            # Create baseline fields
-            CategoryService._create_baseline_fields(category.id, baseline_schema)
-            
-            # Create custom fields
-            CategoryService._create_custom_fields(category.id, custom_fields_data)
-            
-            db.session.commit()
-            return category
-            
-        except Exception as e:
-            db.session.rollback()
-            raise e
-    
-    @staticmethod
-    def _build_option_schema(option_data):
+    def build_option_schema(option_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Convert option data to schema format."""
         schema = {
             'type': FieldOption.OPTION_TYPE_MAPPING.get(option_data['option_type'], 'string'),
             'optional': not option_data.get('is_required', False)
         }
         
         # Add validation rules based on option type
-        if option_data.get('min_value') is not None and option_data.get('max_value') is not None:
+        if 'min_value' in option_data and 'max_value' in option_data:
             schema['range'] = [option_data['min_value'], option_data['max_value']]
         
-        if option_data.get('max_length'):
-            schema['max_length'] = option_data['max_length']
-        
-        if option_data.get('choices'):
-            schema['enum'] = option_data['choices']
-        
-        if option_data.get('choice_labels'):
-            schema['labels'] = option_data['choice_labels']
+        for key in ['max_length', 'choices', 'choice_labels']:
+            if key == 'choices':
+                if option_data.get(key):
+                    schema['enum'] = option_data[key]
+            elif key == 'choice_labels':
+                if option_data.get(key):
+                    schema['labels'] = option_data[key]
+            else:
+                if option_data.get(key):
+                    schema[key] = option_data[key]
         
         return schema
     
     @staticmethod
-    def _create_baseline_fields(category_id, baseline_schema):
-        field_order = 0
+    def update_category_schema(category: TrackerCategory, field_name: str, 
+                               options_dict: Dict[str, Dict[str, Any]]) -> None:
+        data_schema = category.data_schema or {}
         
-        for field_name, field_options in baseline_schema.items():
-            # Create the main field - keep field_name as JSON key (lowercase)
+        if 'custom' not in data_schema:
+            data_schema['custom'] = {}
+        
+        data_schema['custom'][field_name] = options_dict
+        category.data_schema = data_schema
+    
+    @staticmethod
+    def remove_option_from_schema(category: TrackerCategory, field_name: str, 
+                                  option_name: str) -> None:
+        data_schema = category.data_schema or {}
+        
+        if 'custom' in data_schema and field_name in data_schema['custom']:
+            data_schema['custom'][field_name].pop(option_name, None)
+            
+            # Clean up empty field
+            if not data_schema['custom'][field_name]:
+                del data_schema['custom'][field_name]
+            
+            category.data_schema = data_schema
+
+
+class FieldOptionBuilder:
+    
+    OPTION_FIELDS = {
+        'option_name', 'option_type', 'is_required', 'display_label',
+        'help_text', 'placeholder', 'default_value', 'min_value', 'max_value',
+        'max_length', 'step', 'choices', 'choice_labels', 'validation_rules',
+        'display_options'
+    }
+    
+    @classmethod
+    def create(cls, tracker_field_id: int, option_data: Dict[str, Any], 
+               option_order: int, is_active: bool = True) -> FieldOption:
+        kwargs = {'tracker_field_id': tracker_field_id, 'option_order': option_order, 'is_active': is_active}
+        
+        for field in cls.OPTION_FIELDS:
+            if field in option_data:
+                kwargs[field] = option_data[field]
+            elif field not in ('option_name', 'option_type'):  # Required fields
+                kwargs[field] = option_data.get(field)
+        
+        return FieldOption(**kwargs)
+
+
+class CategoryService:
+    #Service for managing tracker categories and their fields
+    
+    CONFIG_PATH = os.path.join(os.path.dirname(__file__), '..', 'config', 'tracker_schemas.json')
+    TYPE_MAPPING = {
+        'integer': 'rating',
+        'string': 'single_choice',
+        'array': 'multiple_choice',
+        'boolean': 'yes_no',
+        'float': 'number_input'
+    }
+    DEFAULT_CATEGORIES = ['baseline', 'period_tracker', 'workout_tracker']
+    
+    @staticmethod
+    def get_baseline_schema() -> Dict[str, Any]:
+        with open(CategoryService.CONFIG_PATH, 'r') as f:
+            schemas = json.load(f)
+        return schemas.get('baseline', {})
+    
+    @staticmethod
+    def create_custom_category(name: str, custom_fields_data: List[Dict[str, Any]]) -> TrackerCategory:
+        try:
+            baseline_schema = CategoryService.get_baseline_schema()
+            combined_schema = {
+                "baseline": baseline_schema,
+                "custom": CategoryService._build_custom_schema(custom_fields_data)
+            }
+            
+            category = TrackerCategory(name=name, data_schema=combined_schema, is_active=True)
+            db.session.add(category)
+            db.session.flush()
+            
+            CategoryService._create_baseline_fields(category.id, baseline_schema)
+            CategoryService._create_custom_fields(category.id, custom_fields_data)
+            
+            db.session.commit()
+            return category
+        except Exception as e:
+            db.session.rollback()
+            raise
+    
+    @staticmethod
+    def _build_custom_schema(custom_fields_data: List[Dict[str, Any]]) -> Dict[str, Dict]:
+        custom_schema = {}
+        
+        for field_data in custom_fields_data:
+            field_name = field_data['field_name']
+            custom_schema[field_name] = {}
+            
+            for option_data in field_data.get('options', []):
+                option_name = option_data['option_name']
+                custom_schema[field_name][option_name] = SchemaManager.build_option_schema(option_data)
+        
+        return custom_schema
+    
+    
+    @staticmethod
+    def _create_custom_fields(category_id: int, custom_fields_data: List[Dict[str, Any]]) -> None:
+        max_order = db.session.query(db.func.max(TrackerField.field_order)).filter_by(
+            category_id=category_id
+        ).scalar() or 0
+        
+        for field_offset, field_data in enumerate(custom_fields_data):
             tracker_field = TrackerField(
                 category_id=category_id,
-                field_name=field_name,  
-                field_group='baseline',
-                field_order=field_order,
-                display_label=f"Track your {field_name.replace('_', ' ')}",
+                field_name=field_data['field_name'],
+                field_group='custom',
+                field_order=max_order + field_offset + 1,
+                display_label=field_data.get('display_label', field_data['field_name']),
+                help_text=field_data.get('help_text'),
                 is_active=True
             )
             db.session.add(tracker_field)
-            db.session.flush()  
+            db.session.flush()
             
-            # Create options for this field
-            option_order = 0
-            for option_name, option_config in field_options.items():
-                field_option = FieldOption(
-                    tracker_field_id=tracker_field.id,
-                    option_name=option_name,
-                    option_type=CategoryService._map_json_type_to_option_type(option_config.get('type', 'string')),
-                    option_order=option_order,
-                    is_required=not option_config.get('optional', True),
-                    min_value=option_config.get('range', [None, None])[0] if option_config.get('range') else None,
-                    max_value=option_config.get('range', [None, None])[1] if option_config.get('range') else None,
-                    max_length=option_config.get('max_length'),
-                    step=option_config.get('step'),
-                    choices=option_config.get('enum'),
-                    choice_labels=option_config.get('labels'),
-                    is_active=True
+            for option_order, option_data in enumerate(field_data.get('options', [])):
+                field_option = FieldOptionBuilder.create(
+                    tracker_field.id, option_data, option_order, is_active=True
                 )
                 db.session.add(field_option)
-                option_order += 1
-            
-            field_order += 1
+    
     @staticmethod
-    def create_new_field(tracker_category, field_data, validated_options):
-        """
-        Add a single custom field to an existing category.
-        Creates TrackerField + FieldOptions + updates schema
-        
-        Args:
-            tracker_category: The TrackerCategory instance
-            field_data: Dict with field_name, display_label, help_text
-            validated_options: List of validated option dictionaries
-        
-        Returns:
-            The created TrackerField
-        """
+    def create_new_field(tracker_category: TrackerCategory, field_data: Dict[str, Any],
+                         validated_options: List[Dict[str, Any]]) -> TrackerField:
         try:
             field_name = field_data['field_name']
-            
-            # Get the highest field_order in this category
             max_order = db.session.query(db.func.max(TrackerField.field_order)).filter_by(
                 category_id=tracker_category.id
             ).scalar() or 0
             
-            # Create the TrackerField
             tracker_field = TrackerField(
                 category_id=tracker_category.id,
                 field_name=field_name,
@@ -182,310 +184,102 @@ class CategoryService:
                 is_active=True
             )
             db.session.add(tracker_field)
-            db.session.flush()  # Get the ID
+            db.session.flush()
             
-            # Create FieldOptions
             for option_order, option_data in enumerate(validated_options):
-                field_option = FieldOption(
-                    tracker_field_id=tracker_field.id,
-                    option_name=option_data['option_name'],
-                    option_type=option_data['option_type'],
-                    option_order=option_order,
-                    is_required=option_data.get('is_required', False),
-                    display_label=option_data.get('display_label'),
-                    help_text=option_data.get('help_text'),
-                    placeholder=option_data.get('placeholder'),
-                    default_value=option_data.get('default_value'),
-                    min_value=option_data.get('min_value'),
-                    max_value=option_data.get('max_value'),
-                    max_length=option_data.get('max_length'),
-                    step=option_data.get('step'),
-                    choices=option_data.get('choices'),
-                    choice_labels=option_data.get('choice_labels'),
-                    validation_rules=option_data.get('validation_rules'),
-                    display_options=option_data.get('display_options'),
-                    is_active=True
+                field_option = FieldOptionBuilder.create(
+                    tracker_field.id, option_data, option_order, is_active=True
                 )
                 db.session.add(field_option)
             
             db.session.commit()
             
-            # Query fresh category from database to ensure active session
-            from app.models.tracker_category import TrackerCategory
+            # Build schema options dict
+            options_dict = {
+                opt['option_name']: SchemaManager.build_option_schema(opt)
+                for opt in validated_options
+            }
+            
+            # Update schema
             fresh_category = TrackerCategory.query.filter_by(id=tracker_category.id).first()
-            
-            # Update the data schema
-            data_schema = dict(fresh_category.data_schema) if fresh_category.data_schema else {}
-            if 'custom' not in data_schema:
-                data_schema['custom'] = {}
-            
-            data_schema['custom'][field_name] = {}
-            
-            for validated_option in validated_options:
-                option_schema = CategoryService._build_option_schema(validated_option)
-                data_schema['custom'][field_name][validated_option['option_name']] = option_schema
-            
-            # Update schema with proper change detection
-            fresh_category.data_schema = data_schema
-            from sqlalchemy.orm.attributes import flag_modified
-            flag_modified(fresh_category, 'data_schema')
-            
-            db.session.add(fresh_category)
+            SchemaManager.update_category_schema(fresh_category, field_name, options_dict)
             db.session.commit()
             
             return tracker_field
-            
         except Exception as e:
             db.session.rollback()
-            raise e
-
+            raise
+    
     @staticmethod
-    def create_new_option(tracker_field, option_data):
-        """
-        Add a new option to an existing field.
-        
-        Args:
-            tracker_field: The TrackerField instance
-            option_data: Dict with option details
-        
-        Returns:
-            The created FieldOption
-        """
+    def create_new_option(tracker_field: TrackerField, option_data: Dict[str, Any]) -> FieldOption:
         try:
-            # Get the highest option_order for this field
             max_order = db.session.query(db.func.max(FieldOption.option_order)).filter_by(
                 tracker_field_id=tracker_field.id
             ).scalar() or 0
             
-            # Create the FieldOption with proper defaults
-            field_option = FieldOption(
-                tracker_field_id=tracker_field.id,
-                option_name=option_data['option_name'],
-                option_type=option_data['option_type'],
-                option_order=max_order + 1,
-                is_required=option_data.get('is_required', False),
-                display_label=option_data.get('display_label'),
-                help_text=option_data.get('help_text'),
-                placeholder=option_data.get('placeholder'),
-                default_value=option_data.get('default_value'),
-                min_value=option_data.get('min_value'),
-                max_value=option_data.get('max_value'),
-                max_length=option_data.get('max_length'),
-                step=option_data.get('step'),
-                choices=option_data.get('choices'),
-                choice_labels=option_data.get('choice_labels'),
-                validation_rules=option_data.get('validation_rules'),
-                display_options=option_data.get('display_options'),
-                is_active=option_data.get('is_active', True)
+            field_option = FieldOptionBuilder.create(
+                tracker_field.id, option_data, max_order + 1, is_active=True
             )
-            
             db.session.add(field_option)
             db.session.commit()
             
-            # Update the data schema to include the new option
-            # Query fresh category from database to ensure active session
+            # Update schema
             fresh_category = TrackerCategory.query.filter_by(id=tracker_field.category_id).first()
+            option_schema = SchemaManager.build_option_schema(option_data)
             
-            # Update the schema
-            data_schema = dict(fresh_category.data_schema) if fresh_category.data_schema else {}
+            data_schema = fresh_category.data_schema or {}
             if 'custom' not in data_schema:
                 data_schema['custom'] = {}
             if tracker_field.field_name not in data_schema['custom']:
                 data_schema['custom'][tracker_field.field_name] = {}
             
-            # Add the new option to the schema
-            option_schema = CategoryService._build_option_schema(option_data)
             data_schema['custom'][tracker_field.field_name][option_data['option_name']] = option_schema
-            
-            # Update schema with proper change detection
             fresh_category.data_schema = data_schema
-            from sqlalchemy.orm.attributes import flag_modified
-            flag_modified(fresh_category, 'data_schema')
-            
-            db.session.add(fresh_category)
             db.session.commit()
             
             return field_option
-            
         except Exception as e:
             db.session.rollback()
-            raise e
+            raise
     
     @staticmethod
-    def delete_option_from_field(option_data):
-        """
-        Delete an option from a field.
-        
-        Args:
-            option_data: Dict with option details
-        """
+    def delete_option_from_field(option_id: int) -> None:
         try:
-            field_option = FieldOption.query.filter_by(id=option_data['id']).first()
+            field_option = FieldOption.query.filter_by(id=option_id).first()
             if not field_option:
                 raise ValueError("Field option not found")
             
-            # Get category and field info before deletion
-            category = TrackerCategory.query.filter_by(id=field_option.tracker_field.category_id).first()
-            field_name = field_option.tracker_field.field_name
-            option_name = field_option.option_name
+            field = field_option.tracker_field
+            category = TrackerCategory.query.filter_by(id=field.category_id).first()
             
-            # Delete the option
             db.session.delete(field_option)
-            db.session.commit() 
+            db.session.commit()
             
-            # Update the category's data schema
             if category:
-                CategoryService._remove_option_from_schema(
-                    category, 
-                    field_name, 
-                    option_name
-                )
-        except Exception as e:
-            db.session.rollback()
-            raise e
-
-    @staticmethod
-    def _remove_option_from_schema(category, field_name, option_name):
-        """
-        Remove an option from the data schema of a field.
-        
-        Args:
-            category: The TrackerCategory instance
-            field_name: The name of the field
-            option_name: The name of the option
-        """
-        try:
-            data_schema = dict(category.data_schema) if category.data_schema else {}
-            if 'custom' not in data_schema:
-                data_schema['custom'] = {}
-            if field_name not in data_schema['custom']:
-                data_schema['custom'][field_name] = {}
-            
-            # Remove the option if it exists
-            if option_name in data_schema['custom'][field_name]:
-                data_schema['custom'][field_name].pop(option_name)
-                
-                # If no options left for this field, remove the field entirely
-                if not data_schema['custom'][field_name]:
-                    del data_schema['custom'][field_name]
-                
-                # Update the schema with proper change detection
-                category.data_schema = data_schema
-                from sqlalchemy.orm.attributes import flag_modified
-                flag_modified(category, 'data_schema')
-                db.session.add(category)
+                SchemaManager.remove_option_from_schema(category, field.field_name, field_option.option_name)
                 db.session.commit()
         except Exception as e:
             db.session.rollback()
-            raise e
-
-    @staticmethod
-    def add_option_to_schema(tracker_field, option_data):
-        """
-        Add a new option to the data schema of a field.
-        
-        Args:
-            tracker_field: The TrackerField instance
-            option_data: Dict with option details
-        
-        Returns:
-            The updated TrackerCategory
-        """
-        try:
-            # Get the category
-            category = TrackerCategory.query.filter_by(id=tracker_field.category_id).first()
-            if not category:
-                raise ValueError("Category not found")
-            
-            # Update the schema
-            data_schema = dict(category.data_schema) if category.data_schema else {}
-            if 'custom' not in data_schema:
-                data_schema['custom'] = {}
-            if tracker_field.field_name not in data_schema['custom']:
-                data_schema['custom'][tracker_field.field_name] = {}
-            
-            # Add the new option to the schema
-            option_schema = CategoryService._build_option_schema(option_data)
-            data_schema['custom'][tracker_field.field_name][option_data['option_name']] = option_schema
-            
-            # Update and commit the schema
-            category.data_schema = data_schema
-            db.session.add(category)
-            db.session.commit()
-            
-            return category
-            
-        except Exception as e:
-            db.session.rollback()
-            raise e
+            raise
     
     @staticmethod
-    def _create_custom_fields(category_id, custom_fields_data):
-
-        # Get the highest field_order from baseline fields
-        max_order = db.session.query(db.func.max(TrackerField.field_order)).filter_by(category_id=category_id).scalar() or 0
-        field_order = max_order + 1
-        
-        for field_data in custom_fields_data:
-            # Create the main field
-            tracker_field = TrackerField(
-                category_id=category_id,
-                field_name=field_data['field_name'],
-                field_group='custom',
-                field_order=field_order,
-                display_label=field_data.get('display_label', field_data['field_name']),
-                help_text=field_data.get('help_text'),
-                is_active=True
-            )
-            db.session.add(tracker_field)
-            db.session.flush()  
-            
-            # Create options for this field
-            option_order = 0
-            for option_data in field_data.get('options', []):
-                field_option = FieldOption(
-                    tracker_field_id=tracker_field.id,
-                    option_name=option_data['option_name'],
-                    option_type=option_data['option_type'],
-                    option_order=option_order,
-                    is_required=option_data.get('is_required', False),
-                    display_label=option_data.get('display_label'),
-                    help_text=option_data.get('help_text'),
-                    placeholder=option_data.get('placeholder'),
-                    default_value=option_data.get('default_value'),
-                    min_value=option_data.get('min_value'),
-                    max_value=option_data.get('max_value'),
-                    max_length=option_data.get('max_length'),
-                    step=option_data.get('step'),
-                    choices=option_data.get('choices'),
-                    choice_labels=option_data.get('choice_labels'),
-                    validation_rules=option_data.get('validation_rules'),
-                    display_options=option_data.get('display_options'),
-                    is_active=True
-                )
-                db.session.add(field_option)
-                option_order += 1
-                
-            
-            field_order += 1
-    
-    @staticmethod
-    def _map_json_type_to_option_type(json_type):
-        mapping = {
-            'integer': 'rating',  
-            'string': 'single_choice',  
-            'array': 'multiple_choice',
-            'boolean': 'yes_no',
-            'float': 'number_input'
+    def _config_to_option_data(option_name: str, option_config: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            'option_name': option_name,
+            'option_type': CategoryService.TYPE_MAPPING.get(option_config.get('type', 'string'), 'single_choice'),
+            'is_required': not option_config.get('optional', True),
+            'min_value': option_config.get('range', [None, None])[0] if option_config.get('range') else None,
+            'max_value': option_config.get('range', [None, None])[1] if option_config.get('range') else None,
+            'max_length': option_config.get('max_length'),
+            'step': option_config.get('step'),
+            'choices': option_config.get('enum'),
+            'choice_labels': option_config.get('labels'),
         }
-        return mapping.get(json_type, 'single_choice')
     
     @staticmethod
-    def get_default_categories():
-        
-        return ['baseline', 'period_tracker', 'workout_tracker']
+    def get_default_categories() -> List[str]:
+        return CategoryService.DEFAULT_CATEGORIES
     
     @staticmethod
-    def is_default_category(category_name):
-        
-        return category_name.lower() in CategoryService.get_default_categories()
+    def is_default_category(category_name: str) -> bool:
+        return category_name.lower() in CategoryService.DEFAULT_CATEGORIES
