@@ -139,6 +139,26 @@ class CategoryService:
         
         return custom_schema
     
+    @staticmethod
+    def _create_baseline_fields(category_id: int, baseline_schema: Dict[str, Any]) -> None:
+        for field_order, (field_name, field_options) in enumerate(baseline_schema.items()):
+            tracker_field = TrackerField(
+                category_id=category_id,
+                field_name=field_name,
+                field_group='baseline',
+                field_order=field_order,
+                display_label=f"Track your {field_name.replace('_', ' ')}",
+                is_active=True
+            )
+            db.session.add(tracker_field)
+            db.session.flush()
+            
+            for option_order, (option_name, option_config) in enumerate(field_options.items()):
+                option_data = CategoryService._config_to_option_data(option_name, option_config)
+                field_option = FieldOptionBuilder.create(
+                    tracker_field.id, option_data, option_order, is_active=True
+                )
+                db.session.add(field_option)
     
     @staticmethod
     def _create_custom_fields(category_id: int, custom_fields_data: List[Dict[str, Any]]) -> None:
