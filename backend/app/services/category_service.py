@@ -306,6 +306,41 @@ class CategoryService:
             raise
 
     @staticmethod
+    def update_option(option_id: int, validated_data: Dict[str, Any]) -> None:  
+        try:
+            option = FieldOption.query.filter_by(id=option_id).first()
+            if not option:
+                raise ValueError("Option not found")
+            
+            old_option_name = option.option_name
+            field = option.tracker_field
+            category = TrackerCategory.query.filter_by(id=field.category_id).first()
+            
+            for key, value in validated_data.items():
+                if hasattr(option, key):
+                    setattr(option, key, value)
+            
+            db.session.flush()
+            
+            if category:
+                if old_option_name != option.option_name:
+                    SchemaManager.remove_option_from_schema(category, field.field_name, old_option_name)
+                
+                option_schema = SchemaManager.build_option_schema(validated_data)
+                SchemaManager.add_option_to_schema(
+                    category,
+                    field.field_name,
+                    option.option_name,
+                    option_schema
+                )
+            
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            raise
+
+
+    @staticmethod
     def update_field_help_text(field_id: int, new_help_text: str) -> None:
         try:
             field = TrackerField.query.filter_by(id=field_id).first()
@@ -386,3 +421,42 @@ class CategoryService:
     @staticmethod
     def is_default_category(category_name: str) -> bool:
         return category_name.lower() in CategoryService.DEFAULT_CATEGORIES
+    
+    @staticmethod
+    def rebuild_category_schema(category_id: int) -> Dict[str, Any]:
+        category = TrackerCategory.query.filter_by(id=category_id).first()
+        if not category:
+            raise ValueError("Category not found")
+        
+        baseline_schema = CategoryService.get_baseline_schema()
+        
+        custom_fields = TrackerField.query.filter_by(
+            category_id=category_id, 
+            field_group='custom',
+            is_active=True
+        ).order_by(TrackerField.field_order).all()
+        
+        custom_schema = {}
+        for field in custom_fields:
+            field_options = FieldOption.query.filter_by(
+                tracker_field_id=field.id,
+                is_active=True
+            ).order_by(FieldOption.option_order).all()
+            
+            field_schema = {}
+            for option in field_options:
+                option_schema = SchemaManager.build_option_schema(option.to_dict())
+                field_schema[option.option_name] = option_schema
+            
+            custom_schema[field.field_name] = field_schema
+        
+        rebuilt_schema = {
+            "baseline": baseline_schema,
+            "custom": custom_schema
+        }
+        
+        category.data_schema = rebuilt_schema
+        flag_modified(category, 'data_schema')
+        db.session.commit()
+        
+        return rebuilt_schema

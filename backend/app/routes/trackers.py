@@ -285,9 +285,11 @@ def get_tracker_schema(tracker_id: int):
         if not category:
             return error_response("Tracker category not found", 404)
         
+        data_schema = CategoryService.rebuild_category_schema(category.id)
+        
         return success_response(
             "Data schema retrieved successfully",
-            {'data_schema': category.data_schema}
+            {'data_schema': data_schema}
         )
     except Exception as e:
         return error_response(f"Failed to retrieve schema: {str(e)}", 500)
@@ -446,3 +448,21 @@ def delete_option(option_id: int):
         return success_response("Option deleted successfully")
     except Exception as e:
         return error_response(f"Failed to delete option: {str(e)}", 500)
+
+@trackers_bp.route('/<int:option_id>/update-option-info', methods=['PUT'])
+@jwt_required()
+def update_option_info(option_id: int):
+    try:
+        _, user_id = get_current_user()
+        option = verify_option_ownership(option_id, user_id)
+    except ValueError as e:
+        return error_response(str(e), 404)
+    
+    try:
+        validated_data = FieldOptionSchema().load(request.json) 
+        CategoryService.update_option(option_id, validated_data)
+        return success_response("Option updated successfully")
+    except ValidationError as err:
+        return error_response("Validation failed", 400, err.messages)
+    except Exception as e:
+        return error_response(f"Failed to update option: {str(e)}", 500)
