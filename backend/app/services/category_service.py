@@ -313,12 +313,18 @@ class CategoryService:
                 raise ValueError("Option not found")
             
             old_option_name = option.option_name
+            old_option_type = option.option_type
             field = option.tracker_field
             category = TrackerCategory.query.filter_by(id=field.category_id).first()
             
+            # Update all provided fields
             for key, value in validated_data.items():
                 if hasattr(option, key):
                     setattr(option, key, value)
+            
+            # Always clear fields that are not relevant for the current option type
+            current_option_type = validated_data.get('option_type', old_option_type)
+            CategoryService._clear_irrelevant_fields(option, current_option_type)
             
             db.session.flush()
             
@@ -338,6 +344,41 @@ class CategoryService:
         except Exception as e:
             db.session.rollback()
             raise
+    
+    @staticmethod
+    def _clear_irrelevant_fields(option: FieldOption, option_type: str) -> None:
+        """Clear fields that are not relevant for the given option type"""
+        if option_type == 'yes_no':
+            # Yes/No doesn't need choices, labels, min/max values, etc.
+            option.choices = None
+            option.choice_labels = None
+            option.min_value = None
+            option.max_value = None
+            option.step = None
+            option.max_length = None
+        elif option_type == 'rating':
+            # Rating needs min/max values, clear choices if they exist
+            option.choices = None
+            option.choice_labels = None
+            option.max_length = None
+        elif option_type in ['single_choice', 'multiple_choice']:
+            # Choice types need choices and labels, clear numeric fields
+            option.min_value = None
+            option.max_value = None
+            option.step = None
+            option.max_length = None
+        elif option_type in ['text', 'notes']:
+            # Text types need max_length, clear numeric and choice fields
+            option.min_value = None
+            option.max_value = None
+            option.step = None
+            option.choices = None
+            option.choice_labels = None
+        elif option_type == 'number_input':
+            # Number input needs min/max values, clear choice fields
+            option.choices = None
+            option.choice_labels = None
+            option.max_length = None
 
 
     @staticmethod
