@@ -19,7 +19,7 @@ trackers_bp = Blueprint('trackers', __name__)
 
 # HELPER FUNCTIONS
 
-
+#get current user
 def get_current_user() -> Tuple[User, int]:
     user_id = get_jwt_identity()
     user = User.query.filter_by(id=user_id).first()
@@ -27,14 +27,14 @@ def get_current_user() -> Tuple[User, int]:
         raise ValueError("User not found")
     return user, user_id
 
-
+#verify tracker ownership
 def verify_tracker_ownership(tracker_id: int, user_id: int) -> Tracker:
     tracker = Tracker.query.filter_by(id=tracker_id, user_id=user_id).first()
     if not tracker:
         raise ValueError("Tracker not found")
     return tracker
 
-
+#verify field ownership
 def verify_field_ownership(tracker_field_id: int, user_id: int) -> TrackerField:
     tracker_field = TrackerField.query.filter_by(id=tracker_field_id).first()
     if not tracker_field:
@@ -51,6 +51,7 @@ def verify_field_ownership(tracker_field_id: int, user_id: int) -> TrackerField:
     return tracker_field
 
 
+#verify option ownership
 def verify_option_ownership(option_id: int, user_id: int) -> FieldOption:
     option = FieldOption.query.filter_by(id=option_id).first()
     if not option:
@@ -67,13 +68,14 @@ def verify_option_ownership(option_id: int, user_id: int) -> FieldOption:
     return option
 
 
+#error response
 def error_response(message: str, status_code: int = 400, details: Dict[str, Any] = None) -> Tuple[Dict, int]:
     response = {'error': message}
     if details:
         response['details'] = details
     return jsonify(response), status_code
 
-
+#success response
 def success_response(message: str, data: Dict[str, Any] = None, status_code: int = 200) -> Tuple[Dict, int]:
     response = {'message': message}
     if data:
@@ -83,7 +85,7 @@ def success_response(message: str, data: Dict[str, Any] = None, status_code: int
 
 # TRACKER SETUP ROUTES
 
-
+#setup default trackers
 @trackers_bp.route('/setup-default-trackers', methods=['POST'])
 @jwt_required()
 def setup_default_trackers():
@@ -145,7 +147,7 @@ def setup_default_trackers():
 
 # TRACKER MANAGEMENT ROUTES
 
-
+#get my trackers
 @trackers_bp.route('/my-trackers', methods=['GET'])
 @jwt_required()
 def get_my_trackers():
@@ -164,7 +166,7 @@ def get_my_trackers():
         }
     )
 
-
+#delete tracker
 @trackers_bp.route('/delete-tracker/<int:tracker_id>', methods=['DELETE'])
 @jwt_required()
 def delete_tracker(tracker_id: int):
@@ -189,7 +191,7 @@ def delete_tracker(tracker_id: int):
         db.session.rollback()
         return error_response(f"Failed to delete tracker: {str(e)}", 500)
 
-
+#update default tracker
 @trackers_bp.route('/update-default-tracker/<int:tracker_id>', methods=['PUT'])
 @jwt_required()
 def update_default_tracker(tracker_id: int):
@@ -220,9 +222,14 @@ def update_default_tracker(tracker_id: int):
         return error_response(f"Failed to update default tracker: {str(e)}", 500)
 
 
+#TODO
+# Change the name of a tracker
+@trackers_bp.route('/<int:tracker_id>/change-tracker-name', methods=['PATCH'])
+
+
 # CUSTOM CATEGORY ROUTES
 
-
+#create custom category
 @trackers_bp.route('/create-custom-category', methods=['POST'])
 @jwt_required()
 def create_custom_category():
@@ -271,6 +278,7 @@ def create_custom_category():
 
 #Fields
 
+#get data schema of a specific tracker
 @trackers_bp.route('/<int:tracker_id>/get-data-schema', methods=['GET'])
 @jwt_required()
 def get_tracker_schema(tracker_id: int):
@@ -295,6 +303,7 @@ def get_tracker_schema(tracker_id: int):
         return error_response(f"Failed to retrieve schema: {str(e)}", 500)
 
 
+#create new field in a custom schema of a specific tracker
 @trackers_bp.route('/<int:tracker_id>/create-new-field', methods=['POST'])
 @jwt_required()
 def create_new_field(tracker_id: int):
@@ -345,6 +354,8 @@ def create_new_field(tracker_id: int):
     except Exception as e:
         return error_response(f"Failed to create field: {str(e)}", 500)
 
+
+#delete field 
 @trackers_bp.route('/<int:tracker_field_id>/delete-field', methods=['DELETE'])
 @jwt_required()
 def delete_field(tracker_field_id: int):
@@ -360,6 +371,8 @@ def delete_field(tracker_field_id: int):
     except Exception as e:
         return error_response(f"Failed to delete field: {str(e)}", 500)
 
+
+#update field display label
 @trackers_bp.route('/<int:tracker_field_id>/update-field-display-label', methods=['PATCH'])
 @jwt_required()
 def update_field_display_label(tracker_field_id: int):
@@ -379,6 +392,8 @@ def update_field_display_label(tracker_field_id: int):
     except Exception as e:
         return error_response(f"Failed to update field display label: {str(e)}", 500)
 
+
+#update field help text
 @trackers_bp.route('/<int:tracker_field_id>/update-field-help-text', methods=['PATCH'])
 @jwt_required()
 def update_field_help_text(tracker_field_id: int):
@@ -399,9 +414,20 @@ def update_field_help_text(tracker_field_id: int):
         return error_response(f"Failed to update field help text: {str(e)}", 500)
 
 
+#TODO
+# Get all fields for a tracker
+@trackers_bp.route('/<int:tracker_id>/fields', methods=['GET'])
+
+# Get specific field details
+@trackers_bp.route('/<int:tracker_field_id>/field-details', methods=['GET'])
+
+# Update field order (reorder fields)
+@trackers_bp.route('/<int:tracker_field_id>/update-field-order', methods=['PATCH'])
 
 
 #Options
+
+#create new option in a specific field of a specific tracker
 @trackers_bp.route('/<int:tracker_field_id>/create-new-option', methods=['POST'])
 @jwt_required()
 def create_new_option(tracker_field_id: int):
@@ -433,6 +459,7 @@ def create_new_option(tracker_field_id: int):
         return error_response(f"Failed to create option: {str(e)}", 500)
 
 
+#delete option
 @trackers_bp.route('/<int:option_id>/delete-option', methods=['DELETE'])
 @jwt_required()
 def delete_option(option_id: int):
@@ -449,6 +476,8 @@ def delete_option(option_id: int):
     except Exception as e:
         return error_response(f"Failed to delete option: {str(e)}", 500)
 
+
+#update option info
 @trackers_bp.route('/<int:option_id>/update-option-info', methods=['PUT'])
 @jwt_required()
 def update_option_info(option_id: int):
@@ -466,3 +495,35 @@ def update_option_info(option_id: int):
         return error_response("Validation failed", 400, err.messages)
     except Exception as e:
         return error_response(f"Failed to update option: {str(e)}", 500)
+
+
+
+#TODO
+# Get all options for a field
+@trackers_bp.route('/<int:tracker_field_id>/options', methods=['GET'])
+
+# Get specific option details
+@trackers_bp.route('/<int:option_id>/option-details', methods=['GET'])
+
+# Update option order (reorder options)
+@trackers_bp.route('/<int:option_id>/update-option-order', methods=['PATCH'])
+
+
+#BULK OPERATIONS
+
+# Bulk update multiple fields
+@trackers_bp.route('/<int:tracker_id>/bulk-update-fields', methods=['PUT'])
+
+# Bulk delete multiple options
+@trackers_bp.route('/<int:tracker_field_id>/bulk-delete-options', methods=['DELETE'])
+
+#UTILITY ROUTES
+
+# Get available option types
+@trackers_bp.route('/option-types', methods=['GET'])
+
+# Duplicate a field (with all its options)
+@trackers_bp.route('/<int:tracker_field_id>/duplicate-field', methods=['POST'])
+
+# Export tracker configuration
+@trackers_bp.route('/<int:tracker_id>/export-config', methods=['GET'])
