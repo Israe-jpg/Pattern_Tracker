@@ -391,6 +391,64 @@ class CategoryService:
         except Exception:
             db.session.rollback()
             raise
+
+    @staticmethod
+    def update_field_order(field_id: int, new_order: int) -> None:
+        try:
+            field = TrackerField.query.filter_by(id=field_id).first()
+            if not field:
+                raise ValueError("Field not found")
+            if field.field_group != 'custom':
+                raise ValueError("Cannot reorder baseline fields")
+
+            target_order = int(new_order)
+
+            # Count baseline fields to anchor minimum absolute index
+            baseline_count = TrackerField.query.filter_by(
+                category_id=field.category_id,
+                field_group='baseline',
+                is_active=True
+            ).count()
+
+            # Custom siblings ordered by absolute order
+            siblings = TrackerField.query.filter_by(
+                category_id=field.category_id,
+                field_group='custom',
+                is_active=True
+            ).order_by(TrackerField.field_order).all()
+
+            total_custom = len(siblings)
+            if total_custom == 0:
+                db.session.commit()
+                return
+
+            # Validate target within custom range (0..total_custom-1)
+            if target_order < 0 or target_order >= total_custom:
+                raise ValueError("new_order out of range")
+
+            # Map to absolute order space, after baseline block
+            absolute_target = baseline_count + target_order
+            current_order = field.field_order
+            if absolute_target == current_order:
+                db.session.commit()
+                return
+
+            # Shift affected custom siblings using absolute field_order
+            if absolute_target > current_order:
+                for s in siblings:
+                    if current_order < s.field_order <= absolute_target:
+                        s.field_order -= 1
+            else:
+                for s in siblings:
+                    if absolute_target <= s.field_order < current_order:
+                        s.field_order += 1
+
+            field.field_order = absolute_target
+
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            raise
     
     @staticmethod
     def _clear_irrelevant_fields(option: FieldOption, option_type: str) -> None:

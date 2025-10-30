@@ -445,13 +445,47 @@ def update_field_help_text(tracker_field_id: int):
 @trackers_bp.route('/<int:tracker_field_id>/field-details', methods=['GET'])
 @jwt_required()
 def get_field_details(tracker_field_id: int):
-    pass
+    try:
+        _, user_id = get_current_user()
+        tracker_field = verify_field_ownership(tracker_field_id, user_id)
+    except ValueError as e:
+        return error_response(str(e), 404)
+    
+    try:
+        options = FieldOption.query.filter_by(tracker_field_id=tracker_field.id).order_by(FieldOption.option_order).all()
+        return success_response(
+            "Field details retrieved successfully",
+            {
+                'field': tracker_field.to_dict(),
+                'options': [opt.to_dict() for opt in options]
+            }
+        )
+    except Exception as e:
+        return error_response(f"Failed to get field details: {str(e)}", 500)
 
 # Update field order (reorder fields)
 @trackers_bp.route('/<int:tracker_field_id>/update-field-order', methods=['PATCH'])
 @jwt_required()
 def update_field_order(tracker_field_id: int):
-    pass
+    try:
+        _, user_id = get_current_user()
+        tracker_field = verify_field_ownership(tracker_field_id, user_id)
+    except ValueError as e:
+        return error_response(str(e), 404)
+    
+    try:
+        new_order = request.json.get('new_order')
+        if new_order is None:
+            return error_response("new_order is required", 400)
+        
+        try:
+            CategoryService.update_field_order(tracker_field_id, int(new_order))
+        except ValueError as ve:
+            return error_response(str(ve), 400)
+        
+        return success_response("Field order updated successfully")
+    except Exception as e:
+        return error_response(f"Failed to update field order: {str(e)}", 500)
 
 
 #Options
