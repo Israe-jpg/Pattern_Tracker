@@ -329,6 +329,50 @@ def get_tracker_schema(tracker_id: int):
         return error_response(f"Failed to retrieve schema: {str(e)}", 500)
 
 
+# Ordered fields (baseline then custom), with options ordered
+@trackers_bp.route('/<int:tracker_id>/ordered-fields', methods=['GET'])
+@jwt_required()
+def get_ordered_fields(tracker_id: int):
+    try:
+        _, user_id = get_current_user()
+        tracker = verify_tracker_ownership(tracker_id, user_id)
+    except ValueError as e:
+        return error_response(str(e), 404)
+
+    try:
+        # Baseline first
+        baseline_fields = TrackerField.query.filter_by(
+            category_id=tracker.category_id,
+            field_group='baseline',
+            is_active=True
+        ).order_by(TrackerField.field_order).all()
+
+        # Then custom
+        custom_fields = TrackerField.query.filter_by(
+            category_id=tracker.category_id,
+            field_group='custom',
+            is_active=True
+        ).order_by(TrackerField.field_order).all()
+
+        def serialize_field(field: TrackerField):
+            options = FieldOption.query.filter_by(
+                tracker_field_id=field.id,
+                is_active=True
+            ).order_by(FieldOption.option_order).all()
+            data = field.to_dict()
+            data['options'] = [o.to_dict() for o in options]
+            return data
+
+        return success_response(
+            "Fields retrieved successfully",
+            {
+                'baseline_fields': [serialize_field(f) for f in baseline_fields],
+                'custom_fields': [serialize_field(f) for f in custom_fields]
+            }
+        )
+    except Exception as e:
+        return error_response(f"Failed to retrieve fields: {str(e)}", 500)
+
 #create new field in a custom schema of a specific tracker
 @trackers_bp.route('/<int:tracker_id>/create-new-field', methods=['POST'])
 @jwt_required()
