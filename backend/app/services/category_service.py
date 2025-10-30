@@ -97,6 +97,7 @@ class SchemaManager:
         flag_modified(category, 'data_schema')
 
 
+
 class FieldOptionBuilder:
     
     OPTION_FIELDS = {
@@ -342,6 +343,52 @@ class CategoryService:
             
             db.session.commit()
         except Exception as e:
+            db.session.rollback()
+            raise
+    
+    @staticmethod
+    def update_option_order(option_id: int, new_order: int) -> None:
+        try:
+            option = FieldOption.query.filter_by(id=option_id).first()
+            if not option:
+                raise ValueError("Option not found")
+
+            # Normalize and validate new_order (0-based indexing)
+            target_order = int(new_order)
+
+            siblings = FieldOption.query.filter_by(
+                tracker_field_id=option.tracker_field_id
+            ).order_by(FieldOption.option_order).all()
+
+            total = len(siblings)
+            if total == 0:
+                db.session.commit()
+                return
+
+            if target_order < 0 or target_order >= total:
+                raise ValueError("new_order out of range")
+
+            current_order = option.option_order
+            if target_order == current_order:
+                db.session.commit()
+                return
+
+            # Shift orders of siblings to make room
+            if target_order > current_order:
+                # Moving down: decrement those between (current, target]
+                for s in siblings:
+                    if current_order < s.option_order <= target_order:
+                        s.option_order -= 1
+            else:
+                # Moving up: increment those between [target, current)
+                for s in siblings:
+                    if target_order <= s.option_order < current_order:
+                        s.option_order += 1
+
+            option.option_order = target_order
+
+            db.session.commit()
+        except Exception:
             db.session.rollback()
             raise
     

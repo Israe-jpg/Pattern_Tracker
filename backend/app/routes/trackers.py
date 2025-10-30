@@ -562,7 +562,25 @@ def get_option_details(option_id: int):
 @trackers_bp.route('/<int:option_id>/update-option-order', methods=['PATCH'])
 @jwt_required()
 def update_option_order(option_id: int):
-    pass
+    try:
+        _, user_id = get_current_user()
+        option = verify_option_ownership(option_id, user_id)
+    except ValueError as e:
+        return error_response(str(e), 404)
+    
+    try:
+        new_order = request.json.get('new_order')
+        if new_order is None:
+            return error_response("new_order is required", 400)
+        
+        try:
+            CategoryService.update_option_order(option_id, int(new_order))
+        except ValueError as ve:
+            return error_response(str(ve), 400)
+        
+        return success_response("Option order updated successfully")
+    except Exception as e:
+        return error_response(f"Failed to update option order: {str(e)}", 500)
 
 
 #BULK OPERATIONS
