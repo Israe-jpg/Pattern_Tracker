@@ -440,12 +440,6 @@ def update_field_help_text(tracker_field_id: int):
         return error_response(f"Failed to update field help text: {str(e)}", 500)
 
 
-#TODO
-# Get all fields for a tracker
-@trackers_bp.route('/<int:tracker_id>/fields', methods=['GET'])
-@jwt_required()
-def get_tracker_fields(tracker_id: int):
-    pass
 
 # Get specific field details
 @trackers_bp.route('/<int:tracker_field_id>/field-details', methods=['GET'])
