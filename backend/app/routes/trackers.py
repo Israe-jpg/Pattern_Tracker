@@ -225,6 +225,9 @@ def update_default_tracker(tracker_id: int):
 #TODO
 # Change the name of a tracker
 @trackers_bp.route('/<int:tracker_id>/change-tracker-name', methods=['PATCH'])
+@jwt_required()
+def change_tracker_name(tracker_id: int):
+    pass
 
 
 # CUSTOM CATEGORY ROUTES
@@ -417,12 +420,21 @@ def update_field_help_text(tracker_field_id: int):
 #TODO
 # Get all fields for a tracker
 @trackers_bp.route('/<int:tracker_id>/fields', methods=['GET'])
+@jwt_required()
+def get_tracker_fields(tracker_id: int):
+    pass
 
 # Get specific field details
 @trackers_bp.route('/<int:tracker_field_id>/field-details', methods=['GET'])
+@jwt_required()
+def get_field_details(tracker_field_id: int):
+    pass
 
 # Update field order (reorder fields)
 @trackers_bp.route('/<int:tracker_field_id>/update-field-order', methods=['PATCH'])
+@jwt_required()
+def update_field_order(tracker_field_id: int):
+    pass
 
 
 #Options
@@ -501,29 +513,53 @@ def update_option_info(option_id: int):
 #TODO
 # Get all options for a field
 @trackers_bp.route('/<int:tracker_field_id>/options', methods=['GET'])
+@jwt_required()
+def get_field_options(tracker_field_id: int):
+    pass
 
 # Get specific option details
 @trackers_bp.route('/<int:option_id>/option-details', methods=['GET'])
+@jwt_required()
+def get_option_details(option_id: int):
+    pass
 
 # Update option order (reorder options)
 @trackers_bp.route('/<int:option_id>/update-option-order', methods=['PATCH'])
+@jwt_required()
+def update_option_order(option_id: int):
+    pass
 
 
 #BULK OPERATIONS
 
 # Bulk update multiple fields
 @trackers_bp.route('/<int:tracker_id>/bulk-update-fields', methods=['PUT'])
+@jwt_required()
+def bulk_update_fields(tracker_id: int):
+    pass
 
 # Bulk delete multiple options
 @trackers_bp.route('/<int:tracker_field_id>/bulk-delete-options', methods=['DELETE'])
+@jwt_required()
+def bulk_delete_options(tracker_field_id: int):
+    pass
 
 #UTILITY ROUTES
 
 # Get available option types
 @trackers_bp.route('/option-types', methods=['GET'])
+@jwt_required()
+def get_option_types():
+    pass
 
 # Duplicate a field (with all its options)
 @trackers_bp.route('/<int:tracker_field_id>/duplicate-field', methods=['POST'])
+@jwt_required()
+def duplicate_field(tracker_field_id: int):
+    pass
 
 # Export tracker configuration
 @trackers_bp.route('/<int:tracker_id>/export-config', methods=['GET'])
+@jwt_required()
+def export_tracker_config(tracker_id: int):
+    pass
