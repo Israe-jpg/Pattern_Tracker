@@ -527,7 +527,6 @@ def update_option_info(option_id: int):
 
 
 
-#TODO
 # Get all options for a field
 @trackers_bp.route('/<int:tracker_field_id>/options', methods=['GET'])
 @jwt_required()
@@ -548,7 +547,16 @@ def get_field_options(tracker_field_id: int):
 @trackers_bp.route('/<int:option_id>/option-details', methods=['GET'])
 @jwt_required()
 def get_option_details(option_id: int):
-    pass
+    try:
+        _, user_id = get_current_user()
+        option = verify_option_ownership(option_id, user_id)
+    except ValueError as e:
+        return error_response(str(e), 404)
+    
+    try:
+        return success_response("Option details retrieved successfully", {'option': option.to_dict()})
+    except Exception as e:
+        return error_response(f"Failed to get option details: {str(e)}", 500)
 
 # Update option order (reorder options)
 @trackers_bp.route('/<int:option_id>/update-option-order', methods=['PATCH'])
