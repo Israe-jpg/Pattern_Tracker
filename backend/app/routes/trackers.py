@@ -222,7 +222,6 @@ def update_default_tracker(tracker_id: int):
         return error_response(f"Failed to update default tracker: {str(e)}", 500)
 
 
-#TODO
 # Change the name of a tracker
 @trackers_bp.route('/<int:tracker_id>/change-tracker-name', methods=['PATCH'])
 @jwt_required()
