@@ -227,7 +227,31 @@ def update_default_tracker(tracker_id: int):
 @trackers_bp.route('/<int:tracker_id>/change-tracker-name', methods=['PATCH'])
 @jwt_required()
 def change_tracker_name(tracker_id: int):
-    pass
+    try:
+        _, user_id = get_current_user()
+        tracker = verify_tracker_ownership(tracker_id, user_id)
+    except ValueError as e:
+        return error_response(str(e), 404)
+    
+    if not tracker.is_default:
+        category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
+        if category:
+            try:
+                new_name = request.json.get('new_name')
+                if not new_name:
+                    return error_response("new_name is required", 400)
+                
+                try:
+                    category.name = new_name
+                    db.session.commit()
+                    return success_response("Tracker name updated successfully")
+                except Exception as e:
+                    db.session.rollback()
+                    return error_response(f"Failed to update tracker name: {str(e)}", 500)
+            except Exception as e:
+                return error_response(f"Failed to update tracker name: {str(e)}", 500)
+    else:
+        return error_response("Cannot change name of default tracker", 403)
 
 
 # CUSTOM CATEGORY ROUTES
