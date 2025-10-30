@@ -532,7 +532,17 @@ def update_option_info(option_id: int):
 @trackers_bp.route('/<int:tracker_field_id>/options', methods=['GET'])
 @jwt_required()
 def get_field_options(tracker_field_id: int):
-    pass
+    try:
+        _, user_id = get_current_user()
+        tracker_field = verify_field_ownership(tracker_field_id, user_id)
+    except ValueError as e:
+        return error_response(str(e), 404)
+    
+    try:
+        options = tracker_field.options
+        return success_response("Options retrieved successfully", {'options': [option.to_dict() for option in options]})
+    except Exception as e:
+        return error_response(f"Failed to get options: {str(e)}", 500)
 
 # Get specific option details
 @trackers_bp.route('/<int:option_id>/option-details', methods=['GET'])
