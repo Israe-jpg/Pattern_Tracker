@@ -265,7 +265,22 @@ def get_tracker_details(tracker_id: int):
             return error_response("Tracker category not found", 404)
     except ValueError as e:
         return error_response(str(e), 404)
-    return success_response("Tracker details retrieved successfully", {'tracker': tracker.to_dict(), 'category': category.to_dict()})
+    
+    try:
+        # Rebuild schema to ensure it only includes active fields and options
+        CategoryService.rebuild_category_schema(category.id)
+        # Refresh category to get updated data_schema
+        db.session.refresh(category)
+        
+        return success_response(
+            "Tracker details retrieved successfully",
+            {
+                'tracker': tracker.to_dict(),
+                'category': category.to_dict()
+            }
+        )
+    except Exception as e:
+        return error_response(f"Failed to retrieve tracker details: {str(e)}", 500)
 
 # CUSTOM CATEGORY ROUTES
 

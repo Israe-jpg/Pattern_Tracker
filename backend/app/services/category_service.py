@@ -619,8 +619,28 @@ class CategoryService:
         if not category:
             raise ValueError("Category not found")
         
-        baseline_schema = CategoryService.get_baseline_schema()
+        # Build baseline schema from active baseline fields in database
+        baseline_fields = TrackerField.query.filter_by(
+            category_id=category_id,
+            field_group='baseline',
+            is_active=True
+        ).order_by(TrackerField.field_order).all()
         
+        baseline_schema = {}
+        for field in baseline_fields:
+            field_options = FieldOption.query.filter_by(
+                tracker_field_id=field.id,
+                is_active=True
+            ).order_by(FieldOption.option_order).all()
+            
+            field_schema = {}
+            for option in field_options:
+                option_schema = SchemaManager.build_option_schema(option.to_dict())
+                field_schema[option.option_name] = option_schema
+            
+            baseline_schema[field.field_name] = field_schema
+        
+        # Build custom schema from active custom fields in database
         custom_fields = TrackerField.query.filter_by(
             category_id=category_id, 
             field_group='custom',
