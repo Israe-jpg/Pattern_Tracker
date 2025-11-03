@@ -253,6 +253,20 @@ def change_tracker_name(tracker_id: int):
         return error_response("Cannot change name of default tracker", 403)
 
 
+# Get tracker details
+@trackers_bp.route('/<int:tracker_id>/tracker-details', methods=['GET'])
+@jwt_required()
+def get_tracker_details(tracker_id: int):
+    try:
+        _, user_id = get_current_user()
+        tracker = verify_tracker_ownership(tracker_id, user_id)
+        category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
+        if not category:
+            return error_response("Tracker category not found", 404)
+    except ValueError as e:
+        return error_response(str(e), 404)
+    return success_response("Tracker details retrieved successfully", {'tracker': tracker.to_dict(), 'category': category.to_dict()})
+
 # CUSTOM CATEGORY ROUTES
 
 #create custom category
@@ -298,6 +312,8 @@ def create_custom_category():
     except Exception as e:
         db.session.rollback()
         return error_response(f"Failed to create custom category: {str(e)}", 500)
+
+
 
 
 # DATA SCHEMA ROUTES
@@ -722,3 +738,15 @@ def export_tracker_config(tracker_id: int):
         return success_response("Tracker configuration exported successfully", {'tracker_config': tracker_config})
     except Exception as e:
         return error_response(f"Failed to export tracker configuration: {str(e)}", 500)
+
+# Import tracker configuration
+@trackers_bp.route('/<int:tracker_id>/import-config', methods=['POST'])
+@jwt_required()
+def import_tracker_config(tracker_id: int):
+    pass
+
+
+
+
+
+
