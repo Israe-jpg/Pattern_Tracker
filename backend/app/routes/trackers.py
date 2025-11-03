@@ -698,7 +698,19 @@ def bulk_delete_options(tracker_field_id: int):
 @trackers_bp.route('/option-types', methods=['GET'])
 @jwt_required()
 def get_option_types():
-    pass
+    try:
+        _, user_id = get_current_user()
+    except ValueError as e:
+        return error_response("User not found", 404)
+    
+    try:
+        option_types = FieldOption.get_available_option_types()
+        return success_response(
+            "Available option types retrieved successfully",
+            {'option_types': option_types}
+        )
+    except Exception as e:
+        return error_response(f"Failed to get option types: {str(e)}", 500)
 
 # Duplicate a field (with all its options)
 @trackers_bp.route('/<int:tracker_field_id>/duplicate-field', methods=['POST'])
