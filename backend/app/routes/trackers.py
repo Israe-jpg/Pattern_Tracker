@@ -673,7 +673,24 @@ def bulk_update_fields(tracker_id: int):
 @trackers_bp.route('/<int:tracker_field_id>/bulk-delete-options', methods=['DELETE'])
 @jwt_required()
 def bulk_delete_options(tracker_field_id: int):
-    pass
+    try:
+        _, user_id = get_current_user()
+        tracker_field = verify_field_ownership(tracker_field_id, user_id)
+    except ValueError as e:
+        return error_response(str(e), 404)
+    options_to_delete = request.json.get('options_to_delete', [])
+    if not options_to_delete:
+        return error_response("options_to_delete is required", 400)
+    try:
+        CategoryService.bulk_delete_options(tracker_field, options_to_delete)
+    except Exception as e:
+        return error_response(f"Failed to delete options: {str(e)}", 500)
+    try:
+        db.session.commit()
+        return success_response("Options deleted successfully")
+    except Exception as e:
+        db.session.rollback()
+        return error_response(f"Failed to delete options: {str(e)}", 500)
 
 #UTILITY ROUTES
 

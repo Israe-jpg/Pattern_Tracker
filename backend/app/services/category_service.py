@@ -518,7 +518,17 @@ class CategoryService:
             if category:
                 SchemaManager.remove_option_from_schema(category, field_name, option_name)
             
-            db.session.commit()
+            # Check if this was the last option in the field
+            remaining_options = FieldOption.query.filter_by(
+                tracker_field_id=field.id,
+                is_active=True
+            ).count()
+            
+            # If field has no options left and it's a custom field, delete the field too
+            if remaining_options == 0 and field.field_group == 'custom':
+                CategoryService.delete_field_from_category(field.id)
+            else:
+                db.session.commit()
         except Exception as e:
             db.session.rollback()
             raise
@@ -545,7 +555,42 @@ class CategoryService:
             db.session.rollback()
             raise
 
-    
+
+    @staticmethod
+    def bulk_delete_options(tracker_field: TrackerField, options_to_delete: List[int]) -> None:
+        try:
+            category = TrackerCategory.query.filter_by(id=tracker_field.category_id).first()
+            
+            # Get option names before deletion for schema cleanup
+            options_to_remove_names = []
+            for option_id in options_to_delete:
+                option = FieldOption.query.filter_by(id=option_id).first()
+                if not option:
+                    raise ValueError("Option not found")
+                options_to_remove_names.append(option.option_name)
+                db.session.delete(option)
+            db.session.flush()
+            
+            # Remove from schema
+            if category:
+                for option_name in options_to_remove_names:
+                    SchemaManager.remove_option_from_schema(category, tracker_field.field_name, option_name)
+            
+            # Check if field has any options left
+            remaining_options = FieldOption.query.filter_by(
+                tracker_field_id=tracker_field.id,
+                is_active=True
+            ).count()
+            
+            # If field has no options left and it's a custom field, delete the field too
+            if remaining_options == 0 and tracker_field.field_group == 'custom':
+                CategoryService.delete_field_from_category(tracker_field.id)
+            else:
+                db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            raise
+   
     @staticmethod
     def _config_to_option_data(option_name: str, option_config: Dict[str, Any]) -> Dict[str, Any]:
         return {
