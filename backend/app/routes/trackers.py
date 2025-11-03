@@ -548,6 +548,25 @@ def update_field_order(tracker_field_id: int):
         return error_response(f"Failed to update field order: {str(e)}", 500)
 
 
+# Update field is_active status
+@trackers_bp.route('/<int:tracker_field_id>/toggle-field-active-status', methods=['PATCH'])
+@jwt_required()
+def toggle_field_active_status(tracker_field_id: int):
+    try:
+        _, user_id = get_current_user()
+        tracker_field = verify_field_ownership(tracker_field_id, user_id)
+    except ValueError as e:
+        return error_response(str(e), 404)
+    
+    try:
+        CategoryService.toggle_field_active_status(tracker_field_id)
+        return success_response("Field active status toggled successfully")
+    except Exception as e:
+        return error_response(f"Failed to toggle field active status: {str(e)}", 500)
+
+
+
+
 #Options
 
 #create new option in a specific field of a specific tracker

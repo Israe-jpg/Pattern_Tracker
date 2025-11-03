@@ -655,3 +655,15 @@ class CategoryService:
     @staticmethod
     def export_tracker_config(category: TrackerCategory) -> Dict[str, Any]:
         return category.data_schema
+
+    @staticmethod
+    def toggle_field_active_status(field_id: int) -> None:
+        try:
+            field = TrackerField.query.filter_by(id=field_id).first()
+            if not field:
+                raise ValueError("Field not found")
+            field.is_active = not field.is_active
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            raise
