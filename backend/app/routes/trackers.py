@@ -663,12 +663,6 @@ def update_option_order(option_id: int):
 
 #BULK OPERATIONS
 
-# Bulk update multiple fields
-@trackers_bp.route('/<int:tracker_id>/bulk-update-fields', methods=['PUT'])
-@jwt_required()
-def bulk_update_fields(tracker_id: int):
-    pass
-
 # Bulk delete multiple options
 @trackers_bp.route('/<int:tracker_field_id>/bulk-delete-options', methods=['DELETE'])
 @jwt_required()
@@ -711,12 +705,6 @@ def get_option_types():
         )
     except Exception as e:
         return error_response(f"Failed to get option types: {str(e)}", 500)
-
-# Duplicate a field (with all its options)
-@trackers_bp.route('/<int:tracker_field_id>/duplicate-field', methods=['POST'])
-@jwt_required()
-def duplicate_field(tracker_field_id: int):
-    pass
 
 # Export tracker configuration
 @trackers_bp.route('/<int:tracker_id>/export-config', methods=['GET'])
