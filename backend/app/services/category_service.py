@@ -651,3 +651,7 @@ class CategoryService:
         db.session.commit()
         
         return rebuilt_schema
+    
+    @staticmethod
+    def export_tracker_config(category: TrackerCategory) -> Dict[str, Any]:
+        return category.data_schema

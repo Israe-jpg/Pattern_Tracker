@@ -722,4 +722,15 @@ def duplicate_field(tracker_field_id: int):
 @trackers_bp.route('/<int:tracker_id>/export-config', methods=['GET'])
 @jwt_required()
 def export_tracker_config(tracker_id: int):
-    pass
+    try:
+        _, user_id = get_current_user()
+        tracker = verify_tracker_ownership(tracker_id, user_id)
+        if not tracker:
+            return error_response("Tracker not found", 404)
+        tracker_category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
+        if not tracker_category:
+            return error_response("Tracker category not found", 404)
+        tracker_config = CategoryService.export_tracker_config(tracker_category)
+        return success_response("Tracker configuration exported successfully", {'tracker_config': tracker_config})
+    except Exception as e:
+        return error_response(f"Failed to export tracker configuration: {str(e)}", 500)
