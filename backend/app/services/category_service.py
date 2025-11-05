@@ -3,6 +3,7 @@ import os
 from typing import Dict, List, Any
 from sqlalchemy.orm.attributes import flag_modified
 from app import db
+from app.models.tracker import Tracker
 from app.models.tracker_category import TrackerCategory
 from app.models.tracker_field import TrackerField
 from app.models.field_option import FieldOption
@@ -316,6 +317,169 @@ class CategoryService:
     def export_tracker_config(category: TrackerCategory) -> Dict[str, Any]:
         return category.data_schema
     
+    @staticmethod
+    def import_tracker_config(tracker: Tracker, tracker_config: Dict[str, Any]) -> None:
+        """
+        Import tracker configuration by recreating fields and options from schema.
+        Note: This only recreates custom fields. Baseline fields are not modified.
+        """
+        try:
+            category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
+            if not category:
+                raise ValueError("Category not found")
+            
+            # Prevent import to default categories
+            if CategoryService.is_default_category(category.name):
+                raise ValueError("Cannot import config to default categories")
+            
+            # Delete all existing custom fields (cascade deletes options)
+            existing_custom_fields = TrackerField.query.filter_by(
+                category_id=category.id,
+                field_group='custom'
+            ).all()
+            
+            for field in existing_custom_fields:
+                db.session.delete(field)
+            db.session.flush()
+            
+            # Parse config structure (handle both old and new format)
+            if 'active' in tracker_config and 'inactive' in tracker_config:
+                # New format with active/inactive sections
+                custom_schema = tracker_config.get('active', {}).get('custom', {})
+                inactive_custom_schema = tracker_config.get('inactive', {}).get('custom', {})
+            elif 'custom' in tracker_config:
+                # Old format - only active custom fields
+                custom_schema = tracker_config.get('custom', {})
+                inactive_custom_schema = {}
+            else:
+                raise ValueError("Invalid config format: missing custom fields")
+            
+            # Get max order for baseline fields to start custom fields after them
+            max_baseline_order = db.session.query(db.func.max(TrackerField.field_order)).filter_by(
+                category_id=category.id,
+                field_group='baseline'
+            ).scalar() or -1
+            
+            field_order = max_baseline_order + 1
+            
+            # Recreate active custom fields and options
+            for field_name, field_schema in custom_schema.items():
+                field = TrackerField(
+                    category_id=category.id,
+                    field_name=field_name,
+                    field_group='custom',
+                    field_order=field_order,
+                    display_label=field_name.replace('_', ' ').title(),
+                    is_active=True
+                )
+                db.session.add(field)
+                db.session.flush()
+                
+                # Recreate options for this field
+                option_order = 0
+                for option_name, option_schema in field_schema.items():
+                    option_data = CategoryService._schema_to_option_data(option_name, option_schema)
+                    option = FieldOptionBuilder.create(
+                        field.id, option_data, option_order, is_active=True
+                    )
+                    db.session.add(option)
+                    option_order += 1
+                
+                field_order += 1
+            
+            # Recreate inactive custom fields and options
+            for field_name, field_schema in inactive_custom_schema.items():
+                # Handle inactive fields with active/inactive options
+                if isinstance(field_schema, dict) and 'active_options' in field_schema:
+                    active_options = field_schema.get('active_options', {})
+                    inactive_options = field_schema.get('inactive_options', {})
+                    all_options = {**active_options, **inactive_options}
+                else:
+                    # Fallback to treating all as inactive
+                    all_options = field_schema if isinstance(field_schema, dict) else {}
+                
+                field = TrackerField(
+                    category_id=category.id,
+                    field_name=field_name,
+                    field_group='custom',
+                    field_order=field_order,
+                    display_label=field_name.replace('_', ' ').title(),
+                    is_active=False
+                )
+                db.session.add(field)
+                db.session.flush()
+                
+                # Recreate options
+                option_order = 0
+                for option_name, option_schema in all_options.items():
+                    option_data = CategoryService._schema_to_option_data(option_name, option_schema)
+                    # Determine if option is active based on which section it came from
+                    is_option_active = option_name in field_schema.get('active_options', {}) if isinstance(field_schema, dict) and 'active_options' in field_schema else False
+                    
+                    option = FieldOptionBuilder.create(
+                        field.id, option_data, option_order, is_active=is_option_active
+                    )
+                    db.session.add(option)
+                    option_order += 1
+                
+                field_order += 1
+            
+            # Rebuild and save schema
+            CategoryService.rebuild_category_schema(category.id)
+            db.session.commit()
+            
+        except Exception as e:
+            db.session.rollback()
+            raise
+    
+    @staticmethod
+    def _schema_to_option_data(option_name: str, option_schema: Dict[str, Any]) -> Dict[str, Any]:
+        """Convert schema format back to option data format"""
+        # Reverse map schema type to option_type
+        type_mapping = {
+            'integer': 'rating' if 'range' in option_schema else 'number_input',
+            'string': 'single_choice' if 'enum' in option_schema else 'text',
+            'array': 'multiple_choice',
+            'boolean': 'yes_no',
+            'float': 'number_input'
+        }
+        
+        schema_type = option_schema.get('type', 'string')
+        option_type = type_mapping.get(schema_type, 'text')
+        
+        # Special case: if it's integer with range, check if it's rating
+        if schema_type == 'integer' and 'range' in option_schema:
+            range_val = option_schema['range']
+            if len(range_val) == 2 and range_val[0] == 1 and range_val[1] <= 10:
+                option_type = 'rating'
+        
+        option_data = {
+            'option_name': option_name,
+            'option_type': option_type,
+            'is_required': not option_schema.get('optional', False),
+            'display_label': option_name.replace('_', ' ').title()
+        }
+        
+        # Extract range
+        if 'range' in option_schema and len(option_schema['range']) == 2:
+            option_data['min_value'] = option_schema['range'][0]
+            option_data['max_value'] = option_schema['range'][1]
+        
+        # Extract enum (choices)
+        if 'enum' in option_schema:
+            option_data['choices'] = option_schema['enum']
+        
+        # Extract labels
+        if 'labels' in option_schema:
+            option_data['choice_labels'] = option_schema['labels']
+        
+        # Extract other fields
+        for key in ['max_length', 'step']:
+            if key in option_schema:
+                option_data[key] = option_schema[key]
+        
+        return option_data
+
     # ========================================================================
     # Category Creation
     # ========================================================================

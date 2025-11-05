@@ -823,7 +823,18 @@ def export_tracker_config(tracker_id: int):
 @trackers_bp.route('/<int:tracker_id>/import-config', methods=['POST'])
 @jwt_required()
 def import_tracker_config(tracker_id: int):
-    pass
+    try:
+        _, user_id = get_current_user()
+        tracker = verify_tracker_ownership(tracker_id, user_id)
+    except ValueError as e:
+        return error_response(str(e), 404)
+    
+    try:
+        tracker_config = request.json.get('tracker_config')
+        CategoryService.import_tracker_config(tracker, tracker_config)
+        return success_response("Tracker configuration imported successfully")
+    except Exception as e:
+        return error_response(f"Failed to import tracker configuration: {str(e)}", 500)
 
 
 
