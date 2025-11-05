@@ -164,7 +164,7 @@
 							"bearer": [
 								{
 									"key": "token",
-									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MTIzMjAyNCwianRpIjoiZmU2Y2MzZjQtNjJkYi00YzM2LTgwZTUtNTVjMmUzYzcyMDg0IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjEyMzIwMjQsImV4cCI6MTc2MTIzNTYyNH0.XcTiFPNYdwIXZvZbFRjdDRc85rlg_WENLX7ayZaM7RQ",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MTgzOTQ1NiwianRpIjoiMTlhOTljNGYtOWJiZi00ZWU3LWEzZjgtZTNkODEyYWQxZTRkIiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjE4Mzk0NTYsImV4cCI6MTc2MTg0MzA1Nn0.KTZXMGe8TCENklG9FWNh48--OU07kpsYEXHHzuprhi0",
 									"type": "string"
 								}
 							]
@@ -296,6 +296,80 @@
 						}
 					},
 					"response": []
+				},
+				{
+					"name": "Change the name of a tracker",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MTgzOTQ1NiwianRpIjoiMTlhOTljNGYtOWJiZi00ZWU3LWEzZjgtZTNkODEyYWQxZTRkIiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjE4Mzk0NTYsImV4cCI6MTc2MTg0MzA1Nn0.KTZXMGe8TCENklG9FWNh48--OU07kpsYEXHHzuprhi0",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"new_name\": \"updated_name_test\"\r\n}"
+						},
+						"url": {
+							"raw": "http://localhost:5000/api/trackers/20/change-tracker-name",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "5000",
+							"path": [
+								"api",
+								"trackers",
+								"20",
+								"change-tracker-name"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "get tracker details",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MjM1Nzc3MywianRpIjoiY2MxMjk3OTktODdjZi00ZDZkLWFmMWMtNzE3MTdlZDk2ZGU0IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjIzNTc3NzMsImV4cCI6MTc2MjM2MTM3M30.piDQtY9ELUYPF-SlZ4LjlAglIu8O9tLPBs7bVXmxHYA",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:5000/api/trackers/20/tracker-details",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "5000",
+							"path": [
+								"api",
+								"trackers",
+								"20",
+								"tracker-details"
+							]
+						}
+					},
+					"response": []
 				}
 			]
 		},
@@ -313,7 +387,7 @@
 							"bearer": [
 								{
 									"key": "token",
-									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MTIzMjAyNCwianRpIjoiZmU2Y2MzZjQtNjJkYi00YzM2LTgwZTUtNTVjMmUzYzcyMDg0IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjEyMzIwMjQsImV4cCI6MTc2MTIzNTYyNH0.XcTiFPNYdwIXZvZbFRjdDRc85rlg_WENLX7ayZaM7RQ",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MTg0Mzg2NywianRpIjoiZTAzZWJjZjAtNjkwOS00YzVjLWEwZGUtYWYwMzE4ZDY1ZjY1IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjE4NDM4NjcsImV4cCI6MTc2MTg0NzQ2N30.VYtKcHKJbPAO6KmK6yXSUyhJzPt_Szf0UtquGjSylfk",
 									"type": "string"
 								}
 							]
@@ -354,7 +428,7 @@
 							"bearer": [
 								{
 									"key": "token",
-									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MTIzMjAyNCwianRpIjoiZmU2Y2MzZjQtNjJkYi00YzM2LTgwZTUtNTVjMmUzYzcyMDg0IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjEyMzIwMjQsImV4cCI6MTc2MTIzNTYyNH0.XcTiFPNYdwIXZvZbFRjdDRc85rlg_WENLX7ayZaM7RQ",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MTg0Mzg2NywianRpIjoiZTAzZWJjZjAtNjkwOS00YzVjLWEwZGUtYWYwMzE4ZDY1ZjY1IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjE4NDM4NjcsImV4cCI6MTc2MTg0NzQ2N30.VYtKcHKJbPAO6KmK6yXSUyhJzPt_Szf0UtquGjSylfk",
 									"type": "string"
 								}
 							]
@@ -369,7 +443,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\r\n  \"field_data\": {\r\n    \"field_name\": \"new_test_field_added\",\r\n    \"display_label\": \"Test field after fix\"\r\n  },\r\n  \"options\": [\r\n    {\r\n      \"option_name\": \"rating\",\r\n      \"option_type\": \"rating\",\r\n      \"min_value\": 1,\r\n      \"max_value\": 10,\r\n      \"is_required\": true\r\n    }\r\n  ]\r\n}"
+							"raw": "{\r\n  \"field_data\": {\r\n    \"field_name\": \"third_test\",\r\n    \"display_label\": \"third test field\"\r\n  },\r\n  \"options\": [\r\n    {\r\n      \"option_name\": \"first_opton\",\r\n      \"option_type\": \"rating\",\r\n      \"min_value\": 1,\r\n      \"max_value\": 4,\r\n      \"is_required\": true\r\n    },\r\n\r\n    {\r\n      \"option_name\": \"second_opton\",\r\n      \"option_type\": \"rating\",\r\n      \"min_value\": 1,\r\n      \"max_value\": 5,\r\n      \"is_required\": true\r\n    }\r\n  ]\r\n}"
 						},
 						"url": {
 							"raw": "http://localhost:5000/api/trackers/20/create-new-field",
@@ -507,6 +581,156 @@
 						}
 					},
 					"response": []
+				},
+				{
+					"name": "Get a specific field information with all its options",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MTgzOTQ1NiwianRpIjoiMTlhOTljNGYtOWJiZi00ZWU3LWEzZjgtZTNkODEyYWQxZTRkIiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjE4Mzk0NTYsImV4cCI6MTc2MTg0MzA1Nn0.KTZXMGe8TCENklG9FWNh48--OU07kpsYEXHHzuprhi0",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:5000/api/trackers/40/field-details",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "5000",
+							"path": [
+								"api",
+								"trackers",
+								"40",
+								"field-details"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update the field order",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MTg0Mzg2NywianRpIjoiZTAzZWJjZjAtNjkwOS00YzVjLWEwZGUtYWYwMzE4ZDY1ZjY1IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjE4NDM4NjcsImV4cCI6MTc2MTg0NzQ2N30.VYtKcHKJbPAO6KmK6yXSUyhJzPt_Szf0UtquGjSylfk",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"new_order\":0\r\n\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:5000/api/trackers/44/update-field-order",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "5000",
+							"path": [
+								"api",
+								"trackers",
+								"44",
+								"update-field-order"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "get ordered fields",
+					"protocolProfileBehavior": {
+						"disableBodyPruning": true
+					},
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MTg0Mzg2NywianRpIjoiZTAzZWJjZjAtNjkwOS00YzVjLWEwZGUtYWYwMzE4ZDY1ZjY1IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjE4NDM4NjcsImV4cCI6MTc2MTg0NzQ2N30.VYtKcHKJbPAO6KmK6yXSUyhJzPt_Szf0UtquGjSylfk",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": ""
+						},
+						"url": {
+							"raw": "http://localhost:5000/api/trackers/20/ordered-fields",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "5000",
+							"path": [
+								"api",
+								"trackers",
+								"20",
+								"ordered-fields"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "toggle-field-active-status",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MjM2MzkyNiwianRpIjoiMjFhOTQxMjUtN2RjZC00NjgyLTg2MWEtYTdjMGM1YzdjOWRjIiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjIzNjM5MjYsImV4cCI6MTc2MjM2NzUyNn0.ld--krA2G-iElih20purLbqj7Cahta1cXFk8nYkNQAQ",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PATCH",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:5000/api/trackers/44/toggle-field-active-status",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "5000",
+							"path": [
+								"api",
+								"trackers",
+								"44",
+								"toggle-field-active-status"
+							]
+						}
+					},
+					"response": []
 				}
 			]
 		},
@@ -521,7 +745,7 @@
 							"bearer": [
 								{
 									"key": "token",
-									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MDcxNjUzNywianRpIjoiZmQzNmVlZGEtYzA5MC00YTQ0LWI1YWEtNmE1ZDJiYzBlMTdjIiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjA3MTY1MzcsImV4cCI6MTc2MDcyMDEzN30.dfVuOq4h4i5Mba5sq-1ypRguQjHX9imFuitzqewR_CE",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MjE4NDA5OCwianRpIjoiOWM5Y2Y4YzYtNzM2MS00NGVmLTg2ZWMtMWQxMWU2NjI0OTc0IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjIxODQwOTgsImV4cCI6MTc2MjE4NzY5OH0.jlc7XG9xs13RnynWGUUYDjxmy4KYn4ECTJo_fLnEQqw",
 									"type": "string"
 								}
 							]
@@ -536,10 +760,10 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\r\n  \"option_data\": {\r\n    \"option_name\": \"beds\",\r\n    \"option_type\": \"text\",\r\n    \"is_required\": false,\r\n    \"display_label\": \"Additional Notes\",\r\n    \"help_text\": \"Add any additional comments\",\r\n    \"max_length\": 500,\r\n    \"placeholder\": \"Enter your notes here...\",\r\n    \"is_active\": true\r\n  }\r\n}"
+							"raw": "{\r\n  \"option_data\": {\r\n    \"option_name\": \"test3\",\r\n    \"option_type\": \"text\",\r\n    \"is_required\": false,\r\n    \"display_label\": \"Additional Notes\",\r\n    \"help_text\": \"Add any additional comments\",\r\n    \"max_length\": 500,\r\n    \"placeholder\": \"Enter your notes here...\",\r\n    \"is_active\": true\r\n  }\r\n}"
 						},
 						"url": {
-							"raw": "http://localhost:5000/api/trackers/31/create-new-option",
+							"raw": "http://localhost:5000/api/trackers/40/create-new-option",
 							"protocol": "http",
 							"host": [
 								"localhost"
@@ -548,7 +772,7 @@
 							"path": [
 								"api",
 								"trackers",
-								"31",
+								"40",
 								"create-new-option"
 							]
 						}
@@ -563,7 +787,7 @@
 							"bearer": [
 								{
 									"key": "token",
-									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MDcxNjUzNywianRpIjoiZmQzNmVlZGEtYzA5MC00YTQ0LWI1YWEtNmE1ZDJiYzBlMTdjIiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjA3MTY1MzcsImV4cCI6MTc2MDcyMDEzN30.dfVuOq4h4i5Mba5sq-1ypRguQjHX9imFuitzqewR_CE",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MDk3MjMwMCwianRpIjoiNGNiMjljZmMtODdhMi00YzMwLWFiOWEtNTVmMzIzZDhkODY2IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjA5NzIzMDAsImV4cCI6MTc2MDk3NTkwMH0.HFGAWyqJwfTD2ll6tn_rFmK9LhiSSqu3tRlFIXnS41o",
 									"type": "string"
 								}
 							]
@@ -575,7 +799,7 @@
 							"raw": ""
 						},
 						"url": {
-							"raw": "http://localhost:5000/api/trackers/43/delete-option",
+							"raw": "http://localhost:5000/api/trackers/41/delete-option",
 							"protocol": "http",
 							"host": [
 								"localhost"
@@ -584,7 +808,7 @@
 							"path": [
 								"api",
 								"trackers",
-								"43",
+								"41",
 								"delete-option"
 							]
 						}
@@ -594,7 +818,303 @@
 				{
 					"name": "Update option info",
 					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MTU3OTcwNywianRpIjoiNTBjNDExYjgtZGFlOS00YWUyLThkYjAtZTUzZDc2MzhiZmUzIiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjE1Nzk3MDcsImV4cCI6MTc2MTU4MzMwN30.P9BJOeD23w01Fs61zT_Ks7iQDKuEWxYbn1CylcuiL50",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"option_name\": \"test_updated\",\r\n    \"option_type\": \"yes_no\",\r\n    \"is_required\": true,\r\n    \"display_label\": \"r u ok?\",\r\n    \"help_text\": \"yes or no quetsion\",\r\n    \"placeholder\": \"Select your mood rating\",\r\n    \"default_value\": \"yes\", \r\n    \"validation_rules\": {\r\n        \"required\": true\r\n    },\r\n    \"display_options\": {\r\n        \"show_labels\": true,\r\n        \"color_scheme\": \"mood\",\r\n        \"show_help\": true\r\n    }\r\n}"
+						},
+						"url": {
+							"raw": "http://localhost:5000/api/trackers/62/update-option-info",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "5000",
+							"path": [
+								"api",
+								"trackers",
+								"62",
+								"update-option-info"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "retrieve all options inside a field",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MjE4NDA5OCwianRpIjoiOWM5Y2Y4YzYtNzM2MS00NGVmLTg2ZWMtMWQxMWU2NjI0OTc0IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjIxODQwOTgsImV4cCI6MTc2MjE4NzY5OH0.jlc7XG9xs13RnynWGUUYDjxmy4KYn4ECTJo_fLnEQqw",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:5000/api/trackers//40/options",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "5000",
+							"path": [
+								"api",
+								"trackers",
+								"",
+								"40",
+								"options"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "get details about a specific option",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MTgzOTQ1NiwianRpIjoiMTlhOTljNGYtOWJiZi00ZWU3LWEzZjgtZTNkODEyYWQxZTRkIiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjE4Mzk0NTYsImV4cCI6MTc2MTg0MzA1Nn0.KTZXMGe8TCENklG9FWNh48--OU07kpsYEXHHzuprhi0",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:5000/api/trackers/62/option-details",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "5000",
+							"path": [
+								"api",
+								"trackers",
+								"62",
+								"option-details"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "update order of an option",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MTgzOTQ1NiwianRpIjoiMTlhOTljNGYtOWJiZi00ZWU3LWEzZjgtZTNkODEyYWQxZTRkIiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjE4Mzk0NTYsImV4cCI6MTc2MTg0MzA1Nn0.KTZXMGe8TCENklG9FWNh48--OU07kpsYEXHHzuprhi0",
+									"type": "string"
+								}
+							]
+						},
 						"method": "PATCH",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"new_order\": 4\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:5000/api/trackers/48/update-option-order",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "5000",
+							"path": [
+								"api",
+								"trackers",
+								"48",
+								"update-option-order"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "bulk delete options from a field",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MjE4NDA5OCwianRpIjoiOWM5Y2Y4YzYtNzM2MS00NGVmLTg2ZWMtMWQxMWU2NjI0OTc0IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjIxODQwOTgsImV4cCI6MTc2MjE4NzY5OH0.jlc7XG9xs13RnynWGUUYDjxmy4KYn4ECTJo_fLnEQqw",
+									"type": "string"
+								}
+							]
+						},
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"options_to_delete\":[69,70]\r\n\r\n}"
+						},
+						"url": {
+							"raw": "http://localhost:5000/api/trackers/40/bulk-delete-options",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "5000",
+							"path": [
+								"api",
+								"trackers",
+								"40",
+								"bulk-delete-options"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "toggle option active status",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MjM2MzkyNiwianRpIjoiMjFhOTQxMjUtN2RjZC00NjgyLTg2MWEtYTdjMGM1YzdjOWRjIiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjIzNjM5MjYsImV4cCI6MTc2MjM2NzUyNn0.ld--krA2G-iElih20purLbqj7Cahta1cXFk8nYkNQAQ",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PATCH",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:5000/api/trackers/67/toggle-option-active-status",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "5000",
+							"path": [
+								"api",
+								"trackers",
+								"67",
+								"toggle-option-active-status"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Utility routes",
+			"item": [
+				{
+					"name": "retrieve option types labels",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MjE4NDA5OCwianRpIjoiOWM5Y2Y4YzYtNzM2MS00NGVmLTg2ZWMtMWQxMWU2NjI0OTc0IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjIxODQwOTgsImV4cCI6MTc2MjE4NzY5OH0.jlc7XG9xs13RnynWGUUYDjxmy4KYn4ECTJo_fLnEQqw",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:5000/api/trackers/option-types",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "5000",
+							"path": [
+								"api",
+								"trackers",
+								"option-types"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "export config of a tracker",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MjE4NDA5OCwianRpIjoiOWM5Y2Y4YzYtNzM2MS00NGVmLTg2ZWMtMWQxMWU2NjI0OTc0IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjIxODQwOTgsImV4cCI6MTc2MjE4NzY5OH0.jlc7XG9xs13RnynWGUUYDjxmy4KYn4ECTJo_fLnEQqw",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:5000/api/trackers/20/export-config",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "5000",
+							"path": [
+								"api",
+								"trackers",
+								"20",
+								"export-config"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get data schema with active and non active fields and options",
+					"request": {
+						"method": "GET",
 						"header": []
 					},
 					"response": []
