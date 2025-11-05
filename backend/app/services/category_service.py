@@ -683,7 +683,16 @@ class CategoryService:
             field = TrackerField.query.filter_by(id=field_id).first()
             if not field:
                 raise ValueError("Field not found")
-            field.is_active = not field.is_active
+            
+            new_field_status = not field.is_active
+            field.is_active = new_field_status
+            db.session.flush()
+            
+            # Cascade to all options: if field is masked, mask all options; if unmasked, unmask all options
+            options = FieldOption.query.filter_by(tracker_field_id=field.id).all()
+            for option in options:
+                option.is_active = new_field_status
+            
             db.session.commit()
         except Exception as e:
             db.session.rollback()
@@ -695,7 +704,28 @@ class CategoryService:
             option = FieldOption.query.filter_by(id=option_id).first()
             if not option:
                 raise ValueError("Option not found")
-            option.is_active = not option.is_active
+            
+            new_option_status = not option.is_active
+            option.is_active = new_option_status
+            db.session.flush()
+            
+            field = option.tracker_field
+            
+            # If unmasking an option and field is inactive, unmask the field
+            if new_option_status and not field.is_active:
+                field.is_active = True
+                db.session.flush()
+            
+            # Check if all options are now inactive
+            active_options_count = FieldOption.query.filter_by(
+                tracker_field_id=field.id,
+                is_active=True
+            ).count()
+            
+            # If all options are inactive, mask the field
+            if active_options_count == 0:
+                field.is_active = False
+            
             db.session.commit()
         except Exception as e:
             db.session.rollback()
