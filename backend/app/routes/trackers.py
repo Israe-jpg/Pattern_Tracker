@@ -716,6 +716,23 @@ def update_option_order(option_id: int):
         return error_response(f"Failed to update option order: {str(e)}", 500)
 
 
+# Update option is_active status
+@trackers_bp.route('/<int:option_id>/toggle-option-active-status', methods=['PATCH'])
+@jwt_required()
+def toggle_option_active_status(option_id: int):
+    try:
+        _, user_id = get_current_user()
+        verify_option_ownership(option_id, user_id)
+    except ValueError as e:
+        return error_response(str(e), 404)
+    
+    try:
+        CategoryService.toggle_option_active_status(option_id)
+        return success_response("Option active status toggled successfully")
+    except Exception as e:
+        return error_response(f"Failed to toggle option active status: {str(e)}", 500)
+
+
 #BULK OPERATIONS
 
 # Bulk delete multiple options

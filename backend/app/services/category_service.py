@@ -688,3 +688,15 @@ class CategoryService:
         except Exception as e:
             db.session.rollback()
             raise
+    
+    @staticmethod
+    def toggle_option_active_status(option_id: int) -> None:
+        try:
+            option = FieldOption.query.filter_by(id=option_id).first()
+            if not option:
+                raise ValueError("Option not found")
+            option.is_active = not option.is_active
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            raise
