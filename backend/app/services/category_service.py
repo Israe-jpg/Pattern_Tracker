@@ -357,7 +357,8 @@ class CategoryService:
             target_order = int(new_order)
 
             siblings = FieldOption.query.filter_by(
-                tracker_field_id=option.tracker_field_id
+                tracker_field_id=option.tracker_field_id,
+                is_active=True
             ).order_by(FieldOption.option_order).all()
 
             total = len(siblings)

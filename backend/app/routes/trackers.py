@@ -232,25 +232,24 @@ def change_tracker_name(tracker_id: int):
     except ValueError as e:
         return error_response(str(e), 404)
     
-    if not tracker.is_default:
+    try:
+        if tracker.is_default:
+            return error_response("Cannot change name of default tracker", 403)
+        
         category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
-        if category:
-            try:
-                new_name = request.json.get('new_name')
-                if not new_name:
-                    return error_response("new_name is required", 400)
-                
-                try:
-                    category.name = new_name
-                    db.session.commit()
-                    return success_response("Tracker name updated successfully")
-                except Exception as e:
-                    db.session.rollback()
-                    return error_response(f"Failed to update tracker name: {str(e)}", 500)
-            except Exception as e:
-                return error_response(f"Failed to update tracker name: {str(e)}", 500)
-    else:
-        return error_response("Cannot change name of default tracker", 403)
+        if not category:
+            return error_response("Tracker category not found", 404)
+        
+        new_name = request.json.get('new_name')
+        if not new_name:
+            return error_response("new_name is required", 400)
+        
+        category.name = new_name
+        db.session.commit()
+        return success_response("Tracker name updated successfully")
+    except Exception as e:
+        db.session.rollback()
+        return error_response(f"Failed to update tracker name: {str(e)}", 500)
 
 
 # Get tracker details
@@ -527,7 +526,10 @@ def get_field_details(tracker_field_id: int):
         return error_response(str(e), 404)
     
     try:
-        options = FieldOption.query.filter_by(tracker_field_id=tracker_field.id).order_by(FieldOption.option_order).all()
+        options = FieldOption.query.filter_by(
+            tracker_field_id=tracker_field.id,
+            is_active=True
+        ).order_by(FieldOption.option_order).all()
         return success_response(
             "Field details retrieved successfully",
             {
@@ -666,7 +668,10 @@ def get_field_options(tracker_field_id: int):
         return error_response(str(e), 404)
     
     try:
-        options = tracker_field.options
+        options = FieldOption.query.filter_by(
+            tracker_field_id=tracker_field.id,
+            is_active=True
+        ).order_by(FieldOption.option_order).all()
         return success_response("Options retrieved successfully", {'options': [option.to_dict() for option in options]})
     except Exception as e:
         return error_response(f"Failed to get options: {str(e)}", 500)
@@ -722,18 +727,14 @@ def bulk_delete_options(tracker_field_id: int):
         tracker_field = verify_field_ownership(tracker_field_id, user_id)
     except ValueError as e:
         return error_response(str(e), 404)
-    options_to_delete = request.json.get('options_to_delete', [])
-    if not options_to_delete:
-        return error_response("options_to_delete is required", 400)
     try:
+        options_to_delete = request.json.get('options_to_delete', [])
+        if not options_to_delete:
+            return error_response("options_to_delete is required", 400)
+        
         CategoryService.bulk_delete_options(tracker_field, options_to_delete)
-    except Exception as e:
-        return error_response(f"Failed to delete options: {str(e)}", 500)
-    try:
-        db.session.commit()
         return success_response("Options deleted successfully")
     except Exception as e:
-        db.session.rollback()
         return error_response(f"Failed to delete options: {str(e)}", 500)
 
 #UTILITY ROUTES
@@ -763,11 +764,14 @@ def export_tracker_config(tracker_id: int):
     try:
         _, user_id = get_current_user()
         tracker = verify_tracker_ownership(tracker_id, user_id)
-        if not tracker:
-            return error_response("Tracker not found", 404)
         tracker_category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
         if not tracker_category:
             return error_response("Tracker category not found", 404)
+        
+        # Rebuild schema to ensure it only includes active fields and options
+        CategoryService.rebuild_category_schema(tracker_category.id)
+        db.session.refresh(tracker_category)
+        
         tracker_config = CategoryService.export_tracker_config(tracker_category)
         return success_response("Tracker configuration exported successfully", {'tracker_config': tracker_config})
     except Exception as e:
