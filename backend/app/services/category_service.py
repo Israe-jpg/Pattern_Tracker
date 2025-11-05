@@ -1,6 +1,6 @@
 import json
 import os
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any
 from sqlalchemy.orm.attributes import flag_modified
 from app import db
 from app.models.tracker_category import TrackerCategory
@@ -9,6 +9,7 @@ from app.models.field_option import FieldOption
 
 
 class SchemaManager:
+    """Manages JSON schema operations for tracker categories"""
     
     @staticmethod
     def build_option_schema(option_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -97,8 +98,8 @@ class SchemaManager:
         flag_modified(category, 'data_schema')
 
 
-
 class FieldOptionBuilder:
+    """Builds FieldOption instances from option data"""
     
     OPTION_FIELDS = {
         'option_name', 'option_type', 'is_required', 'display_label',
@@ -122,6 +123,7 @@ class FieldOptionBuilder:
 
 
 class CategoryService:
+    """Service for managing tracker categories, fields, and options"""
     
     CONFIG_PATH = os.path.join(os.path.dirname(__file__), '..', 'config', 'tracker_schemas.json')
     TYPE_MAPPING = {
@@ -133,11 +135,190 @@ class CategoryService:
     }
     DEFAULT_CATEGORIES = ['baseline', 'period_tracker', 'workout_tracker']
     
+    # ========================================================================
+    # Schema Management
+    # ========================================================================
+    
     @staticmethod
     def get_baseline_schema() -> Dict[str, Any]:
         with open(CategoryService.CONFIG_PATH, 'r') as f:
             schemas = json.load(f)
         return schemas.get('baseline', {})
+    
+    @staticmethod
+    def rebuild_category_schema(category_id: int) -> Dict[str, Any]:
+        category = TrackerCategory.query.filter_by(id=category_id).first()
+        if not category:
+            raise ValueError("Category not found")
+        
+        baseline_fields = TrackerField.query.filter_by(
+            category_id=category_id,
+            field_group='baseline',
+            is_active=True
+        ).order_by(TrackerField.field_order).all()
+        
+        baseline_schema = {}
+        for field in baseline_fields:
+            field_options = FieldOption.query.filter_by(
+                tracker_field_id=field.id,
+                is_active=True
+            ).order_by(FieldOption.option_order).all()
+            
+            field_schema = {}
+            for option in field_options:
+                option_schema = SchemaManager.build_option_schema(option.to_dict())
+                field_schema[option.option_name] = option_schema
+            
+            baseline_schema[field.field_name] = field_schema
+        
+        custom_fields = TrackerField.query.filter_by(
+            category_id=category_id, 
+            field_group='custom',
+            is_active=True
+        ).order_by(TrackerField.field_order).all()
+        
+        custom_schema = {}
+        for field in custom_fields:
+            field_options = FieldOption.query.filter_by(
+                tracker_field_id=field.id,
+                is_active=True
+            ).order_by(FieldOption.option_order).all()
+            
+            field_schema = {}
+            for option in field_options:
+                option_schema = SchemaManager.build_option_schema(option.to_dict())
+                field_schema[option.option_name] = option_schema
+            
+            custom_schema[field.field_name] = field_schema
+        
+        rebuilt_schema = {
+            "baseline": baseline_schema,
+            "custom": custom_schema
+        }
+        
+        category.data_schema = rebuilt_schema
+        flag_modified(category, 'data_schema')
+        db.session.commit()
+        
+        return rebuilt_schema
+    
+    @staticmethod
+    def get_all_inclusive_data_schema(category_id: int) -> Dict[str, Any]:
+        """Get complete data schema including both active and inactive fields/options"""
+        category = TrackerCategory.query.filter_by(id=category_id).first()
+        if not category:
+            raise ValueError("Category not found")
+        
+        active_baseline_fields = TrackerField.query.filter_by(
+            category_id=category_id,
+            field_group='baseline',
+            is_active=True
+        ).order_by(TrackerField.field_order).all()
+        
+        active_custom_fields = TrackerField.query.filter_by(
+            category_id=category_id,
+            field_group='custom',
+            is_active=True
+        ).order_by(TrackerField.field_order).all()
+        
+        active_baseline_schema = {}
+        for field in active_baseline_fields:
+            field_options = FieldOption.query.filter_by(
+                tracker_field_id=field.id,
+                is_active=True
+            ).order_by(FieldOption.option_order).all()
+            
+            field_schema = {}
+            for option in field_options:
+                option_schema = SchemaManager.build_option_schema(option.to_dict())
+                field_schema[option.option_name] = option_schema
+            
+            active_baseline_schema[field.field_name] = field_schema
+        
+        active_custom_schema = {}
+        for field in active_custom_fields:
+            field_options = FieldOption.query.filter_by(
+                tracker_field_id=field.id,
+                is_active=True
+            ).order_by(FieldOption.option_order).all()
+            
+            field_schema = {}
+            for option in field_options:
+                option_schema = SchemaManager.build_option_schema(option.to_dict())
+                field_schema[option.option_name] = option_schema
+            
+            active_custom_schema[field.field_name] = field_schema
+        
+        inactive_baseline_fields = TrackerField.query.filter_by(
+            category_id=category_id,
+            field_group='baseline',
+            is_active=False
+        ).order_by(TrackerField.field_order).all()
+        
+        inactive_custom_fields = TrackerField.query.filter_by(
+            category_id=category_id,
+            field_group='custom',
+            is_active=False
+        ).order_by(TrackerField.field_order).all()
+        
+        inactive_baseline_schema = {}
+        for field in inactive_baseline_fields:
+            field_options = FieldOption.query.filter_by(
+                tracker_field_id=field.id
+            ).order_by(FieldOption.option_order).all()
+            
+            field_schema = {
+                'active_options': {},
+                'inactive_options': {}
+            }
+            
+            for option in field_options:
+                option_schema = SchemaManager.build_option_schema(option.to_dict())
+                if option.is_active:
+                    field_schema['active_options'][option.option_name] = option_schema
+                else:
+                    field_schema['inactive_options'][option.option_name] = option_schema
+            
+            inactive_baseline_schema[field.field_name] = field_schema
+        
+        inactive_custom_schema = {}
+        for field in inactive_custom_fields:
+            field_options = FieldOption.query.filter_by(
+                tracker_field_id=field.id
+            ).order_by(FieldOption.option_order).all()
+            
+            field_schema = {
+                'active_options': {},
+                'inactive_options': {}
+            }
+            
+            for option in field_options:
+                option_schema = SchemaManager.build_option_schema(option.to_dict())
+                if option.is_active:
+                    field_schema['active_options'][option.option_name] = option_schema
+                else:
+                    field_schema['inactive_options'][option.option_name] = option_schema
+            
+            inactive_custom_schema[field.field_name] = field_schema
+        
+        return {
+            "active": {
+                "baseline": active_baseline_schema,
+                "custom": active_custom_schema
+            },
+            "inactive": {
+                "baseline": inactive_baseline_schema,
+                "custom": inactive_custom_schema
+            }
+        }
+    
+    @staticmethod
+    def export_tracker_config(category: TrackerCategory) -> Dict[str, Any]:
+        return category.data_schema
+    
+    # ========================================================================
+    # Category Creation
+    # ========================================================================
     
     @staticmethod
     def create_custom_category(name: str, custom_fields_data: List[Dict[str, Any]]) -> TrackerCategory:
@@ -221,6 +402,10 @@ class CategoryService:
                 )
                 db.session.add(field_option)
     
+    # ========================================================================
+    # Field Operations
+    # ========================================================================
+    
     @staticmethod
     def create_new_field(tracker_category: TrackerCategory, field_data: Dict[str, Any],
                          validated_options: List[Dict[str, Any]]) -> TrackerField:
@@ -264,6 +449,131 @@ class CategoryService:
             raise
     
     @staticmethod
+    def delete_field_from_category(field_id: int) -> None:
+        try:
+            field = TrackerField.query.filter_by(id=field_id).first()
+            if not field:
+                raise ValueError("Field not found")
+            
+            category = TrackerCategory.query.filter_by(id=field.category_id).first()
+            if not category:
+                raise ValueError("Category not found")
+            
+            db.session.delete(field)
+            db.session.flush()
+            
+            if category:
+                SchemaManager.remove_field_from_schema(category, field.field_name)
+            
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            raise
+    
+    @staticmethod
+    def update_field_display_label(field_id: int, new_label: str) -> None:
+        try:
+            field = TrackerField.query.filter_by(id=field_id).first()
+            if not field:
+                raise ValueError("Field not found")
+            
+            field.display_label = new_label
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            raise
+    
+    @staticmethod
+    def update_field_help_text(field_id: int, new_help_text: str) -> None:
+        try:
+            field = TrackerField.query.filter_by(id=field_id).first()
+            if not field:
+                raise ValueError("Field not found")
+            
+            field.help_text = new_help_text
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            raise
+    
+    @staticmethod
+    def update_field_order(field_id: int, new_order: int) -> None:
+        try:
+            field = TrackerField.query.filter_by(id=field_id).first()
+            if not field:
+                raise ValueError("Field not found")
+            if field.field_group != 'custom':
+                raise ValueError("Cannot reorder baseline fields")
+
+            target_order = int(new_order)
+
+            baseline_count = TrackerField.query.filter_by(
+                category_id=field.category_id,
+                field_group='baseline',
+                is_active=True
+            ).count()
+
+            siblings = TrackerField.query.filter_by(
+                category_id=field.category_id,
+                field_group='custom',
+                is_active=True
+            ).order_by(TrackerField.field_order).all()
+
+            total_custom = len(siblings)
+            if total_custom == 0:
+                db.session.commit()
+                return
+
+            if target_order < 0 or target_order >= total_custom:
+                raise ValueError("new_order out of range")
+
+            absolute_target = baseline_count + target_order
+            current_order = field.field_order
+            if absolute_target == current_order:
+                db.session.commit()
+                return
+
+            if absolute_target > current_order:
+                for s in siblings:
+                    if current_order < s.field_order <= absolute_target:
+                        s.field_order -= 1
+            else:
+                for s in siblings:
+                    if absolute_target <= s.field_order < current_order:
+                        s.field_order += 1
+
+            field.field_order = absolute_target
+
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            raise
+    
+    @staticmethod
+    def toggle_field_active_status(field_id: int) -> None:
+        try:
+            field = TrackerField.query.filter_by(id=field_id).first()
+            if not field:
+                raise ValueError("Field not found")
+            
+            new_field_status = not field.is_active
+            field.is_active = new_field_status
+            db.session.flush()
+            
+            options = FieldOption.query.filter_by(tracker_field_id=field.id).all()
+            for option in options:
+                option.is_active = new_field_status
+            
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            raise
+    
+    # ========================================================================
+    # Option Operations
+    # ========================================================================
+    
+    @staticmethod
     def create_new_option(tracker_field: TrackerField, option_data: Dict[str, Any]) -> FieldOption:
         try:
             max_order = db.session.query(db.func.max(FieldOption.option_order)).filter_by(
@@ -294,19 +604,6 @@ class CategoryService:
             raise
     
     @staticmethod
-    def update_field_display_label(field_id: int, new_label: str) -> None:
-        try:
-            field = TrackerField.query.filter_by(id=field_id).first()
-            if not field:
-                raise ValueError("Field not found")
-            
-            field.display_label = new_label
-            db.session.commit()
-        except Exception as e:
-            db.session.rollback()
-            raise
-
-    @staticmethod
     def update_option(option_id: int, validated_data: Dict[str, Any]) -> None:  
         try:
             option = FieldOption.query.filter_by(id=option_id).first()
@@ -318,12 +615,10 @@ class CategoryService:
             field = option.tracker_field
             category = TrackerCategory.query.filter_by(id=field.category_id).first()
             
-            # Update all provided fields
             for key, value in validated_data.items():
                 if hasattr(option, key):
                     setattr(option, key, value)
             
-            # Always clear fields that are not relevant for the current option type
             current_option_type = validated_data.get('option_type', old_option_type)
             CategoryService._clear_irrelevant_fields(option, current_option_type)
             
@@ -347,13 +642,75 @@ class CategoryService:
             raise
     
     @staticmethod
+    def delete_option_from_field(option_id: int) -> None:
+        try:
+            field_option = FieldOption.query.filter_by(id=option_id).first()
+            if not field_option:
+                raise ValueError("Field option not found")
+            
+            field = field_option.tracker_field
+            category = TrackerCategory.query.filter_by(id=field.category_id).first()
+            
+            option_name = field_option.option_name
+            field_name = field.field_name
+            
+            db.session.delete(field_option)
+            db.session.flush()
+            
+            if category:
+                SchemaManager.remove_option_from_schema(category, field_name, option_name)
+            
+            remaining_options = FieldOption.query.filter_by(
+                tracker_field_id=field.id,
+                is_active=True
+            ).count()
+            
+            if remaining_options == 0 and field.field_group == 'custom':
+                CategoryService.delete_field_from_category(field.id)
+            else:
+                db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            raise
+    
+    @staticmethod
+    def bulk_delete_options(tracker_field: TrackerField, options_to_delete: List[int]) -> None:
+        try:
+            category = TrackerCategory.query.filter_by(id=tracker_field.category_id).first()
+            
+            options_to_remove_names = []
+            for option_id in options_to_delete:
+                option = FieldOption.query.filter_by(id=option_id).first()
+                if not option:
+                    raise ValueError("Option not found")
+                options_to_remove_names.append(option.option_name)
+                db.session.delete(option)
+            db.session.flush()
+            
+            if category:
+                for option_name in options_to_remove_names:
+                    SchemaManager.remove_option_from_schema(category, tracker_field.field_name, option_name)
+            
+            remaining_options = FieldOption.query.filter_by(
+                tracker_field_id=tracker_field.id,
+                is_active=True
+            ).count()
+            
+            if remaining_options == 0 and tracker_field.field_group == 'custom':
+                CategoryService.delete_field_from_category(tracker_field.id)
+            else:
+                db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            raise
+    
+    @staticmethod
     def update_option_order(option_id: int, new_order: int) -> None:
         try:
             option = FieldOption.query.filter_by(id=option_id).first()
             if not option:
                 raise ValueError("Option not found")
 
-            # Normalize and validate new_order (0-based indexing)
             target_order = int(new_order)
 
             siblings = FieldOption.query.filter_by(
@@ -374,14 +731,11 @@ class CategoryService:
                 db.session.commit()
                 return
 
-            # Shift orders of siblings to make room
             if target_order > current_order:
-                # Moving down: decrement those between (current, target]
                 for s in siblings:
                     if current_order < s.option_order <= target_order:
                         s.option_order -= 1
             else:
-                # Moving up: increment those between [target, current)
                 for s in siblings:
                     if target_order <= s.option_order < current_order:
                         s.option_order += 1
@@ -390,311 +744,6 @@ class CategoryService:
 
             db.session.commit()
         except Exception:
-            db.session.rollback()
-            raise
-
-    @staticmethod
-    def update_field_order(field_id: int, new_order: int) -> None:
-        try:
-            field = TrackerField.query.filter_by(id=field_id).first()
-            if not field:
-                raise ValueError("Field not found")
-            if field.field_group != 'custom':
-                raise ValueError("Cannot reorder baseline fields")
-
-            target_order = int(new_order)
-
-            # Count baseline fields to anchor minimum absolute index
-            baseline_count = TrackerField.query.filter_by(
-                category_id=field.category_id,
-                field_group='baseline',
-                is_active=True
-            ).count()
-
-            # Custom siblings ordered by absolute order
-            siblings = TrackerField.query.filter_by(
-                category_id=field.category_id,
-                field_group='custom',
-                is_active=True
-            ).order_by(TrackerField.field_order).all()
-
-            total_custom = len(siblings)
-            if total_custom == 0:
-                db.session.commit()
-                return
-
-            # Validate target within custom range (0..total_custom-1)
-            if target_order < 0 or target_order >= total_custom:
-                raise ValueError("new_order out of range")
-
-            # Map to absolute order space, after baseline block
-            absolute_target = baseline_count + target_order
-            current_order = field.field_order
-            if absolute_target == current_order:
-                db.session.commit()
-                return
-
-            # Shift affected custom siblings using absolute field_order
-            if absolute_target > current_order:
-                for s in siblings:
-                    if current_order < s.field_order <= absolute_target:
-                        s.field_order -= 1
-            else:
-                for s in siblings:
-                    if absolute_target <= s.field_order < current_order:
-                        s.field_order += 1
-
-            field.field_order = absolute_target
-
-            db.session.commit()
-        except Exception:
-            db.session.rollback()
-            raise
-    
-    @staticmethod
-    def _clear_irrelevant_fields(option: FieldOption, option_type: str) -> None:
-        """Clear fields that are not relevant for the given option type"""
-        if option_type == 'yes_no':
-            # Yes/No doesn't need choices, labels, min/max values, etc.
-            option.choices = None
-            option.choice_labels = None
-            option.min_value = None
-            option.max_value = None
-            option.step = None
-            option.max_length = None
-        elif option_type == 'rating':
-            # Rating needs min/max values, clear choices if they exist
-            option.choices = None
-            option.choice_labels = None
-            option.max_length = None
-        elif option_type in ['single_choice', 'multiple_choice']:
-            # Choice types need choices and labels, clear numeric fields
-            option.min_value = None
-            option.max_value = None
-            option.step = None
-            option.max_length = None
-        elif option_type in ['text', 'notes']:
-            # Text types need max_length, clear numeric and choice fields
-            option.min_value = None
-            option.max_value = None
-            option.step = None
-            option.choices = None
-            option.choice_labels = None
-        elif option_type == 'number_input':
-            # Number input needs min/max values, clear choice fields
-            option.choices = None
-            option.choice_labels = None
-            option.max_length = None
-
-
-    @staticmethod
-    def update_field_help_text(field_id: int, new_help_text: str) -> None:
-        try:
-            field = TrackerField.query.filter_by(id=field_id).first()
-            if not field:
-                raise ValueError("Field not found")
-            
-            field.help_text = new_help_text
-            db.session.commit()
-        except Exception as e:
-            db.session.rollback()
-            raise
-
-    @staticmethod
-    def delete_option_from_field(option_id: int) -> None:
-        try:
-            field_option = FieldOption.query.filter_by(id=option_id).first()
-            if not field_option:
-                raise ValueError("Field option not found")
-            
-            field = field_option.tracker_field
-            category = TrackerCategory.query.filter_by(id=field.category_id).first()
-            
-            option_name = field_option.option_name
-            field_name = field.field_name
-            
-            db.session.delete(field_option)
-            db.session.flush()
-            
-            if category:
-                SchemaManager.remove_option_from_schema(category, field_name, option_name)
-            
-            # Check if this was the last option in the field
-            remaining_options = FieldOption.query.filter_by(
-                tracker_field_id=field.id,
-                is_active=True
-            ).count()
-            
-            # If field has no options left and it's a custom field, delete the field too
-            if remaining_options == 0 and field.field_group == 'custom':
-                CategoryService.delete_field_from_category(field.id)
-            else:
-                db.session.commit()
-        except Exception as e:
-            db.session.rollback()
-            raise
-    
-    @staticmethod
-    def delete_field_from_category(field_id: int) -> None:
-        try:
-            field = TrackerField.query.filter_by(id=field_id).first()
-            if not field:
-                raise ValueError("Field not found")
-            
-            category = TrackerCategory.query.filter_by(id=field.category_id).first()
-            if not category:
-                raise ValueError("Category not found")
-            
-            db.session.delete(field)
-            db.session.flush()
-            
-            if category:
-                SchemaManager.remove_field_from_schema(category, field.field_name)
-            
-            db.session.commit()
-        except Exception as e:
-            db.session.rollback()
-            raise
-
-
-    @staticmethod
-    def bulk_delete_options(tracker_field: TrackerField, options_to_delete: List[int]) -> None:
-        try:
-            category = TrackerCategory.query.filter_by(id=tracker_field.category_id).first()
-            
-            # Get option names before deletion for schema cleanup
-            options_to_remove_names = []
-            for option_id in options_to_delete:
-                option = FieldOption.query.filter_by(id=option_id).first()
-                if not option:
-                    raise ValueError("Option not found")
-                options_to_remove_names.append(option.option_name)
-                db.session.delete(option)
-            db.session.flush()
-            
-            # Remove from schema
-            if category:
-                for option_name in options_to_remove_names:
-                    SchemaManager.remove_option_from_schema(category, tracker_field.field_name, option_name)
-            
-            # Check if field has any options left
-            remaining_options = FieldOption.query.filter_by(
-                tracker_field_id=tracker_field.id,
-                is_active=True
-            ).count()
-            
-            # If field has no options left and it's a custom field, delete the field too
-            if remaining_options == 0 and tracker_field.field_group == 'custom':
-                CategoryService.delete_field_from_category(tracker_field.id)
-            else:
-                db.session.commit()
-        except Exception as e:
-            db.session.rollback()
-            raise
-   
-    @staticmethod
-    def _config_to_option_data(option_name: str, option_config: Dict[str, Any]) -> Dict[str, Any]:
-        return {
-            'option_name': option_name,
-            'option_type': CategoryService.TYPE_MAPPING.get(option_config.get('type', 'string'), 'single_choice'),
-            'is_required': not option_config.get('optional', True),
-            'min_value': option_config.get('range', [None, None])[0] if option_config.get('range') else None,
-            'max_value': option_config.get('range', [None, None])[1] if option_config.get('range') else None,
-            'max_length': option_config.get('max_length'),
-            'step': option_config.get('step'),
-            'choices': option_config.get('enum'),
-            'choice_labels': option_config.get('labels'),
-        }
-    
-    @staticmethod
-    def get_default_categories() -> List[str]:
-        return CategoryService.DEFAULT_CATEGORIES
-    
-    @staticmethod
-    def is_default_category(category_name: str) -> bool:
-        return category_name.lower() in CategoryService.DEFAULT_CATEGORIES
-    
-    @staticmethod
-    def rebuild_category_schema(category_id: int) -> Dict[str, Any]:
-        category = TrackerCategory.query.filter_by(id=category_id).first()
-        if not category:
-            raise ValueError("Category not found")
-        
-        # Build baseline schema from active baseline fields in database
-        baseline_fields = TrackerField.query.filter_by(
-            category_id=category_id,
-            field_group='baseline',
-            is_active=True
-        ).order_by(TrackerField.field_order).all()
-        
-        baseline_schema = {}
-        for field in baseline_fields:
-            field_options = FieldOption.query.filter_by(
-                tracker_field_id=field.id,
-                is_active=True
-            ).order_by(FieldOption.option_order).all()
-            
-            field_schema = {}
-            for option in field_options:
-                option_schema = SchemaManager.build_option_schema(option.to_dict())
-                field_schema[option.option_name] = option_schema
-            
-            baseline_schema[field.field_name] = field_schema
-        
-        # Build custom schema from active custom fields in database
-        custom_fields = TrackerField.query.filter_by(
-            category_id=category_id, 
-            field_group='custom',
-            is_active=True
-        ).order_by(TrackerField.field_order).all()
-        
-        custom_schema = {}
-        for field in custom_fields:
-            field_options = FieldOption.query.filter_by(
-                tracker_field_id=field.id,
-                is_active=True
-            ).order_by(FieldOption.option_order).all()
-            
-            field_schema = {}
-            for option in field_options:
-                option_schema = SchemaManager.build_option_schema(option.to_dict())
-                field_schema[option.option_name] = option_schema
-            
-            custom_schema[field.field_name] = field_schema
-        
-        rebuilt_schema = {
-            "baseline": baseline_schema,
-            "custom": custom_schema
-        }
-        
-        category.data_schema = rebuilt_schema
-        flag_modified(category, 'data_schema')
-        db.session.commit()
-        
-        return rebuilt_schema
-    
-    @staticmethod
-    def export_tracker_config(category: TrackerCategory) -> Dict[str, Any]:
-        return category.data_schema
-
-    @staticmethod
-    def toggle_field_active_status(field_id: int) -> None:
-        try:
-            field = TrackerField.query.filter_by(id=field_id).first()
-            if not field:
-                raise ValueError("Field not found")
-            
-            new_field_status = not field.is_active
-            field.is_active = new_field_status
-            db.session.flush()
-            
-            # Cascade to all options: if field is masked, mask all options; if unmasked, unmask all options
-            options = FieldOption.query.filter_by(tracker_field_id=field.id).all()
-            for option in options:
-                option.is_active = new_field_status
-            
-            db.session.commit()
-        except Exception as e:
             db.session.rollback()
             raise
     
@@ -711,18 +760,15 @@ class CategoryService:
             
             field = option.tracker_field
             
-            # If unmasking an option and field is inactive, unmask the field
             if new_option_status and not field.is_active:
                 field.is_active = True
                 db.session.flush()
             
-            # Check if all options are now inactive
             active_options_count = FieldOption.query.filter_by(
                 tracker_field_id=field.id,
                 is_active=True
             ).count()
             
-            # If all options are inactive, mask the field
             if active_options_count == 0:
                 field.is_active = False
             
@@ -730,115 +776,59 @@ class CategoryService:
         except Exception as e:
             db.session.rollback()
             raise
-
+    
+    # ========================================================================
+    # Utility Methods
+    # ========================================================================
+    
     @staticmethod
-    def get_all_inclusive_data_schema(category_id: int) -> Dict[str, Any]:
-        """Get complete data schema including both active and inactive fields/options"""
-        category = TrackerCategory.query.filter_by(id=category_id).first()
-        if not category:
-            raise ValueError("Category not found")
-        
-        # Build active schema (baseline + custom)
-        active_baseline_fields = TrackerField.query.filter_by(
-            category_id=category_id,
-            field_group='baseline',
-            is_active=True
-        ).order_by(TrackerField.field_order).all()
-        
-        active_custom_fields = TrackerField.query.filter_by(
-            category_id=category_id,
-            field_group='custom',
-            is_active=True
-        ).order_by(TrackerField.field_order).all()
-        
-        active_baseline_schema = {}
-        for field in active_baseline_fields:
-            field_options = FieldOption.query.filter_by(
-                tracker_field_id=field.id,
-                is_active=True
-            ).order_by(FieldOption.option_order).all()
-            
-            field_schema = {}
-            for option in field_options:
-                option_schema = SchemaManager.build_option_schema(option.to_dict())
-                field_schema[option.option_name] = option_schema
-            
-            active_baseline_schema[field.field_name] = field_schema
-        
-        active_custom_schema = {}
-        for field in active_custom_fields:
-            field_options = FieldOption.query.filter_by(
-                tracker_field_id=field.id,
-                is_active=True
-            ).order_by(FieldOption.option_order).all()
-            
-            field_schema = {}
-            for option in field_options:
-                option_schema = SchemaManager.build_option_schema(option.to_dict())
-                field_schema[option.option_name] = option_schema
-            
-            active_custom_schema[field.field_name] = field_schema
-        
-        # Build inactive schema (baseline + custom)
-        inactive_baseline_fields = TrackerField.query.filter_by(
-            category_id=category_id,
-            field_group='baseline',
-            is_active=False
-        ).order_by(TrackerField.field_order).all()
-        
-        inactive_custom_fields = TrackerField.query.filter_by(
-            category_id=category_id,
-            field_group='custom',
-            is_active=False
-        ).order_by(TrackerField.field_order).all()
-        
-        inactive_baseline_schema = {}
-        for field in inactive_baseline_fields:
-            field_options = FieldOption.query.filter_by(
-                tracker_field_id=field.id
-            ).order_by(FieldOption.option_order).all()
-            
-            field_schema = {
-                'active_options': {},
-                'inactive_options': {}
-            }
-            
-            for option in field_options:
-                option_schema = SchemaManager.build_option_schema(option.to_dict())
-                if option.is_active:
-                    field_schema['active_options'][option.option_name] = option_schema
-                else:
-                    field_schema['inactive_options'][option.option_name] = option_schema
-            
-            inactive_baseline_schema[field.field_name] = field_schema
-        
-        inactive_custom_schema = {}
-        for field in inactive_custom_fields:
-            field_options = FieldOption.query.filter_by(
-                tracker_field_id=field.id
-            ).order_by(FieldOption.option_order).all()
-            
-            field_schema = {
-                'active_options': {},
-                'inactive_options': {}
-            }
-            
-            for option in field_options:
-                option_schema = SchemaManager.build_option_schema(option.to_dict())
-                if option.is_active:
-                    field_schema['active_options'][option.option_name] = option_schema
-                else:
-                    field_schema['inactive_options'][option.option_name] = option_schema
-            
-            inactive_custom_schema[field.field_name] = field_schema
-        
+    def _config_to_option_data(option_name: str, option_config: Dict[str, Any]) -> Dict[str, Any]:
         return {
-            "active": {
-                "baseline": active_baseline_schema,
-                "custom": active_custom_schema
-            },
-            "inactive": {
-                "baseline": inactive_baseline_schema,
-                "custom": inactive_custom_schema
-            }
+            'option_name': option_name,
+            'option_type': CategoryService.TYPE_MAPPING.get(option_config.get('type', 'string'), 'single_choice'),
+            'is_required': not option_config.get('optional', True),
+            'min_value': option_config.get('range', [None, None])[0] if option_config.get('range') else None,
+            'max_value': option_config.get('range', [None, None])[1] if option_config.get('range') else None,
+            'max_length': option_config.get('max_length'),
+            'step': option_config.get('step'),
+            'choices': option_config.get('enum'),
+            'choice_labels': option_config.get('labels'),
         }
+    
+    @staticmethod
+    def _clear_irrelevant_fields(option: FieldOption, option_type: str) -> None:
+        """Clear fields that are not relevant for the given option type"""
+        if option_type == 'yes_no':
+            option.choices = None
+            option.choice_labels = None
+            option.min_value = None
+            option.max_value = None
+            option.step = None
+            option.max_length = None
+        elif option_type == 'rating':
+            option.choices = None
+            option.choice_labels = None
+            option.max_length = None
+        elif option_type in ['single_choice', 'multiple_choice']:
+            option.min_value = None
+            option.max_value = None
+            option.step = None
+            option.max_length = None
+        elif option_type in ['text', 'notes']:
+            option.min_value = None
+            option.max_value = None
+            option.step = None
+            option.choices = None
+            option.choice_labels = None
+        elif option_type == 'number_input':
+            option.choices = None
+            option.choice_labels = None
+            option.max_length = None
+    
+    @staticmethod
+    def get_default_categories() -> List[str]:
+        return CategoryService.DEFAULT_CATEGORIES
+    
+    @staticmethod
+    def is_default_category(category_name: str) -> bool:
+        return category_name.lower() in CategoryService.DEFAULT_CATEGORIES
