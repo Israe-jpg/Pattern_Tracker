@@ -756,6 +756,19 @@ def bulk_delete_options(tracker_field_id: int):
 
 #UTILITY ROUTES
 
+#Get all masked fields that are inactive
+@trackers_bp.route('/masked-fields', methods=['GET'])
+@jwt_required()
+def get_masked_fields():
+    pass
+
+#Get all masked options that are inactive
+@trackers_bp.route('/masked-options', methods=['GET'])
+@jwt_required()
+def get_masked_options():
+    pass
+
+
 # Get available option types
 @trackers_bp.route('/option-types', methods=['GET'])
 @jwt_required()
