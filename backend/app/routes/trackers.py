@@ -756,18 +756,30 @@ def bulk_delete_options(tracker_field_id: int):
 
 #UTILITY ROUTES
 
-#Get all masked fields that are inactive
-@trackers_bp.route('/masked-fields', methods=['GET'])
+#Get active and inactive fields and options data schema
+@trackers_bp.route('/<int:tracker_id>/all-inclusive-data-schema', methods=['GET'])
 @jwt_required()
-def get_masked_fields():
-    pass
-
-#Get all masked options that are inactive
-@trackers_bp.route('/masked-options', methods=['GET'])
-@jwt_required()
-def get_masked_options():
-    pass
-
+def get_all_inclusive_data_schema(tracker_id: int):
+    try:
+        _, user_id = get_current_user()
+        tracker = verify_tracker_ownership(tracker_id, user_id)
+    except ValueError as e:
+        return error_response(str(e), 404)
+    
+    try:
+        category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
+        if not category:
+            return error_response("Tracker category not found", 404)
+        
+        all_schema = CategoryService.get_all_inclusive_data_schema(category.id)
+        return success_response(
+            "All inclusive data schema retrieved successfully",
+            {'data_schema': all_schema}
+        )
+    except ValueError as ve:
+        return error_response(str(ve), 404)
+    except Exception as e:
+        return error_response(f"Failed to get all inclusive data schema: {str(e)}", 500)
 
 # Get available option types
 @trackers_bp.route('/option-types', methods=['GET'])

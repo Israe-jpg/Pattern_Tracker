@@ -700,3 +700,115 @@ class CategoryService:
         except Exception as e:
             db.session.rollback()
             raise
+
+    @staticmethod
+    def get_all_inclusive_data_schema(category_id: int) -> Dict[str, Any]:
+        """Get complete data schema including both active and inactive fields/options"""
+        category = TrackerCategory.query.filter_by(id=category_id).first()
+        if not category:
+            raise ValueError("Category not found")
+        
+        # Build active schema (baseline + custom)
+        active_baseline_fields = TrackerField.query.filter_by(
+            category_id=category_id,
+            field_group='baseline',
+            is_active=True
+        ).order_by(TrackerField.field_order).all()
+        
+        active_custom_fields = TrackerField.query.filter_by(
+            category_id=category_id,
+            field_group='custom',
+            is_active=True
+        ).order_by(TrackerField.field_order).all()
+        
+        active_baseline_schema = {}
+        for field in active_baseline_fields:
+            field_options = FieldOption.query.filter_by(
+                tracker_field_id=field.id,
+                is_active=True
+            ).order_by(FieldOption.option_order).all()
+            
+            field_schema = {}
+            for option in field_options:
+                option_schema = SchemaManager.build_option_schema(option.to_dict())
+                field_schema[option.option_name] = option_schema
+            
+            active_baseline_schema[field.field_name] = field_schema
+        
+        active_custom_schema = {}
+        for field in active_custom_fields:
+            field_options = FieldOption.query.filter_by(
+                tracker_field_id=field.id,
+                is_active=True
+            ).order_by(FieldOption.option_order).all()
+            
+            field_schema = {}
+            for option in field_options:
+                option_schema = SchemaManager.build_option_schema(option.to_dict())
+                field_schema[option.option_name] = option_schema
+            
+            active_custom_schema[field.field_name] = field_schema
+        
+        # Build inactive schema (baseline + custom)
+        inactive_baseline_fields = TrackerField.query.filter_by(
+            category_id=category_id,
+            field_group='baseline',
+            is_active=False
+        ).order_by(TrackerField.field_order).all()
+        
+        inactive_custom_fields = TrackerField.query.filter_by(
+            category_id=category_id,
+            field_group='custom',
+            is_active=False
+        ).order_by(TrackerField.field_order).all()
+        
+        inactive_baseline_schema = {}
+        for field in inactive_baseline_fields:
+            field_options = FieldOption.query.filter_by(
+                tracker_field_id=field.id
+            ).order_by(FieldOption.option_order).all()
+            
+            field_schema = {
+                'active_options': {},
+                'inactive_options': {}
+            }
+            
+            for option in field_options:
+                option_schema = SchemaManager.build_option_schema(option.to_dict())
+                if option.is_active:
+                    field_schema['active_options'][option.option_name] = option_schema
+                else:
+                    field_schema['inactive_options'][option.option_name] = option_schema
+            
+            inactive_baseline_schema[field.field_name] = field_schema
+        
+        inactive_custom_schema = {}
+        for field in inactive_custom_fields:
+            field_options = FieldOption.query.filter_by(
+                tracker_field_id=field.id
+            ).order_by(FieldOption.option_order).all()
+            
+            field_schema = {
+                'active_options': {},
+                'inactive_options': {}
+            }
+            
+            for option in field_options:
+                option_schema = SchemaManager.build_option_schema(option.to_dict())
+                if option.is_active:
+                    field_schema['active_options'][option.option_name] = option_schema
+                else:
+                    field_schema['inactive_options'][option.option_name] = option_schema
+            
+            inactive_custom_schema[field.field_name] = field_schema
+        
+        return {
+            "active": {
+                "baseline": active_baseline_schema,
+                "custom": active_custom_schema
+            },
+            "inactive": {
+                "baseline": inactive_baseline_schema,
+                "custom": inactive_custom_schema
+            }
+        }
