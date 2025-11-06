@@ -43,8 +43,6 @@ class TrackingData(db.Model):
     __table_args__ = (
         # Composite index for common queries
         db.Index('idx_tracker_entry_date', 'tracker_id', 'entry_date'),
-        # Prevent duplicate entries for same tracker and date
-        db.UniqueConstraint('tracker_id', 'entry_date', name='uq_tracker_date'),
     )
     
     def to_dict(self):
