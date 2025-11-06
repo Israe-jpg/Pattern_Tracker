@@ -206,8 +206,5 @@ def update_tracking_data(tracker_id: int):
     except Exception as e:
         return error_response(f"Failed to update tracking data: {str(e)}", 500)
 
-#delete a tracking data entry for a specific tracker
-
-
 # -------------------------------------
 # TIME RELATED ROUTES

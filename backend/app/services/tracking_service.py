@@ -84,15 +84,44 @@ class TrackingService:
             
             # Update data if provided
             if data is not None:
-                # Validate new data against tracker schema
-                TrackingService._validate_data_against_schema(
+                # Process data: handle null values (removal) and validate
+                processed_data = TrackingService._process_update_data(
                     data,
                     category.data_schema
                 )
                 
-                # Merge new data with existing data (new data overwrites existing)
-                # Create new dict to ensure SQLAlchemy tracks the change
-                existing_entry.data = {**(existing_entry.data or {}), **data}
+                # Merge processed data with existing data
+                # If a field/option is set to null, it will be removed
+                existing_data = existing_entry.data or {}
+                
+                # Update or remove fields/options
+                for field_name, field_data in processed_data.items():
+                    if field_data is None:
+                        # Remove entire field if set to null
+                        if field_name in existing_data:
+                            del existing_data[field_name]
+                    elif isinstance(field_data, dict):
+                        # Update field options
+                        if field_name not in existing_data:
+                            existing_data[field_name] = {}
+                        
+                        for option_name, option_value in field_data.items():
+                            if option_value is None:
+                                # Remove option if set to null
+                                if option_name in existing_data[field_name]:
+                                    del existing_data[field_name][option_name]
+                            else:
+                                # Update option value
+                                existing_data[field_name][option_name] = option_value
+                        
+                        # Remove field if it has no options left
+                        if not existing_data[field_name]:
+                            del existing_data[field_name]
+                    else:
+                        # Direct field update
+                        existing_data[field_name] = field_data
+                
+                existing_entry.data = existing_data
             
             # Update AI insights if provided
             if ai_insights is not None:
@@ -140,6 +169,36 @@ class TrackingService:
         except Exception as e:
             db.session.rollback()
             raise
+    
+    @staticmethod
+    def _process_update_data(data: Dict[str, Any], schema: Dict[str, Any]) -> Dict[str, Any]:
+        # Separate null values (for removal) and non-null values (for validation)
+        data_to_validate = {}
+        for field_name, field_data in data.items():
+            if field_data is None:
+                # Null field - will be removed, no validation needed
+                continue
+            
+            if isinstance(field_data, dict):
+                # Check field options
+                options_to_validate = {}
+                for option_name, option_value in field_data.items():
+                    if option_value is None:
+                        # Null option - will be removed, no validation needed
+                        continue
+                    options_to_validate[option_name] = option_value
+                
+                if options_to_validate:
+                    data_to_validate[field_name] = options_to_validate
+            else:
+                data_to_validate[field_name] = field_data
+        
+        # Validate non-null values only
+        if data_to_validate:
+            TrackingService._validate_data_against_schema(data_to_validate, schema)
+        
+        # Return original data (with nulls) for processing
+        return data
     
     @staticmethod
     def _validate_data_against_schema(data: Dict[str, Any], schema: Dict[str, Any]) -> None:
