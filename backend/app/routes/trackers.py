@@ -158,10 +158,19 @@ def get_my_trackers():
     
     trackers = Tracker.query.filter_by(user_id=user_id).all()
     
+    # Build response with category names
+    trackers_list = []
+    for tracker in trackers:
+        category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
+        trackers_list.append({
+            'tracker_name': category.name if category else None,
+            'tracker_info': tracker.to_dict()
+        })
+    
     return success_response(
         "Trackers retrieved successfully",
         {
-            'trackers': [t.to_dict() for t in trackers],
+            'trackers': trackers_list,
             'total_count': len(trackers)
         }
     )
