@@ -29,8 +29,10 @@ def create_app(config_name='development'):
     # Register blueprints
     from app.routes.auth import auth_bp
     from app.routes.trackers import trackers_bp
+    from app.routes.data_tracking import data_tracking_bp
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
     app.register_blueprint(trackers_bp, url_prefix='/api/trackers')
+    app.register_blueprint(data_tracking_bp, url_prefix='/api/data-tracking')
     
     # Health check endpoint
     @app.route('/api/health')
