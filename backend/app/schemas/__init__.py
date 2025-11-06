@@ -1,4 +1,5 @@
 from .user_schemas import UserRegistrationSchema
 from .tracker_schemas import TrackerSchema
+from .tracking_data_schemas import TrackingDataSchema
 
-__all__ = ['UserRegistrationSchema', 'TrackerSchema']
+__all__ = ['UserRegistrationSchema', 'TrackerSchema', 'TrackingDataSchema']
