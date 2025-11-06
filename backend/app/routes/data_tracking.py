@@ -1,3 +1,4 @@
+from datetime import date
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import get_jwt_identity, jwt_required
 from marshmallow import ValidationError
@@ -74,7 +75,57 @@ def get_all_tracking_data(tracker_id: int):
     except Exception as e:
         return error_response(f"Failed to get all tracking data: {str(e)}", 500)
 
-#create a new tracking data entry for a specific tracker
+# PRIMARY ENDPOINT: Save tracking data 
+@data_tracking_bp.route('/<int:tracker_id>/save-tracking-data', methods=['POST'])
+@jwt_required()
+def save_tracking_data(tracker_id: int):
+    try:
+        _, user_id = get_current_user()
+        tracker = verify_tracker_ownership(tracker_id, user_id)
+    except ValueError as e:
+        return error_response(str(e), 404)
+    
+    try:
+        # Basic structure validation with schema
+        tracking_data_schema = TrackingDataSchema()
+        validated_data = tracking_data_schema.load(request.json)
+        
+        # Extract fields (all optional except basic structure)
+        entry_data = validated_data.get('data', {})
+        entry_date = validated_data.get('entry_date') or date.today()
+        ai_insights = validated_data.get('ai_insights')
+        
+        # Check if entry exists to determine response (before service call)
+        existing_entry = TrackingData.query.filter_by(
+            tracker_id=tracker_id,
+            entry_date=entry_date
+        ).first()
+        
+        # Business logic validation and save in service
+        tracking_data = TrackingService.save_tracking_data(
+            tracker=tracker,
+            data=entry_data,
+            entry_date=entry_date,
+            ai_insights=ai_insights
+        )
+        
+        # Return appropriate status code based on whether entry existed before
+        status_code = 200 if existing_entry else 201
+        message = "Tracking data updated successfully" if existing_entry else "Tracking data created successfully"
+        
+        return success_response(
+            message,
+            {'tracking_data': tracking_data.to_dict()}, 
+            status_code
+        )
+    except ValidationError as e:
+        return error_response("Validation failed", 400, e.messages)
+    except ValueError as e:
+        return error_response(str(e), 400)
+    except Exception as e:
+        return error_response(f"Failed to save tracking data: {str(e)}", 500)
+
+# OPTIONAL: Explicit create endpoint (use save-tracking-data for surveys)
 @data_tracking_bp.route('/<int:tracker_id>/add-tracking-data', methods=['POST'])
 @jwt_required()
 def add_tracking_data(tracker_id: int):
@@ -95,7 +146,7 @@ def add_tracking_data(tracker_id: int):
         ai_insights = validated_data.get('ai_insights')
         
         # Business logic validation and creation in service
-        tracking_data = TrackingService.add_tracking_data(
+        tracking_data = TrackingService.create_tracking_data(
             tracker=tracker,
             data=entry_data,
             entry_date=entry_date,
@@ -103,7 +154,7 @@ def add_tracking_data(tracker_id: int):
         )
         
         return success_response(
-            "Tracking data added successfully",
+            "Tracking data created successfully",
             {'tracking_data': tracking_data.to_dict()}, 201
         )
     except ValidationError as e:
@@ -113,8 +164,47 @@ def add_tracking_data(tracker_id: int):
     except Exception as e:
         return error_response(f"Failed to add tracking data: {str(e)}", 500)
 
-#update a tracking data entry for a specific tracker
-
+# OPTIONAL: Explicit update endpoint (use save-tracking-data for surveys)
+@data_tracking_bp.route('/<int:tracker_id>/update-tracking-data', methods=['PUT'])
+@jwt_required()
+def update_tracking_data(tracker_id: int):
+    try:
+        _, user_id = get_current_user()
+        tracker = verify_tracker_ownership(tracker_id, user_id)
+    except ValueError as e:
+        return error_response(str(e), 404)
+    
+    try:
+        # Basic structure validation with schema
+        tracking_data_schema = TrackingDataSchema()
+        validated_data = tracking_data_schema.load(request.json)
+        
+        # Extract fields
+        entry_date = validated_data.get('entry_date')
+        if not entry_date:
+            return error_response("entry_date is required for update", 400)
+        
+        entry_data = validated_data.get('data')
+        ai_insights = validated_data.get('ai_insights')
+        
+        # Business logic validation and update in service
+        tracking_data = TrackingService.update_tracking_data(
+            tracker=tracker,
+            entry_date=entry_date,
+            data=entry_data,
+            ai_insights=ai_insights
+        )
+        
+        return success_response(
+            "Tracking data updated successfully",
+            {'tracking_data': tracking_data.to_dict()}, 200
+        )
+    except ValidationError as e:
+        return error_response("Validation failed", 400, e.messages)
+    except ValueError as e:
+        return error_response(str(e), 400)
+    except Exception as e:
+        return error_response(f"Failed to update tracking data: {str(e)}", 500)
 
 #delete a tracking data entry for a specific tracker
 

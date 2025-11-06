@@ -10,26 +10,23 @@ from app import db
 class TrackingService:
     
     @staticmethod
-    def add_tracking_data(tracker: Tracker, data: Dict[str, Any] = None, 
-                          entry_date: date = None, ai_insights: Dict[str, Any] = None) -> TrackingData:
-        """
-        Create a new tracking data entry.
-        
-        Args:
-            tracker: The tracker instance
-            data: Tracking data (optional - can be empty dict)
-            entry_date: Entry date (optional - defaults to today)
-            ai_insights: AI-generated insights (optional)
-            
-        Returns:
-            TrackingData instance
-        """
+    def create_tracking_data(tracker: Tracker, data: Dict[str, Any] = None, 
+                             entry_date: date = None, ai_insights: Dict[str, Any] = None) -> TrackingData:
         try:
             # Default values
             if data is None:
                 data = {}
             if entry_date is None:
                 entry_date = date.today()
+            
+            # Check if entry already exists
+            existing_entry = TrackingData.query.filter_by(
+                tracker_id=tracker.id,
+                entry_date=entry_date
+            ).first()
+            
+            if existing_entry:
+                raise ValueError("Entry already exists for this tracker and date. Use update endpoint instead.")
             
             # Get tracker schema
             category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
@@ -47,16 +44,7 @@ class TrackingService:
                     category.data_schema
                 )
             
-            # Check for duplicate entry (same tracker + date)
-            existing_entry = TrackingData.query.filter_by(
-                tracker_id=tracker.id,
-                entry_date=entry_date
-            ).first()
-            
-            if existing_entry:
-                raise ValueError("Entry already exists for this tracker and date")
-            
-            # Create tracking data entry
+            # Create new entry
             tracking_data = TrackingData(
                 tracker_id=tracker.id,
                 entry_date=entry_date,
@@ -73,18 +61,88 @@ class TrackingService:
             raise
     
     @staticmethod
+    def update_tracking_data(tracker: Tracker, entry_date: date, 
+                             data: Dict[str, Any] = None, ai_insights: Dict[str, Any] = None) -> TrackingData:
+        try:
+            # Find existing entry
+            existing_entry = TrackingData.query.filter_by(
+                tracker_id=tracker.id,
+                entry_date=entry_date
+            ).first()
+            
+            if not existing_entry:
+                raise ValueError("Entry not found for this tracker and date. Use create endpoint instead.")
+            
+            # Get tracker schema
+            category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
+            if not category:
+                raise ValueError("Tracker category not found")
+            
+            # Rebuild schema to ensure it's up-to-date
+            schema = CategoryService.rebuild_category_schema(category.id)
+            db.session.refresh(category)
+            
+            # Update data if provided
+            if data is not None:
+                # Validate new data against tracker schema
+                TrackingService._validate_data_against_schema(
+                    data,
+                    category.data_schema
+                )
+                
+                # Merge new data with existing data (new data overwrites existing)
+                # Create new dict to ensure SQLAlchemy tracks the change
+                existing_entry.data = {**(existing_entry.data or {}), **data}
+            
+            # Update AI insights if provided
+            if ai_insights is not None:
+                existing_entry.ai_insights = ai_insights
+            
+            db.session.commit()
+            return existing_entry
+            
+        except Exception as e:
+            db.session.rollback()
+            raise
+    
+    @staticmethod
+    def save_tracking_data(tracker: Tracker, data: Dict[str, Any] = None, 
+                           entry_date: date = None, ai_insights: Dict[str, Any] = None) -> TrackingData:
+        try:
+            # Default values
+            if data is None:
+                data = {}
+            if entry_date is None:
+                entry_date = date.today()
+            
+            # Check if entry exists
+            existing_entry = TrackingData.query.filter_by(
+                tracker_id=tracker.id,
+                entry_date=entry_date
+            ).first()
+            
+            if existing_entry:
+                # Update existing entry
+                return TrackingService.update_tracking_data(
+                    tracker=tracker,
+                    entry_date=entry_date,
+                    data=data,
+                    ai_insights=ai_insights
+                )
+            else:
+                # Create new entry
+                return TrackingService.create_tracking_data(
+                    tracker=tracker,
+                    data=data,
+                    entry_date=entry_date,
+                    ai_insights=ai_insights
+                )
+        except Exception as e:
+            db.session.rollback()
+            raise
+    
+    @staticmethod
     def _validate_data_against_schema(data: Dict[str, Any], schema: Dict[str, Any]) -> None:
-        """
-        Validate tracking data against tracker schema.
-        
-        Validates:
-        - Field names exist in schema (baseline or custom)
-        - Option names exist for each field
-        - Value types match option types
-        - Values are within ranges (for ratings/numbers)
-        - Required fields are present (if any)
-        
-        """
         if not schema:
             raise ValueError("Tracker schema is empty")
         
@@ -120,14 +178,6 @@ class TrackingService:
     
     @staticmethod
     def _validate_option_value(option_name: str, value: Any, option_schema: Dict[str, Any]) -> None:
-        """
-        Validate a single option value against its schema.
-        
-        Args:
-            option_name: Name of the option
-            value: The value to validate
-            option_schema: The option's schema definition
-        """
         schema_type = option_schema.get('type')
         is_optional = option_schema.get('optional', False)
         
