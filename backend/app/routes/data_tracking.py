@@ -8,6 +8,7 @@ from app.models.user import User
 from app.models.tracker import Tracker
 from app.models.tracking_data import TrackingData
 from app.schemas.tracking_data_schema import TrackingDataSchema
+from app.services.tracking_service import TrackingService
 
 data_tracking_bp = Blueprint('data_tracking', __name__)
 
@@ -26,9 +27,15 @@ def verify_tracker_ownership(tracker_id: int, user_id: int) -> Tracker:
     return tracker
 
 def verify_tracking_data_ownership(tracking_data_id: int, user_id: int) -> TrackingData:
-    tracking_data = TrackingData.query.filter_by(id=tracking_data_id, user_id=user_id).first()
+    tracking_data = TrackingData.query.filter_by(id=tracking_data_id).first()
     if not tracking_data:
         raise ValueError("Tracking data not found")
+    
+    # Verify ownership through tracker
+    tracker = Tracker.query.filter_by(id=tracking_data.tracker_id, user_id=user_id).first()
+    if not tracker:
+        raise ValueError("Unauthorized - tracking data does not belong to your tracker")
+    
     return tracking_data
 
 def error_response(message: str, status_code: int = 400, details: Dict[str, Any] = None) -> Tuple[Dict, int]:
@@ -68,7 +75,43 @@ def get_all_tracking_data(tracker_id: int):
         return error_response(f"Failed to get all tracking data: {str(e)}", 500)
 
 #create a new tracking data entry for a specific tracker
-
+@data_tracking_bp.route('/<int:tracker_id>/add-tracking-data', methods=['POST'])
+@jwt_required()
+def add_tracking_data(tracker_id: int):
+    try:
+        _, user_id = get_current_user()
+        tracker = verify_tracker_ownership(tracker_id, user_id)
+    except ValueError as e:
+        return error_response(str(e), 404)
+    
+    try:
+        # Basic structure validation with schema
+        tracking_data_schema = TrackingDataSchema()
+        validated_data = tracking_data_schema.load(request.json)
+        
+        # Extract fields (all optional except basic structure)
+        entry_data = validated_data.get('data', {})
+        entry_date = validated_data.get('entry_date')
+        ai_insights = validated_data.get('ai_insights')
+        
+        # Business logic validation and creation in service
+        tracking_data = TrackingService.add_tracking_data(
+            tracker=tracker,
+            data=entry_data,
+            entry_date=entry_date,
+            ai_insights=ai_insights
+        )
+        
+        return success_response(
+            "Tracking data added successfully",
+            {'tracking_data': tracking_data.to_dict()}, 201
+        )
+    except ValidationError as e:
+        return error_response("Validation failed", 400, e.messages)
+    except ValueError as e:
+        return error_response(str(e), 400)
+    except Exception as e:
+        return error_response(f"Failed to add tracking data: {str(e)}", 500)
 
 #update a tracking data entry for a specific tracker
 
