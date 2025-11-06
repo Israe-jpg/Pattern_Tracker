@@ -65,10 +65,28 @@ class TrackingData(db.Model):
 @event.listens_for(TrackingData.data, 'set', propagate=True)
 def track_data_changes(target, value, oldvalue, initiator):
     """Flag data field as modified for SQLAlchemy."""
-    flag_modified(target, 'data')
+    # Only flag if object is already in session (for updates, not initial creation)
+    if hasattr(target, '_sa_instance_state'):
+        state = target._sa_instance_state
+        # Check if object is persistent (saved) or pending (added to session but not committed)
+        if state.persistent or state.pending:
+            try:
+                flag_modified(target, 'data')
+            except Exception:
+                # Ignore if can't flag (object not fully initialized)
+                pass
 
 
 @event.listens_for(TrackingData.ai_insights, 'set', propagate=True)
 def track_insights_changes(target, value, oldvalue, initiator):
     """Flag ai_insights field as modified for SQLAlchemy."""
-    flag_modified(target, 'ai_insights')
+    # Only flag if object is already in session (for updates, not initial creation)
+    if hasattr(target, '_sa_instance_state'):
+        state = target._sa_instance_state
+        # Check if object is persistent (saved) or pending (added to session but not committed)
+        if state.persistent or state.pending:
+            try:
+                flag_modified(target, 'ai_insights')
+            except Exception:
+                # Ignore if can't flag (object not fully initialized)
+                pass
