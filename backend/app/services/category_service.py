@@ -136,6 +136,13 @@ class CategoryService:
     }
     DEFAULT_CATEGORIES = ['baseline', 'period_tracker', 'workout_tracker']
     
+    # Mapping of category names to their static config sections
+    CATEGORY_CONFIG_SECTIONS = {
+        'Period Tracker': 'period_tracker',
+        'Workout Tracker': 'workout_tracker',
+        'Symptom Tracker': 'symptom_tracker'
+    }
+    
     # ========================================================================
     # Schema Management
     # ========================================================================
@@ -147,10 +154,27 @@ class CategoryService:
         return schemas.get('baseline', {})
     
     @staticmethod
+    def get_static_config_section(category_name: str) -> str:
+        """Get the static config section key for a category (e.g., 'Period Tracker' -> 'period_tracker')"""
+        return CategoryService.CATEGORY_CONFIG_SECTIONS.get(category_name)
+    
+    @staticmethod
+    def get_static_schema_from_config(section_key: str) -> Dict[str, Any]:
+        """Load a static schema section from JSON config file"""
+        if not section_key:
+            return {}
+        with open(CategoryService.CONFIG_PATH, 'r') as f:
+            schemas = json.load(f)
+        return schemas.get(section_key, {})
+    
+    @staticmethod
     def rebuild_category_schema(category_id: int) -> Dict[str, Any]:
         category = TrackerCategory.query.filter_by(id=category_id).first()
         if not category:
             raise ValueError("Category not found")
+        
+        # Get existing schema to preserve tracker-specific sections (period_tracker, workout_tracker, etc.)
+        existing_schema = category.data_schema or {}
         
         baseline_fields = TrackerField.query.filter_by(
             category_id=category_id,
@@ -172,6 +196,15 @@ class CategoryService:
             
             baseline_schema[field.field_name] = field_schema
         
+       
+        if not baseline_schema:
+            # Try to restore from existing schema first
+            if 'baseline' in existing_schema:
+                baseline_schema = existing_schema['baseline']
+            else:
+                # Fallback to config
+                baseline_schema = CategoryService.get_baseline_schema()
+        
         custom_fields = TrackerField.query.filter_by(
             category_id=category_id, 
             field_group='custom',
@@ -192,10 +225,24 @@ class CategoryService:
             
             custom_schema[field.field_name] = field_schema
         
+        # Rebuild schema: preserve tracker-specific sections, rebuild baseline and custom
         rebuilt_schema = {
             "baseline": baseline_schema,
             "custom": custom_schema
         }
+        
+        # Preserve static config-based sections (period_tracker, workout_tracker, etc.)
+        # These are defined in JSON config and should not be rebuilt from database
+        static_section_key = CategoryService.get_static_config_section(category.name)
+        if static_section_key:
+            # Use existing if available, otherwise restore from config
+            if static_section_key in existing_schema:
+                rebuilt_schema[static_section_key] = existing_schema[static_section_key]
+            else:
+                # Restore from config file
+                static_schema = CategoryService.get_static_schema_from_config(static_section_key)
+                if static_schema:
+                    rebuilt_schema[static_section_key] = static_schema
         
         category.data_schema = rebuilt_schema
         flag_modified(category, 'data_schema')

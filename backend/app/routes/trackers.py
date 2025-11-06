@@ -122,9 +122,20 @@ def setup_default_trackers():
         ).all()
         default_name = 'Workout Tracker'
     
-    # Create trackers
+    # Create trackers and initialize baseline fields if needed
     trackers_created = 0
     for category in categories:
+        # Check if baseline fields exist in database for this category
+        baseline_fields_exist = TrackerField.query.filter_by(
+            category_id=category.id,
+            field_group='baseline'
+        ).first() is not None
+        
+        # If baseline fields don't exist, create them from config
+        if not baseline_fields_exist:
+            baseline_schema = CategoryService.get_baseline_schema()
+            CategoryService._create_baseline_fields(category.id, baseline_schema)
+        
         tracker = Tracker(
             user_id=user_id,
             category_id=category.id,
