@@ -17,7 +17,11 @@ depends_on = None
 
 def upgrade():
     # Drop unique constraint to allow multiple entries per day
-    op.drop_constraint('uq_tracker_date', 'tracking_data', type_='unique')
+    # Use raw SQL with IF EXISTS to avoid errors if constraint doesn't exist
+    connection = op.get_bind()
+    connection.execute(sa.text(
+        "ALTER TABLE tracking_data DROP CONSTRAINT IF EXISTS uq_tracker_date"
+    ))
 
 
 def downgrade():
