@@ -498,7 +498,13 @@ def get_form_schema(tracker_id: int):
     """
     Get complete form schema with fields in correct order.
     This is the PRIMARY endpoint for rendering forms/surveys.
-    Returns all fields with options in display order.
+    Returns all fields with options in a single flat array, ready to render.
+    
+    Response includes:
+    - fields: Flat array of all fields in display order
+    - tracker_name: Name of the tracker
+    - tracker_id: ID of the tracker
+    - is_prebuilt: Whether this is a prebuilt tracker
     """
     try:
         _, user_id = get_current_user()
@@ -521,9 +527,11 @@ def get_form_schema(tracker_id: int):
             is_active=True
         ).order_by(TrackerField.field_order.asc()).all()
         
-        # Get category-specific fields
+        # Get category-specific fields (for prebuilt categories)
         category_specific_fields = []
-        if CategoryService.is_prebuilt_category(category.name):
+        is_prebuilt = CategoryService.is_prebuilt_category(category.name)
+        
+        if is_prebuilt:
             section_key = CategoryService.PREBUILT_CATEGORIES.get(category.name)
             if not section_key and category.name == CategoryService.PERIOD_TRACKER_NAME:
                 section_key = CategoryService.PERIOD_TRACKER_KEY
@@ -535,9 +543,7 @@ def get_form_schema(tracker_id: int):
                     is_active=True
                 ).order_by(TrackerField.field_order.asc()).all()
         
-        # For prebuilt vs custom categories
-        is_prebuilt = CategoryService.is_prebuilt_category(category.name)
-        
+        # Get custom fields based on tracker type
         custom_fields = []
         user_fields = []
         
@@ -556,6 +562,7 @@ def get_form_schema(tracker_id: int):
             ).order_by(TrackerField.field_order.asc()).all()
         
         def serialize_field(field):
+            """Serialize field with its options"""
             if isinstance(field, TrackerUserField):
                 options = FieldOption.query.filter_by(
                     tracker_user_field_id=field.id,
@@ -572,21 +579,23 @@ def get_form_schema(tracker_id: int):
             return data
         
         # Combine all fields in CORRECT display order:
-        # 1. Baseline (common to all)
-        # 2. Category-specific (e.g., period_tracker, workout_tracker)
-        # 3. Custom/User fields (user's additions)
+        # 1. Baseline (common to all trackers)
+        # 2. Category-specific (e.g., period_tracker, workout_tracker - prebuilt only)
+        # 3. Custom fields (user's additions - either custom_fields or user_fields)
         all_fields = []
         all_fields.extend([serialize_field(f) for f in baseline_fields])
         all_fields.extend([serialize_field(f) for f in category_specific_fields])
-        all_fields.extend([serialize_field(f) for f in custom_fields])
-        all_fields.extend([serialize_field(f) for f in user_fields])
+        # Add custom fields (only one of these will have data)
+        all_fields.extend([serialize_field(f) for f in (user_fields if is_prebuilt else custom_fields)])
         
         return success_response(
             "Form schema retrieved successfully",
             {
                 'fields': all_fields,
                 'tracker_name': category.name,
-                'tracker_id': tracker.id
+                'tracker_id': tracker.id,
+                'is_prebuilt': is_prebuilt,
+                'field_count': len(all_fields)
             }
         )
     except Exception as e:
