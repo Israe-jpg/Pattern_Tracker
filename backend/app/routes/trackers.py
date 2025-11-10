@@ -39,19 +39,9 @@ def verify_field_ownership(tracker_field_id: int, user_id: int):
     """
     Verify field ownership. Returns TrackerField or TrackerUserField.
     Checks both category-level fields and user-specific fields.
+    Prioritizes user fields since they're more specific to the user.
     """
-    # Try category-level field first
-    tracker_field = TrackerField.query.filter_by(id=tracker_field_id).first()
-    if tracker_field:
-        tracker = Tracker.query.filter_by(
-            category_id=tracker_field.category_id,
-            user_id=user_id
-        ).first()
-        if not tracker:
-            raise ValueError("Unauthorized - field does not belong to your tracker")
-        return tracker_field
-    
-    # Try user-specific field
+    # Try user-specific field first (more specific, linked directly to tracker)
     user_field = TrackerUserField.query.filter_by(id=tracker_field_id).first()
     if user_field:
         tracker = Tracker.query.filter_by(
@@ -61,6 +51,17 @@ def verify_field_ownership(tracker_field_id: int, user_id: int):
         if not tracker:
             raise ValueError("Unauthorized - field does not belong to your tracker")
         return user_field
+    
+    # Try category-level field
+    tracker_field = TrackerField.query.filter_by(id=tracker_field_id).first()
+    if tracker_field:
+        tracker = Tracker.query.filter_by(
+            category_id=tracker_field.category_id,
+            user_id=user_id
+        ).first()
+        if not tracker:
+            raise ValueError("Unauthorized - field does not belong to your tracker")
+        return tracker_field
     
     raise ValueError("Tracker field not found")
 
