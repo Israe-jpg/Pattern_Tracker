@@ -9,17 +9,16 @@ from app.models.tracker import Tracker
 from app.models.tracker_field import TrackerField
 from app.models.tracker_category import TrackerCategory
 from app.models.field_option import FieldOption
-from app.schemas.tracker_schemas import (
-    CustomCategorySchema, FieldOptionSchema
-)
+from app.schemas.tracker_schemas import CustomCategorySchema, FieldOptionSchema
 from app.services.category_service import CategoryService
 
 trackers_bp = Blueprint('trackers', __name__)
 
 
+# ============================================================================
 # HELPER FUNCTIONS
+# ============================================================================
 
-#get current user
 def get_current_user() -> Tuple[User, int]:
     user_id = get_jwt_identity()
     user = User.query.filter_by(id=user_id).first()
@@ -27,20 +26,19 @@ def get_current_user() -> Tuple[User, int]:
         raise ValueError("User not found")
     return user, user_id
 
-#verify tracker ownership
+
 def verify_tracker_ownership(tracker_id: int, user_id: int) -> Tracker:
     tracker = Tracker.query.filter_by(id=tracker_id, user_id=user_id).first()
     if not tracker:
         raise ValueError("Tracker not found")
     return tracker
 
-#verify field ownership
+
 def verify_field_ownership(tracker_field_id: int, user_id: int) -> TrackerField:
     tracker_field = TrackerField.query.filter_by(id=tracker_field_id).first()
     if not tracker_field:
         raise ValueError("Tracker field not found")
     
-    # Verify field belongs to user's tracker
     tracker = Tracker.query.filter_by(
         category_id=tracker_field.category_id,
         user_id=user_id
@@ -51,13 +49,12 @@ def verify_field_ownership(tracker_field_id: int, user_id: int) -> TrackerField:
     return tracker_field
 
 
-#verify option ownership
 def verify_option_ownership(option_id: int, user_id: int) -> FieldOption:
+    
     option = FieldOption.query.filter_by(id=option_id).first()
     if not option:
         raise ValueError("Option not found")
     
-    # Verify option belongs to user's tracker
     tracker = Tracker.query.filter_by(
         category_id=option.tracker_field.category_id,
         user_id=user_id
@@ -68,24 +65,63 @@ def verify_option_ownership(option_id: int, user_id: int) -> FieldOption:
     return option
 
 
-#error response
-def error_response(message: str, status_code: int = 400, details: Dict[str, Any] = None) -> Tuple[Dict, int]:
+def error_response(message: str, status_code: int = 400, 
+                   details: Dict[str, Any] = None) -> Tuple[Dict, int]:
+    
     response = {'error': message}
     if details:
         response['details'] = details
     return jsonify(response), status_code
 
-#success response
-def success_response(message: str, data: Dict[str, Any] = None, status_code: int = 200) -> Tuple[Dict, int]:
+
+def success_response(message: str, data: Dict[str, Any] = None, 
+                     status_code: int = 200) -> Tuple[Dict, int]:
+    
     response = {'message': message}
     if data:
         response.update(data)
     return jsonify(response), status_code
 
 
-# TRACKER SETUP ROUTES
+def ensure_category_fields_initialized(category: TrackerCategory) -> bool:
+    """
+    Ensure a category has its fields initialized (baseline + category-specific).
+    Returns True if fields were created, False if they already existed.
+    """
+    # Check if baseline fields exist (indicates if category is fully initialized)
+    baseline_fields_exist = TrackerField.query.filter_by(
+        category_id=category.id,
+        field_group='baseline'
+    ).first() is not None
+    
+    if baseline_fields_exist:
+        return False  # Already initialized
+    
+    # Initialize category properly (baseline + category-specific fields)
+    if category.name == CategoryService.PERIOD_TRACKER_NAME:
+        CategoryService.initialize_period_tracker()
+    elif category.name in CategoryService.PREBUILT_CATEGORIES:
+        # Initialize single category (fallback)
+        config = CategoryService._load_config()
+        baseline_schema = config.get('baseline', {})
+        config_key = CategoryService.PREBUILT_CATEGORIES[category.name]
+        specific_schema = config.get(config_key, {})
+        
+        CategoryService._create_fields_for_prebuilt_category(
+            category.id,
+            baseline_schema,
+            specific_schema,
+            config_key
+        )
+        db.session.commit()
+    
+    return True  # Fields were created
 
-#setup default trackers
+
+# ============================================================================
+# TRACKER SETUP ROUTES
+# ============================================================================
+
 @trackers_bp.route('/setup-default-trackers', methods=['POST'])
 @jwt_required()
 def setup_default_trackers():
@@ -97,11 +133,32 @@ def setup_default_trackers():
     # Check if user already has trackers
     existing_trackers = Tracker.query.filter_by(user_id=user_id).all()
     if existing_trackers:
+        # For old users: ensure baseline fields exist for their categories
+        categories_to_fix = set()
+        for tracker in existing_trackers:
+            categories_to_fix.add(tracker.category_id)
+        
+        fields_created = False
+        for category_id in categories_to_fix:
+            category = TrackerCategory.query.filter_by(id=category_id).first()
+            if not category:
+                continue
+            
+            if ensure_category_fields_initialized(category):
+                fields_created = True
+        
+        if fields_created:
+            db.session.commit()
+        
         return success_response(
             "Trackers already configured",
             {
                 'trackers': [
-                    {'id': t.id, 'category_id': t.category_id, 'is_default': t.is_default}
+                    {
+                        'id': t.id,
+                        'category_id': t.category_id,
+                        'is_default': t.is_default
+                    }
                     for t in existing_trackers
                 ]
             },
@@ -109,32 +166,33 @@ def setup_default_trackers():
         )
     
     # Determine default category based on gender
-    user_gender = user.gender or 'female'  # Default to female for testing
+    user_gender = user.gender or 'female'
     is_female = user_gender.lower() == 'female'
     
-    # Get categories based on gender
+    # Get prebuilt categories (Workout, Symptom) + Period Tracker separately
+    prebuilt_category_names = list(CategoryService.PREBUILT_CATEGORIES.keys())
+    all_prebuilt_names = prebuilt_category_names + [CategoryService.PERIOD_TRACKER_NAME]
+    
     if is_female:
-        categories = TrackerCategory.query.all()
+        # Female users get all prebuilt categories (Workout, Symptom, Period)
+        categories = TrackerCategory.query.filter(
+            TrackerCategory.name.in_(all_prebuilt_names)
+        ).all()
         default_name = 'Period Tracker'
     else:
+        # Non-female users get Workout and Symptom only (no Period Tracker)
         categories = TrackerCategory.query.filter(
-            TrackerCategory.name != 'Period Tracker'
+            TrackerCategory.name.in_(prebuilt_category_names)
         ).all()
         default_name = 'Workout Tracker'
     
-    # Create trackers and initialize baseline fields if needed
+    # Create trackers for user
+    # Note: Categories should already be initialized on app startup,
+    # but we check here as a safety net for edge cases
     trackers_created = 0
     for category in categories:
-        # Check if baseline fields exist in database for this category
-        baseline_fields_exist = TrackerField.query.filter_by(
-            category_id=category.id,
-            field_group='baseline'
-        ).first() is not None
-        
-        # If baseline fields don't exist, create them from config
-        if not baseline_fields_exist:
-            baseline_schema = CategoryService.get_baseline_schema()
-            CategoryService._create_baseline_fields(category.id, baseline_schema)
+        # Safety check: ensure fields exist (should already be initialized on startup)
+        ensure_category_fields_initialized(category)
         
         tracker = Tracker(
             user_id=user_id,
@@ -156,12 +214,14 @@ def setup_default_trackers():
     )
 
 
+# ============================================================================
 # TRACKER MANAGEMENT ROUTES
+# ============================================================================
 
-#get my trackers
 @trackers_bp.route('/my-trackers', methods=['GET'])
 @jwt_required()
 def get_my_trackers():
+    
     try:
         _, user_id = get_current_user()
     except ValueError:
@@ -186,10 +246,11 @@ def get_my_trackers():
         }
     )
 
-#delete tracker
+
 @trackers_bp.route('/delete-tracker/<int:tracker_id>', methods=['DELETE'])
 @jwt_required()
 def delete_tracker(tracker_id: int):
+    
     try:
         _, user_id = get_current_user()
         tracker = verify_tracker_ownership(tracker_id, user_id)
@@ -197,28 +258,51 @@ def delete_tracker(tracker_id: int):
         return error_response(str(e), 404 if "not found" in str(e) else 403)
     
     try:
-        db.session.delete(tracker)
+        # Store category info before deleting tracker
+        category_id = tracker.category_id
+        is_custom_category = not tracker.is_default
         
-        # Delete associated custom category if not default
-        if not tracker.is_default:
-            category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
-            if category:
-                db.session.delete(category)
+        # Delete the tracker first (before category to avoid FK violation)
+        db.session.delete(tracker)
+        db.session.flush()  # Flush to ensure tracker deletion is processed
+        
+        # Delete associated custom category if not default and no other trackers use it
+        if is_custom_category:
+            category = TrackerCategory.query.filter_by(id=category_id).first()
+            if category and not CategoryService.is_prebuilt_category(category.name):
+                # Check if any other trackers are using this category
+                other_trackers = Tracker.query.filter_by(category_id=category_id).first()
+                
+                # Only delete category if no other trackers are using it
+                if not other_trackers:
+                    # Delete all fields and their options before deleting the category
+                    fields = TrackerField.query.filter_by(category_id=category.id).all()
+                    for field in fields:
+                        # Delete all options for this field
+                        options = FieldOption.query.filter_by(tracker_field_id=field.id).all()
+                        for option in options:
+                            db.session.delete(option)
+                        # Delete the field
+                        db.session.delete(field)
+                    
+                    # Now safe to delete the category
+                    db.session.delete(category)
         
         db.session.commit()
+        
         return success_response("Tracker deleted successfully")
     except Exception as e:
         db.session.rollback()
         return error_response(f"Failed to delete tracker: {str(e)}", 500)
 
-#update default tracker
+
 @trackers_bp.route('/update-default-tracker/<int:tracker_id>', methods=['PUT'])
 @jwt_required()
 def update_default_tracker(tracker_id: int):
+    
     try:
         _, user_id = get_current_user()
         
-        # Get current default tracker
         predefault_tracker = Tracker.query.filter_by(
             user_id=user_id,
             is_default=True
@@ -226,7 +310,6 @@ def update_default_tracker(tracker_id: int):
         if not predefault_tracker:
             return error_response("No current default tracker found", 404)
         
-        # Get new default tracker
         new_default = verify_tracker_ownership(tracker_id, user_id)
     except ValueError as e:
         return error_response(str(e), 404)
@@ -242,10 +325,10 @@ def update_default_tracker(tracker_id: int):
         return error_response(f"Failed to update default tracker: {str(e)}", 500)
 
 
-# Change the name of a tracker
 @trackers_bp.route('/<int:tracker_id>/change-tracker-name', methods=['PATCH'])
 @jwt_required()
 def change_tracker_name(tracker_id: int):
+    
     try:
         _, user_id = get_current_user()
         tracker = verify_tracker_ownership(tracker_id, user_id)
@@ -253,12 +336,13 @@ def change_tracker_name(tracker_id: int):
         return error_response(str(e), 404)
     
     try:
-        if tracker.is_default:
-            return error_response("Cannot change name of default tracker", 403)
-        
         category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
         if not category:
             return error_response("Tracker category not found", 404)
+        
+        # Prevent renaming pre-built categories
+        if CategoryService.is_prebuilt_category(category.name):
+            return error_response("Cannot rename pre-built tracker categories", 403)
         
         new_name = request.json.get('new_name')
         if not new_name:
@@ -266,16 +350,17 @@ def change_tracker_name(tracker_id: int):
         
         category.name = new_name
         db.session.commit()
+        
         return success_response("Tracker name updated successfully")
     except Exception as e:
         db.session.rollback()
         return error_response(f"Failed to update tracker name: {str(e)}", 500)
 
 
-# Get tracker details
 @trackers_bp.route('/<int:tracker_id>/tracker-details', methods=['GET'])
 @jwt_required()
 def get_tracker_details(tracker_id: int):
+    
     try:
         _, user_id = get_current_user()
         tracker = verify_tracker_ownership(tracker_id, user_id)
@@ -286,9 +371,8 @@ def get_tracker_details(tracker_id: int):
         return error_response(str(e), 404)
     
     try:
-        # Rebuild schema to ensure it only includes active fields and options
-        CategoryService.rebuild_category_schema(category.id)
-        # Refresh category to get updated data_schema
+        # Rebuild schema to ensure it's up-to-date with active/inactive statuses
+        CategoryService.rebuild_category_schema(category)
         db.session.refresh(category)
         
         return success_response(
@@ -301,18 +385,20 @@ def get_tracker_details(tracker_id: int):
     except Exception as e:
         return error_response(f"Failed to retrieve tracker details: {str(e)}", 500)
 
-# CUSTOM CATEGORY ROUTES
 
-#create custom category
+# ============================================================================
+# CUSTOM CATEGORY ROUTES
+# ============================================================================
+
 @trackers_bp.route('/create-custom-category', methods=['POST'])
 @jwt_required()
 def create_custom_category():
+    
     try:
         _, user_id = get_current_user()
     except ValueError:
         return error_response("User not found", 404)
     
-    # Validate input
     try:
         schema = CustomCategorySchema()
         validated_data = schema.load(request.json)
@@ -320,13 +406,11 @@ def create_custom_category():
         return error_response("Validation failed", 400, err.messages)
     
     try:
-        # Create custom category
         category = CategoryService.create_custom_category(
             name=validated_data['name'],
             custom_fields_data=validated_data['custom_fields']
         )
         
-        # Create tracker for the user
         tracker = Tracker(
             user_id=user_id,
             category_id=category.id,
@@ -348,16 +432,14 @@ def create_custom_category():
         return error_response(f"Failed to create custom category: {str(e)}", 500)
 
 
-
-
+# ============================================================================
 # DATA SCHEMA ROUTES
+# ============================================================================
 
-#Fields
-
-#get data schema of a specific tracker
 @trackers_bp.route('/<int:tracker_id>/get-data-schema', methods=['GET'])
 @jwt_required()
 def get_tracker_schema(tracker_id: int):
+    
     try:
         _, user_id = get_current_user()
         tracker = verify_tracker_ownership(tracker_id, user_id)
@@ -369,41 +451,63 @@ def get_tracker_schema(tracker_id: int):
         if not category:
             return error_response("Tracker category not found", 404)
         
-        data_schema = CategoryService.rebuild_category_schema(category.id)
+        # Rebuild schema to ensure it's up-to-date with active/inactive statuses
+        CategoryService.rebuild_category_schema(category)
+        db.session.refresh(category)
         
         return success_response(
             "Data schema retrieved successfully",
-            {'data_schema': data_schema}
+            {'data_schema': category.data_schema}
         )
     except Exception as e:
         return error_response(f"Failed to retrieve schema: {str(e)}", 500)
 
 
-# Ordered fields (baseline then custom), with options ordered
 @trackers_bp.route('/<int:tracker_id>/ordered-fields', methods=['GET'])
 @jwt_required()
 def get_ordered_fields(tracker_id: int):
+    
     try:
         _, user_id = get_current_user()
         tracker = verify_tracker_ownership(tracker_id, user_id)
     except ValueError as e:
         return error_response(str(e), 404)
-
+    
     try:
-        # Baseline first
+        category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
+        if not category:
+            return error_response("Tracker category not found", 404)
+        
+        # Get baseline fields
         baseline_fields = TrackerField.query.filter_by(
             category_id=tracker.category_id,
             field_group='baseline',
             is_active=True
         ).order_by(TrackerField.field_order).all()
-
-        # Then custom
+        
+        # Get category-specific fields (period_tracker, workout_tracker, etc.)
+        category_specific_fields = []
+        if CategoryService.is_prebuilt_category(category.name):
+            # Check standard prebuilt categories first
+            section_key = CategoryService.PREBUILT_CATEGORIES.get(category.name)
+            # Check Period Tracker separately
+            if not section_key and category.name == CategoryService.PERIOD_TRACKER_NAME:
+                section_key = CategoryService.PERIOD_TRACKER_KEY
+            
+            if section_key:
+                category_specific_fields = TrackerField.query.filter_by(
+                    category_id=tracker.category_id,
+                    field_group=section_key,
+                    is_active=True
+                ).order_by(TrackerField.field_order).all()
+        
+        # Get custom fields
         custom_fields = TrackerField.query.filter_by(
             category_id=tracker.category_id,
             field_group='custom',
             is_active=True
         ).order_by(TrackerField.field_order).all()
-
+        
         def serialize_field(field: TrackerField):
             options = FieldOption.query.filter_by(
                 tracker_field_id=field.id,
@@ -412,21 +516,27 @@ def get_ordered_fields(tracker_id: int):
             data = field.to_dict()
             data['options'] = [o.to_dict() for o in options]
             return data
-
-        return success_response(
-            "Fields retrieved successfully",
-            {
-                'baseline_fields': [serialize_field(f) for f in baseline_fields],
-                'custom_fields': [serialize_field(f) for f in custom_fields]
-            }
-        )
+        
+        response_data = {
+            'baseline_fields': [serialize_field(f) for f in baseline_fields],
+            'custom_fields': [serialize_field(f) for f in custom_fields]
+        }
+        
+        # Include category-specific fields if they exist
+        if category_specific_fields:
+            response_data['category_specific_fields'] = [
+                serialize_field(f) for f in category_specific_fields
+            ]
+        
+        return success_response("Fields retrieved successfully", response_data)
     except Exception as e:
         return error_response(f"Failed to retrieve fields: {str(e)}", 500)
 
-#create new field in a custom schema of a specific tracker
-@trackers_bp.route('/<int:tracker_id>/create-new-field', methods=['POST'])
+
+@trackers_bp.route('/<int:tracker_id>/all-inclusive-data-schema', methods=['GET'])
 @jwt_required()
-def create_new_field(tracker_id: int):
+def get_all_inclusive_data_schema(tracker_id: int):
+
     try:
         _, user_id = get_current_user()
         tracker = verify_tracker_ownership(tracker_id, user_id)
@@ -438,16 +548,47 @@ def create_new_field(tracker_id: int):
         if not category:
             return error_response("Tracker category not found", 404)
         
-        # Prevent modification of default categories
-        if CategoryService.is_default_category(category.name):
-            return error_response("Cannot modify default categories", 403)
+        all_inclusive_schema = CategoryService.get_all_inclusive_data_schema(category)
         
-        # Extract and validate request data
+        return success_response(
+            "All inclusive data schema retrieved successfully",
+            {'data_schema': all_inclusive_schema}
+        )
+    except Exception as e:
+        return error_response(f"Failed to get all inclusive data schema: {str(e)}", 500)
+
+
+# ============================================================================
+# FIELD OPERATIONS
+# ============================================================================
+
+@trackers_bp.route('/<int:tracker_id>/create-new-field', methods=['POST'])
+@jwt_required()
+def create_new_field(tracker_id: int):
+    
+    try:
+        _, user_id = get_current_user()
+        tracker = verify_tracker_ownership(tracker_id, user_id)
+    except ValueError as e:
+        return error_response(str(e), 404)
+    
+    try:
+        category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
+        if not category:
+            return error_response("Tracker category not found", 404)
+        
+        # Prevent modification of pre-built categories
+        if CategoryService.is_prebuilt_category(category.name):
+            return error_response("Cannot modify pre-built categories", 403)
+        
         field_data = request.json.get('field_data', {})
         options_data = request.json.get('options', [])
         
         if not field_data.get('field_name') or not options_data:
-            return error_response("field_data with field_name and options array are required", 400)
+            return error_response(
+                "field_data with field_name and options array are required",
+                400
+            )
         
         # Validate options
         option_schema = FieldOptionSchema()
@@ -459,7 +600,6 @@ def create_new_field(tracker_id: int):
             except ValidationError as err:
                 return error_response("Option validation failed", 400, err.messages)
         
-        # Create field
         new_field = CategoryService.create_new_field(
             category,
             field_data,
@@ -475,70 +615,29 @@ def create_new_field(tracker_id: int):
         return error_response(f"Failed to create field: {str(e)}", 500)
 
 
-#delete field 
 @trackers_bp.route('/<int:tracker_field_id>/delete-field', methods=['DELETE'])
 @jwt_required()
 def delete_field(tracker_field_id: int):
+    
     try:
         _, user_id = get_current_user()
-        tracker_field = verify_field_ownership(tracker_field_id, user_id)
+        verify_field_ownership(tracker_field_id, user_id)
     except ValueError as e:
         return error_response(str(e), 404)
     
     try:
         CategoryService.delete_field_from_category(tracker_field_id)
         return success_response("Field deleted successfully")
+    except ValueError as e:
+        return error_response(str(e), 403)
     except Exception as e:
         return error_response(f"Failed to delete field: {str(e)}", 500)
 
 
-#update field display label
-@trackers_bp.route('/<int:tracker_field_id>/update-field-display-label', methods=['PATCH'])
-@jwt_required()
-def update_field_display_label(tracker_field_id: int):
-    try:
-        _, user_id = get_current_user()
-        tracker_field = verify_field_ownership(tracker_field_id, user_id)
-    except ValueError as e:
-        return error_response(str(e), 404)
-    
-    try:
-        new_label = request.json.get('new_label')
-        if not new_label:
-            return error_response("new_label is required", 400)
-        
-        CategoryService.update_field_display_label(tracker_field_id, new_label)
-        return success_response("Field display label updated successfully")
-    except Exception as e:
-        return error_response(f"Failed to update field display label: {str(e)}", 500)
-
-
-#update field help text
-@trackers_bp.route('/<int:tracker_field_id>/update-field-help-text', methods=['PATCH'])
-@jwt_required()
-def update_field_help_text(tracker_field_id: int):
-    try:
-        _, user_id = get_current_user()
-        tracker_field = verify_field_ownership(tracker_field_id, user_id)
-    except ValueError as e:
-        return error_response(str(e), 404)
-    
-    try:
-        new_help_text = request.json.get('new_help_text')
-        if not new_help_text:
-            return error_response("new_help_text is required", 400)
-        
-        CategoryService.update_field_help_text(tracker_field_id, new_help_text)
-        return success_response("Field help text updated successfully")
-    except Exception as e:
-        return error_response(f"Failed to update field help text: {str(e)}", 500)
-
-
-
-# Get specific field details
 @trackers_bp.route('/<int:tracker_field_id>/field-details', methods=['GET'])
 @jwt_required()
 def get_field_details(tracker_field_id: int):
+    
     try:
         _, user_id = get_current_user()
         tracker_field = verify_field_ownership(tracker_field_id, user_id)
@@ -550,6 +649,7 @@ def get_field_details(tracker_field_id: int):
             tracker_field_id=tracker_field.id,
             is_active=True
         ).order_by(FieldOption.option_order).all()
+        
         return success_response(
             "Field details retrieved successfully",
             {
@@ -560,13 +660,65 @@ def get_field_details(tracker_field_id: int):
     except Exception as e:
         return error_response(f"Failed to get field details: {str(e)}", 500)
 
-# Update field order (reorder fields)
+
+@trackers_bp.route('/<int:tracker_field_id>/update-field-display-label', methods=['PATCH'])
+@jwt_required()
+def update_field_display_label(tracker_field_id: int):
+    
+    try:
+        _, user_id = get_current_user()
+        verify_field_ownership(tracker_field_id, user_id)
+    except ValueError as e:
+        return error_response(str(e), 404)
+    
+    try:
+        new_label = request.json.get('new_label')
+        if not new_label:
+            return error_response("new_label is required", 400)
+        
+        # This method would need to be added to CategoryService
+        field = TrackerField.query.filter_by(id=tracker_field_id).first()
+        field.display_label = new_label
+        db.session.commit()
+        
+        return success_response("Field display label updated successfully")
+    except Exception as e:
+        db.session.rollback()
+        return error_response(f"Failed to update field display label: {str(e)}", 500)
+
+
+@trackers_bp.route('/<int:tracker_field_id>/update-field-help-text', methods=['PATCH'])
+@jwt_required()
+def update_field_help_text(tracker_field_id: int):
+    
+    try:
+        _, user_id = get_current_user()
+        verify_field_ownership(tracker_field_id, user_id)
+    except ValueError as e:
+        return error_response(str(e), 404)
+    
+    try:
+        new_help_text = request.json.get('new_help_text')
+        if new_help_text is None:
+            return error_response("new_help_text is required", 400)
+        
+        field = TrackerField.query.filter_by(id=tracker_field_id).first()
+        field.help_text = new_help_text
+        db.session.commit()
+        
+        return success_response("Field help text updated successfully")
+    except Exception as e:
+        db.session.rollback()
+        return error_response(f"Failed to update field help text: {str(e)}", 500)
+
+
 @trackers_bp.route('/<int:tracker_field_id>/update-field-order', methods=['PATCH'])
 @jwt_required()
 def update_field_order(tracker_field_id: int):
+    
     try:
         _, user_id = get_current_user()
-        tracker_field = verify_field_ownership(tracker_field_id, user_id)
+        verify_field_ownership(tracker_field_id, user_id)
     except ValueError as e:
         return error_response(str(e), 404)
     
@@ -575,23 +727,21 @@ def update_field_order(tracker_field_id: int):
         if new_order is None:
             return error_response("new_order is required", 400)
         
-        try:
-            CategoryService.update_field_order(tracker_field_id, int(new_order))
-        except ValueError as ve:
-            return error_response(str(ve), 400)
-        
+        CategoryService.update_field_order(tracker_field_id, new_order)
         return success_response("Field order updated successfully")
+    except ValueError as ve:
+        return error_response(str(ve), 400)
     except Exception as e:
         return error_response(f"Failed to update field order: {str(e)}", 500)
 
 
-# Update field is_active status
 @trackers_bp.route('/<int:tracker_field_id>/toggle-field-active-status', methods=['PATCH'])
 @jwt_required()
 def toggle_field_active_status(tracker_field_id: int):
+    
     try:
         _, user_id = get_current_user()
-        tracker_field = verify_field_ownership(tracker_field_id, user_id)
+        verify_field_ownership(tracker_field_id, user_id)
     except ValueError as e:
         return error_response(str(e), 404)
     
@@ -602,14 +752,14 @@ def toggle_field_active_status(tracker_field_id: int):
         return error_response(f"Failed to toggle field active status: {str(e)}", 500)
 
 
+# ============================================================================
+# OPTION OPERATIONS
+# ============================================================================
 
-
-#Options
-
-#create new option in a specific field of a specific tracker
 @trackers_bp.route('/<int:tracker_field_id>/create-new-option', methods=['POST'])
 @jwt_required()
 def create_new_option(tracker_field_id: int):
+    
     try:
         _, user_id = get_current_user()
         tracker_field = verify_field_ownership(tracker_field_id, user_id)
@@ -626,7 +776,6 @@ def create_new_option(tracker_field_id: int):
         if not option_data.get('option_type'):
             return error_response("option_type is required", 400)
         
-        # Create option
         new_option = CategoryService.create_new_option(tracker_field, option_data)
         
         return success_response(
@@ -638,10 +787,80 @@ def create_new_option(tracker_field_id: int):
         return error_response(f"Failed to create option: {str(e)}", 500)
 
 
-#delete option
+@trackers_bp.route('/<int:tracker_field_id>/options', methods=['GET'])
+@jwt_required()
+def get_field_options(tracker_field_id: int):
+    
+    try:
+        _, user_id = get_current_user()
+        tracker_field = verify_field_ownership(tracker_field_id, user_id)
+    except ValueError as e:
+        return error_response(str(e), 404)
+    
+    try:
+        options = FieldOption.query.filter_by(
+            tracker_field_id=tracker_field.id,
+            is_active=True
+        ).order_by(FieldOption.option_order).all()
+        
+        return success_response(
+            "Options retrieved successfully",
+            {'options': [option.to_dict() for option in options]}
+        )
+    except Exception as e:
+        return error_response(f"Failed to get options: {str(e)}", 500)
+
+
+@trackers_bp.route('/<int:option_id>/option-details', methods=['GET'])
+@jwt_required()
+def get_option_details(option_id: int):
+    
+    try:
+        _, user_id = get_current_user()
+        option = verify_option_ownership(option_id, user_id)
+    except ValueError as e:
+        return error_response(str(e), 404)
+    
+    try:
+        return success_response(
+            "Option details retrieved successfully",
+            {'option': option.to_dict()}
+        )
+    except Exception as e:
+        return error_response(f"Failed to get option details: {str(e)}", 500)
+
+
+@trackers_bp.route('/<int:option_id>/update-option-info', methods=['PUT'])
+@jwt_required()
+def update_option_info(option_id: int):
+
+    try:
+        _, user_id = get_current_user()
+        verify_option_ownership(option_id, user_id)
+    except ValueError as e:
+        return error_response(str(e), 404)
+    
+    try:
+        validated_data = FieldOptionSchema().load(request.json)
+        # This would need to be in CategoryService
+        option = FieldOption.query.filter_by(id=option_id).first()
+        for key, value in validated_data.items():
+            if hasattr(option, key):
+                setattr(option, key, value)
+        db.session.commit()
+        
+        return success_response("Option updated successfully")
+    except ValidationError as err:
+        return error_response("Validation failed", 400, err.messages)
+    except Exception as e:
+        db.session.rollback()
+        return error_response(f"Failed to update option: {str(e)}", 500)
+
+
 @trackers_bp.route('/<int:option_id>/delete-option', methods=['DELETE'])
 @jwt_required()
 def delete_option(option_id: int):
+    
     try:
         _, user_id = get_current_user()
         verify_option_ownership(option_id, user_id)
@@ -656,68 +875,13 @@ def delete_option(option_id: int):
         return error_response(f"Failed to delete option: {str(e)}", 500)
 
 
-#update option info
-@trackers_bp.route('/<int:option_id>/update-option-info', methods=['PUT'])
-@jwt_required()
-def update_option_info(option_id: int):
-    try:
-        _, user_id = get_current_user()
-        option = verify_option_ownership(option_id, user_id)
-    except ValueError as e:
-        return error_response(str(e), 404)
-    
-    try:
-        validated_data = FieldOptionSchema().load(request.json) 
-        CategoryService.update_option(option_id, validated_data)
-        return success_response("Option updated successfully")
-    except ValidationError as err:
-        return error_response("Validation failed", 400, err.messages)
-    except Exception as e:
-        return error_response(f"Failed to update option: {str(e)}", 500)
-
-
-
-# Get all options for a field
-@trackers_bp.route('/<int:tracker_field_id>/options', methods=['GET'])
-@jwt_required()
-def get_field_options(tracker_field_id: int):
-    try:
-        _, user_id = get_current_user()
-        tracker_field = verify_field_ownership(tracker_field_id, user_id)
-    except ValueError as e:
-        return error_response(str(e), 404)
-    
-    try:
-        options = FieldOption.query.filter_by(
-            tracker_field_id=tracker_field.id,
-            is_active=True
-        ).order_by(FieldOption.option_order).all()
-        return success_response("Options retrieved successfully", {'options': [option.to_dict() for option in options]})
-    except Exception as e:
-        return error_response(f"Failed to get options: {str(e)}", 500)
-
-# Get specific option details
-@trackers_bp.route('/<int:option_id>/option-details', methods=['GET'])
-@jwt_required()
-def get_option_details(option_id: int):
-    try:
-        _, user_id = get_current_user()
-        option = verify_option_ownership(option_id, user_id)
-    except ValueError as e:
-        return error_response(str(e), 404)
-    
-    try:
-        return success_response("Option details retrieved successfully", {'option': option.to_dict()})
-    except Exception as e:
-        return error_response(f"Failed to get option details: {str(e)}", 500)
-
-# Update option order (reorder options)
 @trackers_bp.route('/<int:option_id>/update-option-order', methods=['PATCH'])
 @jwt_required()
 def update_option_order(option_id: int):
+    
     try:
         _, user_id = get_current_user()
-        option = verify_option_ownership(option_id, user_id)
+        verify_option_ownership(option_id, user_id)
     except ValueError as e:
         return error_response(str(e), 404)
     
@@ -726,20 +890,18 @@ def update_option_order(option_id: int):
         if new_order is None:
             return error_response("new_order is required", 400)
         
-        try:
-            CategoryService.update_option_order(option_id, int(new_order))
-        except ValueError as ve:
-            return error_response(str(ve), 400)
-        
+        CategoryService.update_option_order(option_id, new_order)
         return success_response("Option order updated successfully")
+    except ValueError as ve:
+        return error_response(str(ve), 400)
     except Exception as e:
         return error_response(f"Failed to update option order: {str(e)}", 500)
 
 
-# Update option is_active status
 @trackers_bp.route('/<int:option_id>/toggle-option-active-status', methods=['PATCH'])
 @jwt_required()
 def toggle_option_active_status(option_id: int):
+    
     try:
         _, user_id = get_current_user()
         verify_option_ownership(option_id, user_id)
@@ -753,17 +915,20 @@ def toggle_option_active_status(option_id: int):
         return error_response(f"Failed to toggle option active status: {str(e)}", 500)
 
 
-#BULK OPERATIONS
+# ============================================================================
+# BULK OPERATIONS
+# ============================================================================
 
-# Bulk delete multiple options
 @trackers_bp.route('/<int:tracker_field_id>/bulk-delete-options', methods=['DELETE'])
 @jwt_required()
 def bulk_delete_options(tracker_field_id: int):
+    
     try:
         _, user_id = get_current_user()
         tracker_field = verify_field_ownership(tracker_field_id, user_id)
     except ValueError as e:
         return error_response(str(e), 404)
+    
     try:
         options_to_delete = request.json.get('options_to_delete', [])
         if not options_to_delete:
@@ -774,12 +939,15 @@ def bulk_delete_options(tracker_field_id: int):
     except Exception as e:
         return error_response(f"Failed to delete options: {str(e)}", 500)
 
-#UTILITY ROUTES
 
-#Get active and inactive fields and options data schema
-@trackers_bp.route('/<int:tracker_id>/all-inclusive-data-schema', methods=['GET'])
+# ============================================================================
+# SCHEMA MANAGEMENT ROUTES
+# ============================================================================
+
+@trackers_bp.route('/<int:tracker_id>/rebuild-schema', methods=['POST'])
 @jwt_required()
-def get_all_inclusive_data_schema(tracker_id: int):
+def rebuild_tracker_schema(tracker_id: int):
+    
     try:
         _, user_id = get_current_user()
         tracker = verify_tracker_ownership(tracker_id, user_id)
@@ -791,58 +959,21 @@ def get_all_inclusive_data_schema(tracker_id: int):
         if not category:
             return error_response("Tracker category not found", 404)
         
-        all_schema = CategoryService.get_all_inclusive_data_schema(category.id)
+        CategoryService.rebuild_category_schema(category)
+        db.session.refresh(category)
+        
         return success_response(
-            "All inclusive data schema retrieved successfully",
-            {'data_schema': all_schema}
-        )
-    except ValueError as ve:
-        return error_response(str(ve), 404)
-    except Exception as e:
-        return error_response(f"Failed to get all inclusive data schema: {str(e)}", 500)
-
-# Get available option types
-@trackers_bp.route('/option-types', methods=['GET'])
-@jwt_required()
-def get_option_types():
-    try:
-        _, user_id = get_current_user()
-    except ValueError as e:
-        return error_response("User not found", 404)
-    
-    try:
-        option_types = FieldOption.get_available_option_types()
-        return success_response(
-            "Available option types retrieved successfully",
-            {'option_types': option_types}
+            "Schema rebuilt successfully",
+            {'data_schema': category.data_schema}
         )
     except Exception as e:
-        return error_response(f"Failed to get option types: {str(e)}", 500)
+        return error_response(f"Failed to rebuild schema: {str(e)}", 500)
 
-# Export tracker configuration
+
 @trackers_bp.route('/<int:tracker_id>/export-config', methods=['GET'])
 @jwt_required()
 def export_tracker_config(tracker_id: int):
-    try:
-        _, user_id = get_current_user()
-        tracker = verify_tracker_ownership(tracker_id, user_id)
-        tracker_category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
-        if not tracker_category:
-            return error_response("Tracker category not found", 404)
-        
-        # Rebuild schema to ensure it only includes active fields and options
-        CategoryService.rebuild_category_schema(tracker_category.id)
-        db.session.refresh(tracker_category)
-        
-        tracker_config = CategoryService.export_tracker_config(tracker_category)
-        return success_response("Tracker configuration exported successfully", {'tracker_config': tracker_config})
-    except Exception as e:
-        return error_response(f"Failed to export tracker configuration: {str(e)}", 500)
-
-# Import tracker configuration
-@trackers_bp.route('/<int:tracker_id>/import-config', methods=['POST'])
-@jwt_required()
-def import_tracker_config(tracker_id: int):
+    
     try:
         _, user_id = get_current_user()
         tracker = verify_tracker_ownership(tracker_id, user_id)
@@ -850,14 +981,78 @@ def import_tracker_config(tracker_id: int):
         return error_response(str(e), 404)
     
     try:
-        tracker_config = request.json.get('tracker_config')
-        CategoryService.import_tracker_config(tracker, tracker_config)
-        return success_response("Tracker configuration imported successfully")
+        category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
+        if not category:
+            return error_response("Tracker category not found", 404)
+        
+        # Rebuild schema to ensure it's up-to-date
+        CategoryService.rebuild_category_schema(category)
+        db.session.refresh(category)
+        
+        tracker_config = CategoryService.export_tracker_config(category)
+        
+        return success_response(
+            "Tracker config exported successfully",
+            {'tracker_config': tracker_config}
+        )
     except Exception as e:
-        return error_response(f"Failed to import tracker configuration: {str(e)}", 500)
+        return error_response(f"Failed to export tracker config: {str(e)}", 500)
 
 
+@trackers_bp.route('/<int:tracker_id>/import-config', methods=['POST'])
+@jwt_required()
+def import_tracker_config(tracker_id: int):
+    
+    try:
+        _, user_id = get_current_user()
+        tracker = verify_tracker_ownership(tracker_id, user_id)
+    except ValueError as e:
+        return error_response(str(e), 404)
+    
+    try:
+        category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
+        if not category:
+            return error_response("Tracker category not found", 404)
+        
+        tracker_config = request.json.get('tracker_config')
+        if not tracker_config:
+            return error_response("tracker_config is required", 400)
+        
+        CategoryService.import_tracker_config(category, tracker_config)
+        
+        return success_response("Tracker config imported successfully")
+    except ValueError as e:
+        return error_response(str(e), 400)
+    except Exception as e:
+        return error_response(f"Failed to import tracker config: {str(e)}", 500)
 
 
+# ============================================================================
+# UTILITY ROUTES
+# ============================================================================
 
-
+@trackers_bp.route('/option-types', methods=['GET'])
+@jwt_required()
+def get_available_option_types():
+    
+    try:
+        _, user_id = get_current_user()
+    except ValueError:
+        return error_response("User not found", 404)
+    
+    option_types = {
+        'rating': 'Rating Scale',
+        'single_choice': 'Single Choice',
+        'multiple_choice': 'Multiple Choice',
+        'yes_no': 'Yes/No',
+        'number_input': 'Number Input',
+        'text': 'Text Input',
+        'date': 'Date Picker',
+        'time': 'Time Picker',
+        'datetime': 'Date & Time Picker'
+    }
+    
+    return success_response(
+        "Option types retrieved successfully",
+        {'option_types': option_types}
+    )

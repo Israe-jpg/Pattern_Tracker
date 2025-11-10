@@ -34,6 +34,16 @@ def create_app(config_name='development'):
     app.register_blueprint(trackers_bp, url_prefix='/api/trackers')
     app.register_blueprint(data_tracking_bp, url_prefix='/api/data-tracking')
     
+    # Initialize prebuilt categories and their fields/options on startup
+    with app.app_context():
+        try:
+            from app.services.category_service import CategoryService
+            CategoryService.initialize_prebuilt_categories()
+            CategoryService.initialize_period_tracker()
+        except Exception as e:
+            # Log error but don't crash app startup
+            print(f"Warning: Failed to initialize prebuilt categories: {str(e)}")
+    
     # Health check endpoint
     @app.route('/api/health')
     def health_check():
