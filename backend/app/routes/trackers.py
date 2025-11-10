@@ -755,7 +755,7 @@ def update_field_display_label(tracker_field_id: int):
     
     try:
         _, user_id = get_current_user()
-        verify_field_ownership(tracker_field_id, user_id)
+        field = verify_field_ownership(tracker_field_id, user_id)
     except ValueError as e:
         return error_response(str(e), 404)
     
@@ -764,8 +764,7 @@ def update_field_display_label(tracker_field_id: int):
         if not new_label:
             return error_response("new_label is required", 400)
         
-        # This method would need to be added to CategoryService
-        field = TrackerField.query.filter_by(id=tracker_field_id).first()
+        # Field already retrieved and verified in the outer try block
         field.display_label = new_label
         db.session.commit()
         
@@ -781,7 +780,7 @@ def update_field_help_text(tracker_field_id: int):
     
     try:
         _, user_id = get_current_user()
-        verify_field_ownership(tracker_field_id, user_id)
+        field = verify_field_ownership(tracker_field_id, user_id)
     except ValueError as e:
         return error_response(str(e), 404)
     
@@ -790,7 +789,6 @@ def update_field_help_text(tracker_field_id: int):
         if new_help_text is None:
             return error_response("new_help_text is required", 400)
         
-        field = TrackerField.query.filter_by(id=tracker_field_id).first()
         field.help_text = new_help_text
         db.session.commit()
         
@@ -886,10 +884,17 @@ def get_field_options(tracker_field_id: int):
         return error_response(str(e), 404)
     
     try:
-        options = FieldOption.query.filter_by(
-            tracker_field_id=tracker_field.id,
-            is_active=True
-        ).order_by(FieldOption.option_order).all()
+        # Get options based on field type
+        if isinstance(tracker_field, TrackerUserField):
+            options = FieldOption.query.filter_by(
+                tracker_user_field_id=tracker_field.id,
+                is_active=True
+            ).order_by(FieldOption.option_order).all()
+        else:
+            options = FieldOption.query.filter_by(
+                tracker_field_id=tracker_field.id,
+                is_active=True
+            ).order_by(FieldOption.option_order).all()
         
         return success_response(
             "Options retrieved successfully",

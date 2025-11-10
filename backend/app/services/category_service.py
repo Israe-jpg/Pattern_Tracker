@@ -6,6 +6,7 @@ from app import db
 from app.models.tracker_category import TrackerCategory
 from app.models.tracker_field import TrackerField
 from app.models.tracker_user_field import TrackerUserField
+from app.models.tracker import Tracker
 from app.models.field_option import FieldOption
 
 
@@ -607,32 +608,56 @@ class CategoryService:
     # ========================================================================
     
     @staticmethod
-    def create_new_option(tracker_field: TrackerField, option_data: Dict[str, Any]) -> FieldOption:
-        
+    def create_new_option(tracker_field, option_data: Dict[str, Any]) -> FieldOption:
+        """
+        Create a new option for either TrackerField or TrackerUserField.
+        """
         try:
-            max_order = db.session.query(db.func.max(FieldOption.option_order)).filter_by(
-                tracker_field_id=tracker_field.id
-            ).scalar() or -1
-            
-            field_option = FieldOptionBuilder.create(
-                tracker_field.id,
-                option_data,
-                max_order + 1,
-                is_active=True
-            )
-            db.session.add(field_option)
-            db.session.flush()
-            
-            # Update schema
-            category = TrackerCategory.query.filter_by(id=tracker_field.category_id).first()
-            if category:
-                option_schema = SchemaManager.build_option_schema(option_data)
-                SchemaManager.add_option_to_schema(
-                    category,
-                    tracker_field.field_name,
-                    option_data['option_name'],
-                    option_schema
+            # Determine field type and get max order
+            if isinstance(tracker_field, TrackerUserField):
+                max_order = db.session.query(db.func.max(FieldOption.option_order)).filter_by(
+                    tracker_user_field_id=tracker_field.id
+                ).scalar() or -1
+                
+                field_option = FieldOptionBuilder.create(
+                    tracker_user_field_id=tracker_field.id,
+                    option_data=option_data,
+                    option_order=max_order + 1,
+                    is_active=True
                 )
+                db.session.add(field_option)
+                db.session.flush()
+                
+                # Rebuild schema for prebuilt tracker
+                tracker = Tracker.query.filter_by(id=tracker_field.tracker_id).first()
+                if tracker:
+                    category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
+                    if category:
+                        CategoryService.rebuild_category_schema(category, tracker)
+            else:
+                max_order = db.session.query(db.func.max(FieldOption.option_order)).filter_by(
+                    tracker_field_id=tracker_field.id
+                ).scalar() or -1
+                
+                field_option = FieldOptionBuilder.create(
+                    tracker_field_id=tracker_field.id,
+                    option_data=option_data,
+                    option_order=max_order + 1,
+                    is_active=True
+                )
+                db.session.add(field_option)
+                db.session.flush()
+                
+                # Update schema for category field
+                category = TrackerCategory.query.filter_by(id=tracker_field.category_id).first()
+                if category:
+                    option_schema = SchemaManager.build_option_schema(option_data)
+                    SchemaManager.add_option_to_schema(
+                        category,
+                        tracker_field.field_name,
+                        option_data['option_name'],
+                        option_schema
+                    )
             
             db.session.commit()
             return field_option
@@ -680,8 +705,43 @@ class CategoryService:
     
     @staticmethod
     def update_field_order(field_id: int, new_order: int) -> None:
-        
+        """
+        Update field order for either TrackerField or TrackerUserField.
+        """
         try:
+            # Try user field first
+            field = TrackerUserField.query.filter_by(id=field_id).first()
+            if field:
+                # Get all user fields for this tracker
+                user_fields = TrackerUserField.query.filter_by(
+                    tracker_id=field.tracker_id
+                ).order_by(TrackerUserField.field_order).all()
+                
+                # Validate new_order
+                if new_order < 0 or new_order >= len(user_fields):
+                    raise ValueError(f"Invalid order. Must be between 0 and {len(user_fields) - 1}")
+                
+                current_order = field.field_order
+                if current_order == new_order:
+                    return  # No change needed
+                
+                # Reorder fields
+                if new_order > current_order:
+                    # Moving down: shift fields up
+                    for f in user_fields:
+                        if current_order < f.field_order <= new_order:
+                            f.field_order -= 1
+                else:
+                    # Moving up: shift fields down
+                    for f in user_fields:
+                        if new_order <= f.field_order < current_order:
+                            f.field_order += 1
+                
+                field.field_order = new_order
+                db.session.commit()
+                return
+            
+            # Try category field
             field = TrackerField.query.filter_by(id=field_id).first()
             if not field:
                 raise ValueError("Field not found")
@@ -723,7 +783,32 @@ class CategoryService:
     
     @staticmethod
     def toggle_field_active_status(field_id: int) -> None:
+        """
+        Toggle active status for either TrackerField or TrackerUserField.
+        """
         try:
+            # Try user field first
+            field = TrackerUserField.query.filter_by(id=field_id).first()
+            if field:
+                new_status = not field.is_active
+                field.is_active = new_status
+                
+                # Cascade to all options
+                options = FieldOption.query.filter_by(tracker_user_field_id=field.id).all()
+                for option in options:
+                    option.is_active = new_status
+                
+                # Rebuild schema for prebuilt tracker
+                tracker = Tracker.query.filter_by(id=field.tracker_id).first()
+                if tracker:
+                    category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
+                    if category:
+                        CategoryService.rebuild_category_schema(category, tracker)
+                
+                db.session.commit()
+                return
+            
+            # Try category field
             field = TrackerField.query.filter_by(id=field_id).first()
             if not field:
                 raise ValueError("Field not found")
