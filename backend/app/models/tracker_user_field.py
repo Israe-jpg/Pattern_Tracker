@@ -58,6 +58,7 @@ class TrackerUserField(db.Model):
             'display_label': self.display_label,
             'help_text': self.help_text,
             'field_order': self.field_order,
+            'field_group': 'custom',  # User fields are always custom additions
             'is_active': self.is_active,
             'has_children': len(self.children) > 0 if self.children else False,
             'children_count': len(self.children) if self.children else 0,
