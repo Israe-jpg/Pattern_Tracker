@@ -1,6 +1,6 @@
 import json
 import os
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Union
 from sqlalchemy.orm.attributes import flag_modified
 from app import db
 from app.models.tracker_category import TrackerCategory
@@ -8,6 +8,12 @@ from app.models.tracker_field import TrackerField
 from app.models.tracker_user_field import TrackerUserField
 from app.models.tracker import Tracker
 from app.models.field_option import FieldOption
+from app.services.tracker_constants import (
+    PREBUILT_CATEGORIES,
+    PERIOD_TRACKER_NAME,
+    PERIOD_TRACKER_KEY,
+    is_prebuilt_category as _is_prebuilt_category
+)
 
 
 # ============================================================================
@@ -160,15 +166,11 @@ class CategoryService:
         'float': 'number_input'
     }
     
-    # Pre-built categories configuration
-    PREBUILT_CATEGORIES = {
-        'Workout Tracker': 'workout_tracker',
-        'Symptom Tracker': 'symptom_tracker'
-    }
-    
-    # Period Tracker is handled separately due to special functionality
-    PERIOD_TRACKER_NAME = 'Period Tracker'
-    PERIOD_TRACKER_KEY = 'period_tracker'
+    # Constants imported from tracker_constants module (at top of file)
+    # Exposed as class attributes for backward compatibility
+    PREBUILT_CATEGORIES = PREBUILT_CATEGORIES
+    PERIOD_TRACKER_NAME = PERIOD_TRACKER_NAME
+    PERIOD_TRACKER_KEY = PERIOD_TRACKER_KEY
     
     # ========================================================================
     # CONFIG FILE ACCESS
@@ -205,8 +207,7 @@ class CategoryService:
     @staticmethod
     def is_prebuilt_category(category_name: str) -> bool:
         """Check if category is a pre-built category (Period Tracker, Workout Tracker, Symptom Tracker)."""
-        return (category_name in CategoryService.PREBUILT_CATEGORIES or 
-                category_name == CategoryService.PERIOD_TRACKER_NAME)
+        return _is_prebuilt_category(category_name)
     
     # ========================================================================
     # CATEGORY INITIALIZATION (Called during app setup)
@@ -298,7 +299,13 @@ class CategoryService:
             field_group='baseline'
         ).first() is not None
         
-        if not baseline_fields_exist:
+        period_fields_exist = TrackerField.query.filter_by(
+            category_id=category.id,
+            field_group=CategoryService.PERIOD_TRACKER_KEY
+        ).first() is not None
+        
+        # Create missing fields
+        if not baseline_fields_exist or not period_fields_exist:
             # Fields/options don't exist, create them from JSON config
             CategoryService._create_fields_for_prebuilt_category(
                 category.id,
@@ -307,6 +314,7 @@ class CategoryService:
                 CategoryService.PERIOD_TRACKER_KEY
             )
             db.session.commit()
+            print(f"[INIT] Created Period Tracker fields (baseline={not baseline_fields_exist}, period={not period_fields_exist})")
         
         return category
     
@@ -706,80 +714,27 @@ class CategoryService:
     @staticmethod
     def update_field_order(field_id: int, new_order: int) -> None:
         """
-        Update field order for either TrackerField or TrackerUserField.
+        Update field order - delegates to FieldOrderingService.
+        Automatically detects if field is TrackerField or TrackerUserField.
         """
-        try:
-            # Try user field first
-            field = TrackerUserField.query.filter_by(id=field_id).first()
-            if field:
-                # Get all user fields for this tracker
-                user_fields = TrackerUserField.query.filter_by(
-                    tracker_id=field.tracker_id
-                ).order_by(TrackerUserField.field_order).all()
-                
-                # Validate new_order
-                if new_order < 0 or new_order >= len(user_fields):
-                    raise ValueError(f"Invalid order. Must be between 0 and {len(user_fields) - 1}")
-                
-                current_order = field.field_order
-                if current_order == new_order:
-                    return  # No change needed
-                
-                # Reorder fields
-                if new_order > current_order:
-                    # Moving down: shift fields up
-                    for f in user_fields:
-                        if current_order < f.field_order <= new_order:
-                            f.field_order -= 1
-                else:
-                    # Moving up: shift fields down
-                    for f in user_fields:
-                        if new_order <= f.field_order < current_order:
-                            f.field_order += 1
-                
-                field.field_order = new_order
-                db.session.commit()
-                return
-            
-            # Try category field
-            field = TrackerField.query.filter_by(id=field_id).first()
-            if not field:
-                raise ValueError("Field not found")
-            
-            if field.field_group == 'baseline':
-                raise ValueError("Cannot reorder baseline fields")
-            
-            # Get all custom fields for this category
-            custom_fields = TrackerField.query.filter_by(
-                category_id=field.category_id,
-                field_group='custom'
-            ).order_by(TrackerField.field_order).all()
-            
-            # Validate new_order
-            if new_order < 0 or new_order >= len(custom_fields):
-                raise ValueError(f"Invalid order. Must be between 0 and {len(custom_fields) - 1}")
-            
-            current_order = field.field_order
-            if current_order == new_order:
-                return  # No change needed
-            
-            # Reorder fields
-            if new_order > current_order:
-                # Moving down: shift fields up
-                for f in custom_fields:
-                    if current_order < f.field_order <= new_order:
-                        f.field_order -= 1
-            else:
-                # Moving up: shift fields down
-                for f in custom_fields:
-                    if new_order <= f.field_order < current_order:
-                        f.field_order += 1
-            
-            field.field_order = new_order
-            db.session.commit()
-        except Exception as e:
-            db.session.rollback()
-            raise
+        # Lazy import to avoid circular dependency
+        from app.services.field_ordering_service import FieldOrderingService
+        
+        # Try user field first
+        user_field = TrackerUserField.query.filter_by(id=field_id).first()
+        if user_field:
+            FieldOrderingService.update_user_field_order(field_id, new_order)
+            return
+        
+        # Try category field
+        FieldOrderingService.update_tracker_field_order(field_id, new_order)
+    
+    @staticmethod
+    def normalize_all_field_orders(category_id: int, tracker_id: int = None) -> None:
+        """Normalize all field orders for a category/tracker."""
+        from app.services.field_ordering_service import FieldOrderingService
+        FieldOrderingService.normalize_field_orders(category_id, tracker_id)
+    
     
     @staticmethod
     def toggle_field_active_status(field_id: int) -> None:
@@ -1025,6 +980,9 @@ class CategoryService:
         If tracker is provided, also includes user-specific fields for prebuilt trackers.
         """
         try:
+            # Expire all cached objects to ensure we get fresh data from database
+            db.session.expire_all()
+            
             data_schema = {}
             
             # Build baseline schema from active baseline fields
@@ -1032,14 +990,14 @@ class CategoryService:
                 category_id=category.id,
                 field_group='baseline',
                 is_active=True
-            ).order_by(TrackerField.field_order).all()
+            ).order_by(TrackerField.field_order.asc()).all()
             
             baseline_schema = {}
             for field in baseline_fields:
                 options = FieldOption.query.filter_by(
                     tracker_field_id=field.id,
                     is_active=True
-                ).order_by(FieldOption.option_order).all()
+                ).order_by(FieldOption.option_order.asc()).all()
                 
                 field_options = {}
                 for option in options:
@@ -1064,14 +1022,14 @@ class CategoryService:
                 category_id=category.id,
                 field_group='custom',
                 is_active=True
-            ).order_by(TrackerField.field_order).all()
+            ).order_by(TrackerField.field_order.asc()).all()
             
             custom_schema = {}
             for field in custom_fields:
                 options = FieldOption.query.filter_by(
                     tracker_field_id=field.id,
                     is_active=True
-                ).order_by(FieldOption.option_order).all()
+                ).order_by(FieldOption.option_order.asc()).all()
                 
                 field_options = {}
                 for option in options:
@@ -1096,14 +1054,14 @@ class CategoryService:
                 user_fields = TrackerUserField.query.filter_by(
                     tracker_id=tracker.id,
                     is_active=True
-                ).order_by(TrackerUserField.field_order).all()
+                ).order_by(TrackerUserField.field_order.asc()).all()
                 
                 user_custom_schema = {}
                 for field in user_fields:
                     options = FieldOption.query.filter_by(
                         tracker_user_field_id=field.id,
                         is_active=True
-                    ).order_by(FieldOption.option_order).all()
+                    ).order_by(FieldOption.option_order.asc()).all()
                     
                     field_options = {}
                     for option in options:
@@ -1121,10 +1079,12 @@ class CategoryService:
                     if field_options:
                         user_custom_schema[field.field_name] = field_options
                 
-                # Merge user fields into custom schema
+                # Merge user fields into custom schema (preserves insertion order in Python 3.7+)
+                # User fields come AFTER category custom fields
                 if user_custom_schema:
                     if 'custom' not in data_schema:
                         data_schema['custom'] = {}
+                    # Update preserves order - user fields are added after existing custom fields
                     data_schema['custom'].update(user_custom_schema)
             
             # Preserve static config-based sections (e.g., period_tracker)
