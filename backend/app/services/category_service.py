@@ -5,6 +5,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from app import db
 from app.models.tracker_category import TrackerCategory
 from app.models.tracker_field import TrackerField
+from app.models.tracker_user_field import TrackerUserField
 from app.models.field_option import FieldOption
 
 
@@ -109,19 +110,34 @@ class FieldOptionBuilder:
     }
     
     @classmethod
-    def create(cls, tracker_field_id: int, option_data: Dict[str, Any], 
-               option_order: int, is_active: bool = True) -> FieldOption:
+    def create(cls, tracker_field_id: int = None, tracker_user_field_id: int = None,
+               option_data: Dict[str, Any] = None, option_order: int = 0, 
+               is_active: bool = True) -> FieldOption:
+        """
+        Create a FieldOption instance.
+        Must provide either tracker_field_id OR tracker_user_field_id.
+        """
+        if not tracker_field_id and not tracker_user_field_id:
+            raise ValueError("Must provide either tracker_field_id or tracker_user_field_id")
+        if tracker_field_id and tracker_user_field_id:
+            raise ValueError("Cannot provide both tracker_field_id and tracker_user_field_id")
+        
         kwargs = {
-            'tracker_field_id': tracker_field_id,
             'option_order': option_order,
             'is_active': is_active
         }
         
-        for field in cls.OPTION_FIELDS:
-            if field in option_data:
-                kwargs[field] = option_data[field]
-            elif field not in ('option_name', 'option_type'):#check if its not optional
-                kwargs[field] = option_data.get(field)
+        if tracker_field_id:
+            kwargs['tracker_field_id'] = tracker_field_id
+        else:
+            kwargs['tracker_user_field_id'] = tracker_user_field_id
+        
+        if option_data:
+            for field in cls.OPTION_FIELDS:
+                if field in option_data:
+                    kwargs[field] = option_data[field]
+                elif field not in ('option_name', 'option_type'):  # Optional fields
+                    kwargs[field] = option_data.get(field)
         
         return FieldOption(**kwargs)
 
@@ -429,9 +445,9 @@ class CategoryService:
             for option_order, (option_name, option_config) in enumerate(field_options.items()):
                 option_data = CategoryService._schema_to_option_data(option_name, option_config)
                 field_option = FieldOptionBuilder.create(
-                    tracker_field.id,
-                    option_data,
-                    option_order,
+                    tracker_field_id=tracker_field.id,
+                    option_data=option_data,
+                    option_order=option_order,
                     is_active=True
                 )
                 db.session.add(field_option)
@@ -455,9 +471,9 @@ class CategoryService:
             
             for option_order, option_data in enumerate(field_data.get('options', [])):
                 field_option = FieldOptionBuilder.create(
-                    tracker_field.id,
-                    option_data,
-                    option_order,
+                    tracker_field_id=tracker_field.id,
+                    option_data=option_data,
+                    option_order=option_order,
                     is_active=True
                 )
                 db.session.add(field_option)
@@ -539,9 +555,9 @@ class CategoryService:
             
             for option_order, option_data in enumerate(validated_options):
                 field_option = FieldOptionBuilder.create(
-                    tracker_field.id,
-                    option_data,
-                    option_order,
+                    tracker_field_id=tracker_field.id,
+                    option_data=option_data,
+                    option_order=option_order,
                     is_active=True
                 )
                 db.session.add(field_option)
@@ -856,12 +872,73 @@ class CategoryService:
             raise
     
     # ========================================================================
+    # USER FIELD OPERATIONS (for prebuilt trackers)
+    # ========================================================================
+    
+    @staticmethod
+    def create_user_field(tracker: 'Tracker', field_data: Dict[str, Any],
+                          validated_options: List[Dict[str, Any]]) -> TrackerUserField:
+        """Create a user-specific custom field for a prebuilt tracker."""
+        try:
+            from app.models.tracker import Tracker
+            field_name = field_data['field_name']
+            
+            # Get max order for user fields on this tracker
+            max_order = db.session.query(db.func.max(TrackerUserField.field_order)).filter_by(
+                tracker_id=tracker.id
+            ).scalar() or -1
+            
+            tracker_user_field = TrackerUserField(
+                tracker_id=tracker.id,
+                field_name=field_name,
+                field_order=max_order + 1,
+                display_label=field_data.get('display_label', field_name),
+                help_text=field_data.get('help_text'),
+                is_active=True
+            )
+            db.session.add(tracker_user_field)
+            db.session.flush()
+            
+            for option_order, option_data in enumerate(validated_options):
+                field_option = FieldOptionBuilder.create(
+                    tracker_user_field_id=tracker_user_field.id,
+                    option_data=option_data,
+                    option_order=option_order,
+                    is_active=True
+                )
+                db.session.add(field_option)
+            
+            db.session.commit()
+            return tracker_user_field
+        except Exception as e:
+            db.session.rollback()
+            raise
+    
+    @staticmethod
+    def delete_user_field(field_id: int) -> None:
+        """Delete a user field and its options."""
+        try:
+            field = TrackerUserField.query.filter_by(id=field_id).first()
+            if not field:
+                raise ValueError("User field not found")
+            
+            # Options are cascade deleted automatically
+            db.session.delete(field)
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            raise
+    
+    # ========================================================================
     # SCHEMA REBUILDING AND MANAGEMENT
     # ========================================================================
     
     @staticmethod
-    def rebuild_category_schema(category: TrackerCategory) -> None:
-        
+    def rebuild_category_schema(category: TrackerCategory, tracker: 'Tracker' = None) -> None:
+        """
+        Rebuild the data schema from active database fields and options.
+        If tracker is provided, also includes user-specific fields for prebuilt trackers.
+        """
         try:
             data_schema = {}
             
@@ -929,6 +1006,42 @@ class CategoryService:
             
             data_schema['custom'] = custom_schema
             
+            # Add user-specific fields for prebuilt trackers
+            if tracker and CategoryService.is_prebuilt_category(category.name):
+                user_fields = TrackerUserField.query.filter_by(
+                    tracker_id=tracker.id,
+                    is_active=True
+                ).order_by(TrackerUserField.field_order).all()
+                
+                user_custom_schema = {}
+                for field in user_fields:
+                    options = FieldOption.query.filter_by(
+                        tracker_user_field_id=field.id,
+                        is_active=True
+                    ).order_by(FieldOption.option_order).all()
+                    
+                    field_options = {}
+                    for option in options:
+                        option_schema = SchemaManager.build_option_schema({
+                            'option_type': option.option_type,
+                            'is_required': option.is_required,
+                            'min_value': option.min_value,
+                            'max_value': option.max_value,
+                            'max_length': option.max_length,
+                            'choices': option.choices,
+                            'choice_labels': option.choice_labels
+                        })
+                        field_options[option.option_name] = option_schema
+                    
+                    if field_options:
+                        user_custom_schema[field.field_name] = field_options
+                
+                # Merge user fields into custom schema
+                if user_custom_schema:
+                    if 'custom' not in data_schema:
+                        data_schema['custom'] = {}
+                    data_schema['custom'].update(user_custom_schema)
+            
             # Preserve static config-based sections (e.g., period_tracker)
             existing_schema = category.data_schema or {}
             # Check all prebuilt category keys (including Period Tracker)
@@ -962,8 +1075,11 @@ class CategoryService:
             raise
     
     @staticmethod
-    def get_all_inclusive_data_schema(category: TrackerCategory) -> Dict[str, Any]:
-        
+    def get_all_inclusive_data_schema(category: TrackerCategory, tracker: 'Tracker' = None) -> Dict[str, Any]:
+        """
+        Get all-inclusive data schema including active and inactive fields/options.
+        If tracker is provided, also includes user-specific fields for prebuilt trackers.
+        """
         try:
             data_schema = {
                 'active': {

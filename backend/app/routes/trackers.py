@@ -7,6 +7,7 @@ from app import db
 from app.models.user import User
 from app.models.tracker import Tracker
 from app.models.tracker_field import TrackerField
+from app.models.tracker_user_field import TrackerUserField
 from app.models.tracker_category import TrackerCategory
 from app.models.field_option import FieldOption
 from app.schemas.tracker_schemas import CustomCategorySchema, FieldOptionSchema
@@ -34,31 +35,58 @@ def verify_tracker_ownership(tracker_id: int, user_id: int) -> Tracker:
     return tracker
 
 
-def verify_field_ownership(tracker_field_id: int, user_id: int) -> TrackerField:
+def verify_field_ownership(tracker_field_id: int, user_id: int):
+    """
+    Verify field ownership. Returns TrackerField or TrackerUserField.
+    Checks both category-level fields and user-specific fields.
+    """
+    # Try category-level field first
     tracker_field = TrackerField.query.filter_by(id=tracker_field_id).first()
-    if not tracker_field:
-        raise ValueError("Tracker field not found")
+    if tracker_field:
+        tracker = Tracker.query.filter_by(
+            category_id=tracker_field.category_id,
+            user_id=user_id
+        ).first()
+        if not tracker:
+            raise ValueError("Unauthorized - field does not belong to your tracker")
+        return tracker_field
     
-    tracker = Tracker.query.filter_by(
-        category_id=tracker_field.category_id,
-        user_id=user_id
-    ).first()
-    if not tracker:
-        raise ValueError("Unauthorized - field does not belong to your tracker")
+    # Try user-specific field
+    user_field = TrackerUserField.query.filter_by(id=tracker_field_id).first()
+    if user_field:
+        tracker = Tracker.query.filter_by(
+            id=user_field.tracker_id,
+            user_id=user_id
+        ).first()
+        if not tracker:
+            raise ValueError("Unauthorized - field does not belong to your tracker")
+        return user_field
     
-    return tracker_field
+    raise ValueError("Tracker field not found")
 
 
 def verify_option_ownership(option_id: int, user_id: int) -> FieldOption:
-    
+    """
+    Verify option ownership. Handles options from both TrackerField and TrackerUserField.
+    """
     option = FieldOption.query.filter_by(id=option_id).first()
     if not option:
         raise ValueError("Option not found")
     
-    tracker = Tracker.query.filter_by(
-        category_id=option.tracker_field.category_id,
-        user_id=user_id
-    ).first()
+    # Check if option belongs to a category field or user field
+    if option.tracker_field_id:
+        tracker = Tracker.query.filter_by(
+            category_id=option.tracker_field.category_id,
+            user_id=user_id
+        ).first()
+    elif option.tracker_user_field_id:
+        tracker = Tracker.query.filter_by(
+            id=option.tracker_user_field.tracker_id,
+            user_id=user_id
+        ).first()
+    else:
+        raise ValueError("Option has no valid field reference")
+    
     if not tracker:
         raise ValueError("Unauthorized - option does not belong to your tracker")
     
@@ -372,7 +400,7 @@ def get_tracker_details(tracker_id: int):
     
     try:
         # Rebuild schema to ensure it's up-to-date with active/inactive statuses
-        CategoryService.rebuild_category_schema(category)
+        CategoryService.rebuild_category_schema(category, tracker if CategoryService.is_prebuilt_category(category.name) else None)
         db.session.refresh(category)
         
         return success_response(
@@ -452,7 +480,7 @@ def get_tracker_schema(tracker_id: int):
             return error_response("Tracker category not found", 404)
         
         # Rebuild schema to ensure it's up-to-date with active/inactive statuses
-        CategoryService.rebuild_category_schema(category)
+        CategoryService.rebuild_category_schema(category, tracker if CategoryService.is_prebuilt_category(category.name) else None)
         db.session.refresh(category)
         
         return success_response(
@@ -501,12 +529,20 @@ def get_ordered_fields(tracker_id: int):
                     is_active=True
                 ).order_by(TrackerField.field_order).all()
         
-        # Get custom fields
+        # Get custom fields (category-level)
         custom_fields = TrackerField.query.filter_by(
             category_id=tracker.category_id,
             field_group='custom',
             is_active=True
         ).order_by(TrackerField.field_order).all()
+        
+        # Get user-specific fields for prebuilt trackers
+        user_fields = []
+        if CategoryService.is_prebuilt_category(category.name):
+            user_fields = TrackerUserField.query.filter_by(
+                tracker_id=tracker.id,
+                is_active=True
+            ).order_by(TrackerUserField.field_order).all()
         
         def serialize_field(field: TrackerField):
             options = FieldOption.query.filter_by(
@@ -515,6 +551,16 @@ def get_ordered_fields(tracker_id: int):
             ).order_by(FieldOption.option_order).all()
             data = field.to_dict()
             data['options'] = [o.to_dict() for o in options]
+            return data
+        
+        def serialize_user_field(field: TrackerUserField):
+            options = FieldOption.query.filter_by(
+                tracker_user_field_id=field.id,
+                is_active=True
+            ).order_by(FieldOption.option_order).all()
+            data = field.to_dict()
+            data['options'] = [o.to_dict() for o in options]
+            data['is_user_field'] = True  # Flag to distinguish from category fields
             return data
         
         response_data = {
@@ -526,6 +572,12 @@ def get_ordered_fields(tracker_id: int):
         if category_specific_fields:
             response_data['category_specific_fields'] = [
                 serialize_field(f) for f in category_specific_fields
+            ]
+        
+        # Include user-specific fields for prebuilt trackers
+        if user_fields:
+            response_data['user_fields'] = [
+                serialize_user_field(f) for f in user_fields
             ]
         
         return success_response("Fields retrieved successfully", response_data)
@@ -548,7 +600,10 @@ def get_all_inclusive_data_schema(tracker_id: int):
         if not category:
             return error_response("Tracker category not found", 404)
         
-        all_inclusive_schema = CategoryService.get_all_inclusive_data_schema(category)
+        all_inclusive_schema = CategoryService.get_all_inclusive_data_schema(
+            category, 
+            tracker if CategoryService.is_prebuilt_category(category.name) else None
+        )
         
         return success_response(
             "All inclusive data schema retrieved successfully",
@@ -577,9 +632,8 @@ def create_new_field(tracker_id: int):
         if not category:
             return error_response("Tracker category not found", 404)
         
-        # Prevent modification of pre-built categories
-        if CategoryService.is_prebuilt_category(category.name):
-            return error_response("Cannot modify pre-built categories", 403)
+        # For prebuilt categories, use TrackerUserField instead of TrackerField
+        is_prebuilt = CategoryService.is_prebuilt_category(category.name)
         
         field_data = request.json.get('field_data', {})
         options_data = request.json.get('options', [])
@@ -600,11 +654,24 @@ def create_new_field(tracker_id: int):
             except ValidationError as err:
                 return error_response("Option validation failed", 400, err.messages)
         
-        new_field = CategoryService.create_new_field(
-            category,
-            field_data,
-            validated_options
-        )
+        if is_prebuilt:
+            # Create user-specific field for prebuilt tracker
+            new_field = CategoryService.create_user_field(
+                tracker,
+                field_data,
+                validated_options
+            )
+        else:
+            # Create regular field for custom category
+            new_field = CategoryService.create_new_field(
+                category,
+                field_data,
+                validated_options
+            )
+        
+        # Rebuild schema to include the new field
+        CategoryService.rebuild_category_schema(category, tracker if is_prebuilt else None)
+        db.session.refresh(category)
         
         return success_response(
             "Field created successfully",
@@ -621,12 +688,24 @@ def delete_field(tracker_field_id: int):
     
     try:
         _, user_id = get_current_user()
-        verify_field_ownership(tracker_field_id, user_id)
+        field = verify_field_ownership(tracker_field_id, user_id)
     except ValueError as e:
         return error_response(str(e), 404)
     
     try:
-        CategoryService.delete_field_from_category(tracker_field_id)
+        
+        # Check if it's a user field or category field
+        if isinstance(field, TrackerUserField):
+            CategoryService.delete_user_field(tracker_field_id)
+            # Rebuild schema for prebuilt tracker
+            tracker = Tracker.query.filter_by(id=field.tracker_id).first()
+            if tracker:
+                category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
+                if category:
+                    CategoryService.rebuild_category_schema(category, tracker)
+        else:
+            CategoryService.delete_field_from_category(tracker_field_id)
+        
         return success_response("Field deleted successfully")
     except ValueError as e:
         return error_response(str(e), 403)
@@ -640,20 +719,28 @@ def get_field_details(tracker_field_id: int):
     
     try:
         _, user_id = get_current_user()
-        tracker_field = verify_field_ownership(tracker_field_id, user_id)
+        field = verify_field_ownership(tracker_field_id, user_id)
     except ValueError as e:
         return error_response(str(e), 404)
     
     try:
-        options = FieldOption.query.filter_by(
-            tracker_field_id=tracker_field.id,
-            is_active=True
-        ).order_by(FieldOption.option_order).all()
+        
+        # Get options based on field type
+        if isinstance(field, TrackerUserField):
+            options = FieldOption.query.filter_by(
+                tracker_user_field_id=field.id,
+                is_active=True
+            ).order_by(FieldOption.option_order).all()
+        else:
+            options = FieldOption.query.filter_by(
+                tracker_field_id=field.id,
+                is_active=True
+            ).order_by(FieldOption.option_order).all()
         
         return success_response(
             "Field details retrieved successfully",
             {
-                'field': tracker_field.to_dict(),
+                'field': field.to_dict(),
                 'options': [opt.to_dict() for opt in options]
             }
         )
@@ -959,7 +1046,7 @@ def rebuild_tracker_schema(tracker_id: int):
         if not category:
             return error_response("Tracker category not found", 404)
         
-        CategoryService.rebuild_category_schema(category)
+        CategoryService.rebuild_category_schema(category, tracker if CategoryService.is_prebuilt_category(category.name) else None)
         db.session.refresh(category)
         
         return success_response(
@@ -986,7 +1073,7 @@ def export_tracker_config(tracker_id: int):
             return error_response("Tracker category not found", 404)
         
         # Rebuild schema to ensure it's up-to-date
-        CategoryService.rebuild_category_schema(category)
+        CategoryService.rebuild_category_schema(category, tracker if CategoryService.is_prebuilt_category(category.name) else None)
         db.session.refresh(category)
         
         tracker_config = CategoryService.export_tracker_config(category)

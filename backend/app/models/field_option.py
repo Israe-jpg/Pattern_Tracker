@@ -5,7 +5,16 @@ class FieldOption(db.Model):
     __tablename__ = 'field_options'
     
     id = db.Column(db.Integer, primary_key=True)
-    tracker_field_id = db.Column(db.Integer, db.ForeignKey('tracker_fields.id'), nullable=False)
+    tracker_field_id = db.Column(db.Integer, db.ForeignKey('tracker_fields.id'), nullable=True)
+    tracker_user_field_id = db.Column(db.Integer, db.ForeignKey('tracker_user_fields.id'), nullable=True)
+    
+    # Ensure at least one field reference exists
+    __table_args__ = (
+        db.CheckConstraint(
+            '(tracker_field_id IS NOT NULL) OR (tracker_user_field_id IS NOT NULL)',
+            name='check_field_reference'
+        ),
+    )
     
     # Option identification
     option_name = db.Column(db.String(100), nullable=False)  # "overall mood", "mood notes"
@@ -39,7 +48,13 @@ class FieldOption(db.Model):
     is_active = db.Column(db.Boolean, default=True)
     
     # Relationships
-    tracker_field = db.relationship('TrackerField')
+    tracker_field = db.relationship('TrackerField', foreign_keys=[tracker_field_id])
+    tracker_user_field = db.relationship('TrackerUserField', foreign_keys=[tracker_user_field_id])
+    
+    @property
+    def parent_field(self):
+        """Get the parent field (either TrackerField or TrackerUserField)."""
+        return self.tracker_field or self.tracker_user_field
     
     # Option type mappings
     OPTION_TYPE_MAPPING = {
@@ -66,6 +81,7 @@ class FieldOption(db.Model):
         return {
             'id': self.id,
             'tracker_field_id': self.tracker_field_id,
+            'tracker_user_field_id': self.tracker_user_field_id,
             'option_name': self.option_name,
             'option_type': self.option_type,
             'option_type_label': self.OPTION_TYPE_LABELS.get(self.option_type, self.option_type),
