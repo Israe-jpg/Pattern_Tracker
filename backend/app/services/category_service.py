@@ -16,7 +16,12 @@ from app.services.tracker_constants import (
 )
 from app.utils.menstruation_calculations import (
     calculate_cycle_day,
-    determine_cycle_phase
+    determine_cycle_phase,
+    predict_ovulation_date,
+    predict_next_period_date,
+    get_fertility_window,
+    is_period_expected_soon,
+    is_period_late
 )
 
 
@@ -1014,6 +1019,36 @@ class CategoryService:
         
         is_menstruating = cycle_phase == 'menstruation'
         
+        # Calculate ovulation date
+        ovulation_date = predict_ovulation_date(
+            settings.get('last_period_start_date'),
+            settings.get('average_cycle_length', 28)
+        )
+        
+        # Calculate next period date
+        next_period_date = predict_next_period_date(
+            settings.get('last_period_start_date'),
+            settings.get('average_cycle_length', 28)
+        )
+        
+        # Calculate fertility window
+        fertility_window = get_fertility_window(
+            settings.get('last_period_start_date'),
+            settings.get('average_cycle_length', 28)
+        )
+
+        # Check if period expected soon
+        period_expected_soon = is_period_expected_soon(
+            cycle_day,
+            settings.get('average_cycle_length', 28)
+        )
+
+        # Check if period is late
+        period_late = is_period_late(
+            cycle_day,
+            settings.get('average_cycle_length', 28)
+        )
+
         # Get category
         category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
         if not category:
@@ -1042,14 +1077,33 @@ class CategoryService:
             'custom': base_schema.get('custom', {})
         }
         
-        # Return schema with cycle context
-        return {
+        # Return schema with cycle context and predictions
+        response = {
             'setup_required': False,
-            'cycle_day': cycle_day,
-            'cycle_phase': cycle_phase,
-            'is_menstruating': is_menstruating,
+            'cycle_info': {
+                'cycle_day': cycle_day,
+                'cycle_phase': cycle_phase,
+                'is_menstruating': is_menstruating
+            },
+            'predictions': {
+                'ovulation_date': ovulation_date.isoformat() if ovulation_date else None,
+                'next_period_date': next_period_date.isoformat() if next_period_date else None,
+                'period_expected_soon': period_expected_soon,
+                'period_late': period_late
+            },
             'data_schema': contextual_schema
         }
+        
+        # Add fertility window if available
+        if fertility_window:
+            response['predictions']['fertility_window'] = {
+                'start': fertility_window['start'].isoformat(),
+                'end': fertility_window['end'].isoformat(),
+                'ovulation_date': fertility_window['ovulation_date'].isoformat(),
+                'high_fertility_days': fertility_window['high_fertility_days']
+            }
+        
+        return response
     
     # ========================================================================
     # SCHEMA REBUILDING AND MANAGEMENT
