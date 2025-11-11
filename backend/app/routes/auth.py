@@ -4,6 +4,12 @@ from marshmallow import ValidationError
 from app import db
 from app.models.user import User
 from app.schemas.user_schemas import UserRegistrationSchema, UserLoginSchema
+from app.utils.unit_conversion import (
+    convert_weight_to_metric,
+    convert_height_to_metric,
+    convert_weight_from_metric,
+    convert_height_from_metric
+)
 
 
 
@@ -94,6 +100,27 @@ def login():
     except Exception as e:
         return jsonify({'error': 'Login failed'}), 500
 
+@auth_bp.route('/profile', methods=['GET'])
+@jwt_required()
+def get_user_profile():
+    """
+    Get current user's profile with measurements in their preferred unit system.
+    """
+    try:
+        current_user_id = get_jwt_identity()
+        user = User.query.filter_by(id=current_user_id).first()
+        
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+        
+        return jsonify({
+            'message': 'Profile retrieved successfully',
+            'user': user.to_dict(include_measurements=True)
+        }), 200
+    except Exception as e:
+        return jsonify({'error': f'Failed to retrieve profile: {str(e)}'}), 500
+
+
 @auth_bp.route('/logout', methods=['POST'])
 @jwt_required()
 def logout():
@@ -147,22 +174,41 @@ def get_user_sex_info():
 @auth_bp.route('/obtain-optional-user-info', methods=['POST'])
 @jwt_required()
 def obtain_optional_user_info():
+    """
+    Update user profile information (height, weight, DOB, unit preference).
+    Height and weight are automatically converted to metric for storage.
+    """
     try:
         data = request.get_json()
-        date_of_birth = data.get('date_of_birth')
-        height = data.get('height')
-        weight = data.get('weight')
         current_user_id = get_jwt_identity()
         user = User.query.filter_by(id=current_user_id).first()
         if not user:
             return jsonify({'error': 'User not found'}), 404
-        if date_of_birth:
-            user.date_of_birth = date_of_birth
-        if height:
-            user.height = height
-        if weight:
-            user.weight = weight
+        
+        # Update unit system preference (must come before height/weight conversion)
+        unit_system = data.get('unit_system', user.unit_system or 'metric')
+        if unit_system not in ['metric', 'imperial']:
+            return jsonify({'error': 'Invalid unit_system. Must be "metric" or "imperial"'}), 400
+        user.unit_system = unit_system
+        
+        # Update date of birth
+        if data.get('date_of_birth'):
+            user.date_of_birth = data.get('date_of_birth')
+        
+        # Convert and store height (always stored as cm in DB)
+        if data.get('height') is not None:
+            user.height = convert_height_to_metric(data.get('height'), unit_system)
+        
+        # Convert and store weight (always stored as kg in DB)
+        if data.get('weight') is not None:
+            user.weight = convert_weight_to_metric(data.get('weight'), unit_system)
+        
         db.session.commit()
-        return jsonify({'message': 'Optional user info obtained successfully'}), 200
+        
+        return jsonify({
+            'message': 'Optional user info updated successfully',
+            'user': user.to_dict(include_measurements=True)
+        }), 200
     except Exception as e:
-        return jsonify({'error': 'Failed to obtain optional user info'}), 500
+        db.session.rollback()
+        return jsonify({'error': f'Failed to update user info: {str(e)}'}), 500

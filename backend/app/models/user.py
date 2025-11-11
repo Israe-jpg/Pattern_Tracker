@@ -21,6 +21,9 @@ class User(db.Model):
     height = db.Column(db.Float, nullable=True)
     weight = db.Column(db.Float, nullable=True)
     
+    # unit system
+    unit_system = db.Column(db.String(10), default='metric')  # 'metric' or 'imperial'
+
     # Timestamps
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     is_active = db.Column(db.Boolean, default=True)
@@ -33,9 +36,9 @@ class User(db.Model):
         """Check if provided password matches hash"""
         return check_password_hash(self.password_hash, password)
     
-    def to_dict(self):
-        """Convert user to dictionary (for JSON responses)"""
-        return {
+    def to_dict(self, include_measurements=False):
+        
+        base_dict = {
             'id': self.id,
             'username': self.username,
             'email': self.email,
@@ -44,6 +47,28 @@ class User(db.Model):
             'created_at': self.created_at.isoformat(),
             'is_active': self.is_active
         }
+        
+        if include_measurements:
+            from app.utils.unit_conversion import (
+                convert_weight_from_metric,
+                convert_height_from_metric,
+                get_weight_unit,
+                get_height_unit
+            )
+            
+            unit_system = self.unit_system or 'metric'
+            
+            base_dict.update({
+                'gender': self.gender,
+                'date_of_birth': self.date_of_birth.isoformat() if self.date_of_birth else None,
+                'weight': convert_weight_from_metric(self.weight, unit_system),
+                'height': convert_height_from_metric(self.height, unit_system),
+                'unit_system': unit_system,
+                'weight_unit': get_weight_unit(unit_system),
+                'height_unit': get_height_unit(unit_system)
+            })
+        
+        return base_dict
     
     def __repr__(self):
         return f'<User {self.username}>'
