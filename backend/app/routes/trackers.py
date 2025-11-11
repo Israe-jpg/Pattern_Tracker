@@ -1091,7 +1091,7 @@ def update_option_info(option_id: int):
     try:
         validated_data = FieldOptionSchema().load(request.json)
         
-        # Remove option_order from validated data - use dedicated endpoint for reordering
+        # Remove option_order from validated data to prevent update of order
         validated_data.pop('option_order', None)
         
         option = FieldOption.query.filter_by(id=option_id).first()

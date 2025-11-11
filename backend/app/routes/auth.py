@@ -123,3 +123,22 @@ def refresh():
         'message': 'Token refreshed successfully',
         'access_token': new_access_token
     }), 200
+
+#Get User sex info
+@auth_bp.route('/obtain-user-sex-info', methods=['POST'])
+@jwt_required()
+def get_user_sex_info():
+    try:
+        data = request.get_json()
+        gender = data.get('gender')
+        if not gender:
+            return jsonify({'error': 'Gender is required'}), 400
+        current_user_id = get_jwt_identity()
+        user = User.query.filter_by(id=current_user_id).first()
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+        user.gender = gender
+        db.session.commit()
+    except Exception as e:
+        return jsonify({'error': 'Failed to obtain user sex info'}), 500
+    return jsonify({'message': 'User sex info obtained successfully'}), 200
