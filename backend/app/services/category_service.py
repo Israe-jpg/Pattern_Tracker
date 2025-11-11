@@ -839,16 +839,30 @@ class CategoryService:
     # ========================================================================
     
     @staticmethod
-    def bulk_delete_options(tracker_field: TrackerField, option_ids: List[int]) -> None:
-        
+    def bulk_delete_options(tracker_field: Union[TrackerField, TrackerUserField], option_ids: List[int]) -> None:
+        """
+        Bulk delete options from a field (supports both TrackerField and TrackerUserField).
+        """
         try:
-            category = TrackerCategory.query.filter_by(id=tracker_field.category_id).first()
+            # Get category based on field type
+            if isinstance(tracker_field, TrackerUserField):
+                tracker = Tracker.query.filter_by(id=tracker_field.tracker_id).first()
+                category = TrackerCategory.query.filter_by(id=tracker.category_id).first() if tracker else None
+            else:
+                category = TrackerCategory.query.filter_by(id=tracker_field.category_id).first()
             
             for option_id in option_ids:
-                option = FieldOption.query.filter_by(
-                    id=option_id,
-                    tracker_field_id=tracker_field.id
-                ).first()
+                # Query based on field type
+                if isinstance(tracker_field, TrackerUserField):
+                    option = FieldOption.query.filter_by(
+                        id=option_id,
+                        tracker_user_field_id=tracker_field.id
+                    ).first()
+                else:
+                    option = FieldOption.query.filter_by(
+                        id=option_id,
+                        tracker_field_id=tracker_field.id
+                    ).first()
                 
                 if not option:
                     continue
@@ -863,15 +877,36 @@ class CategoryService:
                     SchemaManager.remove_option_from_schema(category, field_name, option_name)
             
             # Check if field has remaining options
-            remaining = FieldOption.query.filter_by(
-                tracker_field_id=tracker_field.id,
-                is_active=True
-            ).count()
+            if isinstance(tracker_field, TrackerUserField):
+                remaining = FieldOption.query.filter_by(
+                    tracker_user_field_id=tracker_field.id,
+                    is_active=True
+                ).count()
+            else:
+                remaining = FieldOption.query.filter_by(
+                    tracker_field_id=tracker_field.id,
+                    is_active=True
+                ).count()
             
             # Only delete custom fields if no options left
-            if remaining == 0 and tracker_field.field_group == 'custom':
-                CategoryService.delete_field_from_category(tracker_field.id)
+            # For TrackerField: check field_group
+            # For TrackerUserField: always delete if no options (user fields are always custom)
+            is_custom_field = (isinstance(tracker_field, TrackerUserField) or 
+                             tracker_field.field_group == 'custom')
+            
+            if remaining == 0 and is_custom_field:
+                # Delete the field
+                if isinstance(tracker_field, TrackerUserField):
+                    CategoryService.delete_user_field(tracker_field.id)
+                else:
+                    CategoryService.delete_field_from_category(tracker_field.id)
             else:
+                # Rebuild schema if it's a user field (for prebuilt trackers)
+                if isinstance(tracker_field, TrackerUserField) and category:
+                    tracker = Tracker.query.filter_by(id=tracker_field.tracker_id).first()
+                    if tracker:
+                        CategoryService.rebuild_category_schema(category, tracker)
+                
                 db.session.commit()
         except Exception as e:
             db.session.rollback()
