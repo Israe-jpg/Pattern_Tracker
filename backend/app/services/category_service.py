@@ -14,6 +14,10 @@ from app.services.tracker_constants import (
     PERIOD_TRACKER_KEY,
     is_prebuilt_category as _is_prebuilt_category
 )
+from app.utils.menstruation_calculations import (
+    calculate_cycle_day,
+    determine_cycle_phase
+)
 
 
 # ============================================================================
@@ -269,7 +273,10 @@ class CategoryService:
     
     @staticmethod
     def initialize_period_tracker() -> Optional[TrackerCategory]:
-
+        """
+        Initialize Period Tracker category template (called on app startup).
+        This creates the shared category and fields - NO user-specific logic here.
+        """
         # Load config
         config = CategoryService._load_config()
         baseline_schema = config.get('baseline', {})
@@ -969,6 +976,80 @@ class CategoryService:
         except Exception as e:
             db.session.rollback()
             raise
+    
+    # ========================================================================
+    # CONTEXTUAL SCHEMA (for Period Tracker)
+    # ========================================================================
+    
+    @staticmethod
+    def get_contextual_period_schema(tracker: 'Tracker') -> Dict[str, Any]:
+        """
+        Get contextual schema for Period Tracker based on user's current cycle state.
+        
+        Returns different period_tracker fields based on:
+        - First-time user (no settings) → Setup required
+        - Currently menstruating → Show menstruating fields
+        - Not menstruating → Show non-menstruating fields
+        
+        The baseline and custom fields are always included.
+        Only the period_tracker section is contextual.
+        """
+        settings = tracker.settings or {}
+        
+        # First-time user - need to collect initial data
+        if not settings.get('last_period_start_date'):
+            return {
+                'setup_required': True,
+                'message': 'Please configure your Period Tracker settings first',
+                'required_settings': ['average_cycle_length', 'average_period_length', 'last_period_start_date']
+            }
+        
+        # Calculate current cycle state
+        cycle_day = calculate_cycle_day(settings.get('last_period_start_date'))
+        cycle_phase = determine_cycle_phase(
+            cycle_day,
+            settings.get('average_period_length', 5),
+            settings.get('average_cycle_length', 28)
+        )
+        
+        is_menstruating = cycle_phase == 'menstruation'
+        
+        # Get category
+        category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
+        if not category:
+            raise ValueError("Period Tracker category not found")
+        
+        # Build base schema (baseline + custom fields)
+        CategoryService.rebuild_category_schema(category, tracker)
+        db.session.refresh(category)
+        
+        base_schema = category.data_schema or {}
+        
+        # Load contextual period_tracker fields from config
+        config = CategoryService._load_config()
+        period_config = config.get(CategoryService.PERIOD_TRACKER_KEY, {})
+        
+        # Get the appropriate period schema based on menstruation state
+        if is_menstruating:
+            contextual_period_fields = period_config.get('menstruating', {})
+        else:
+            contextual_period_fields = period_config.get('not_menstruating', {})
+        
+        # Build final contextual schema
+        contextual_schema = {
+            'baseline': base_schema.get('baseline', {}),
+            'period_tracker': contextual_period_fields,  # Only relevant fields
+            'custom': base_schema.get('custom', {})
+        }
+        
+        # Return schema with cycle context
+        return {
+            'setup_required': False,
+            'cycle_day': cycle_day,
+            'cycle_phase': cycle_phase,
+            'is_menstruating': is_menstruating,
+            'data_schema': contextual_schema
+        }
     
     # ========================================================================
     # SCHEMA REBUILDING AND MANAGEMENT

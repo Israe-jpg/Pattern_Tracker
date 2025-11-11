@@ -242,6 +242,7 @@ def setup_default_trackers():
 # MENSTRUATION TRACKER SETUP ROUTES
 # ============================================================================
 
+#get tracker settings
 @trackers_bp.route('/<int:tracker_id>/tracker-settings', methods=['GET'])
 @jwt_required()
 def get_tracker_settings(tracker_id: int):
@@ -256,7 +257,7 @@ def get_tracker_settings(tracker_id: int):
         {'settings': tracker.settings or {}}
     )
 
-
+#update tracker settings
 @trackers_bp.route('/<int:tracker_id>/tracker-settings', methods=['PUT'])
 @jwt_required()
 def update_tracker_settings(tracker_id: int):
@@ -296,6 +297,41 @@ def update_tracker_settings(tracker_id: int):
     except Exception as e:
         db.session.rollback()
         return error_response(f"Failed to update tracker settings: {str(e)}", 500)
+
+
+@trackers_bp.route('/<int:tracker_id>/period-schema', methods=['GET'])
+@jwt_required()
+def get_period_tracker_schema(tracker_id: int):
+    """
+    Get contextual schema for Period Tracker based on current cycle state.
+    Returns different period_tracker fields based on whether user is menstruating or not.
+    Always includes baseline and custom fields.
+    """
+    try:
+        _, user_id = get_current_user()
+        tracker = verify_tracker_ownership(tracker_id, user_id)
+    except ValueError as e:
+        return error_response(str(e), 404)
+    
+    try:
+        # Verify this is actually a Period Tracker
+        category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
+        if not category:
+            return error_response("Tracker category not found", 404)
+        
+        if category.name != 'Period Tracker':
+            return error_response("This endpoint is only for Period Tracker", 400)
+        
+        # Get contextual schema
+        result = CategoryService.get_contextual_period_schema(tracker)
+        
+        return success_response(
+            "Period Tracker schema retrieved successfully",
+            result
+        )
+    except Exception as e:
+        return error_response(f"Failed to retrieve period schema: {str(e)}", 500)
+
 
 # ============================================================================
 # TRACKER MANAGEMENT ROUTES
@@ -522,7 +558,10 @@ def create_custom_category():
 @trackers_bp.route('/<int:tracker_id>/get-data-schema', methods=['GET'])
 @jwt_required()
 def get_tracker_schema(tracker_id: int):
-    
+    """
+    Get tracker data schema.
+    For Period Tracker, use /period-schema for contextual schema.
+    """
     try:
         _, user_id = get_current_user()
         tracker = verify_tracker_ownership(tracker_id, user_id)
@@ -533,8 +572,12 @@ def get_tracker_schema(tracker_id: int):
         category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
         if not category:
             return error_response("Tracker category not found", 404)
-        
-        # Rebuild schema to ensure it's up-to-date with active/inactive statuses
+        if category.name == 'Period Tracker':
+            return error_response(
+                "Period Tracker gets retrieved with another endpoint",
+                400
+            )
+        # Rebuild schema to ensure it's up-to-date
         CategoryService.rebuild_category_schema(category, tracker if CategoryService.is_prebuilt_category(category.name) else None)
         db.session.refresh(category)
         
