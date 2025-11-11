@@ -2,6 +2,7 @@ from flask import Blueprint, request, jsonify
 from flask_jwt_extended import get_jwt_identity, jwt_required
 from marshmallow import ValidationError
 from typing import Tuple, Dict, Any
+from datetime import datetime
 
 from app import db
 from app.models.user import User
@@ -36,12 +37,6 @@ def verify_tracker_ownership(tracker_id: int, user_id: int) -> Tracker:
 
 
 def verify_field_ownership(tracker_field_id: int, user_id: int):
-    """
-    Verify field ownership. Returns TrackerField or TrackerUserField.
-    Checks both category-level fields and user-specific fields.
-    Prioritizes user fields since they're more specific to the user.
-    """
-    # Try user-specific field first (more specific, linked directly to tracker)
     user_field = TrackerUserField.query.filter_by(id=tracker_field_id).first()
     if user_field:
         tracker = Tracker.query.filter_by(
@@ -247,32 +242,60 @@ def setup_default_trackers():
 # MENSTRUATION TRACKER SETUP ROUTES
 # ============================================================================
 
-#set up menstruation tracker primary variables
-@trackers_bp.route('/setup-menstruation-tracker', methods=['POST'])
+@trackers_bp.route('/<int:tracker_id>/tracker-settings', methods=['GET'])
 @jwt_required()
-def setup_menstruation_tracker():
+def get_tracker_settings(tracker_id: int):
     try:
         _, user_id = get_current_user()
-    except ValueError:
-        return error_response("User not found", 404)
+        tracker = verify_tracker_ownership(tracker_id, user_id)
+    except ValueError as e:
+        return error_response(str(e), 404)
+    
+    return success_response(
+        "Tracker settings retrieved successfully",
+        {'settings': tracker.settings or {}}
+    )
+
+
+@trackers_bp.route('/<int:tracker_id>/tracker-settings', methods=['PUT'])
+@jwt_required()
+def update_tracker_settings(tracker_id: int):
+    try:
+        _, user_id = get_current_user()
+        tracker = verify_tracker_ownership(tracker_id, user_id)
+    except ValueError as e:
+        return error_response(str(e), 404)
     
     try:
-        data = MenstruationTrackerSetupSchema().load(request.get_json())    
-        settings = data.to_dict()
-        tracker = Tracker(
-            user_id=user_id,
-            category_id=CategoryService.PERIOD_TRACKER_ID,
-            settings=settings
-        )
-        db.session.add(tracker)
+        from sqlalchemy.orm.attributes import flag_modified
+        
+        settings = request.json.get('settings', {})
+        
+        # Validate settings based on tracker type if needed
+        category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
+        
+        # For Period Tracker, validate menstruation-specific settings
+        if category and category.name == 'Period Tracker':
+            try:
+                # Validate required fields for Period Tracker
+                settings_schema = MenstruationTrackerSetupSchema()
+                validated_data = settings_schema.load(settings)
+                settings = validated_data
+            except ValidationError as err:
+                return error_response("Validation failed", 400, err.messages)
+            
+        tracker.settings = settings
+        flag_modified(tracker, 'settings')
         db.session.commit()
-    except Exception as e:
-        return error_response(f"Failed to setup menstruation tracker: {str(e)}", 500)
+        
+        return success_response(
+            "Tracker settings updated successfully",
+            {'settings': tracker.settings}
+        )
     
-    return success_response("Menstruation tracker primary variables setup successfully", {
-        'tracker_id': tracker.id
-    }, 201)
-
+    except Exception as e:
+        db.session.rollback()
+        return error_response(f"Failed to update tracker settings: {str(e)}", 500)
 
 # ============================================================================
 # TRACKER MANAGEMENT ROUTES
