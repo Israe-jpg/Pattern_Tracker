@@ -244,6 +244,34 @@ def setup_default_trackers():
 
 
 # ============================================================================
+# MENSTRUATION TRACKER SETUP ROUTES
+# ============================================================================
+
+#set up menstruation tracker primary variables
+@trackers_bp.route('/setup-menstruation-tracker', methods=['POST'])
+@jwt_required()
+def setup_menstruation_tracker():
+    try:
+        _, user_id = get_current_user()
+    except ValueError:
+        return error_response("User not found", 404)
+    
+    try:
+        data = request.get_json()
+        average_cycle_length = data.get('average_cycle_length')
+        average_period_length = data.get('average_period_length')
+        last_period_start_date = data.get('last_period_start_date')
+        birth_control_method = data.get('birth_control_method')
+        tracking_ovulation = data.get('tracking_ovulation')
+        trying_to_conceive = data.get('trying_to_conceive')
+        
+    except Exception as e:
+        return error_response(f"Failed to setup menstruation tracker: {str(e)}", 500)
+    
+    return success_response("Menstruation tracker primary variables setup successfully")
+
+
+# ============================================================================
 # TRACKER MANAGEMENT ROUTES
 # ============================================================================
 
