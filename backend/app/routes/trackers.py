@@ -1090,11 +1090,19 @@ def update_option_info(option_id: int):
     
     try:
         validated_data = FieldOptionSchema().load(request.json)
-        # This would need to be in CategoryService
+        
+        # Remove option_order from validated data - use dedicated endpoint for reordering
+        validated_data.pop('option_order', None)
+        
         option = FieldOption.query.filter_by(id=option_id).first()
+        if not option:
+            return error_response("Option not found", 404)
+        
+        # Update only the allowed fields (excluding option_order)
         for key, value in validated_data.items():
             if hasattr(option, key):
                 setattr(option, key, value)
+        
         db.session.commit()
         
         return success_response("Option updated successfully")

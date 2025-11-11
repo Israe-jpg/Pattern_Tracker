@@ -6,6 +6,7 @@ from app.models.tracker_field import TrackerField
 from app.models.tracker_user_field import TrackerUserField
 from app.models.tracker_category import TrackerCategory
 from app.models.tracker import Tracker
+from app.models.field_option import FieldOption
 from app.services.tracker_constants import (
     is_prebuilt_category,
     get_category_config_key
@@ -279,6 +280,88 @@ class FieldOrderingService:
             ).order_by(TrackerUserField.field_order.asc()).all()
         
         return result
+    
+    # ========================================================================
+    # OPTION ORDERING
+    # ========================================================================
+    
+    @staticmethod
+    def update_option_order(option_id: int, new_relative_order: int) -> None:
+        """
+        Reorder a FieldOption within its parent field.
+        Uses the same robust list insertion approach as field reordering.
+        """
+        try:
+            # Expire cache to ensure fresh data
+            db.session.expire_all()
+            
+            option = FieldOption.query.filter_by(id=option_id).first()
+            if not option:
+                raise ValueError("Option not found")
+            
+            # Validate that option has a valid parent field reference
+            if not option.tracker_user_field_id and not option.tracker_field_id:
+                raise ValueError("Option has no valid parent field reference")
+            
+            # Get all ACTIVE options for this field (sorted by current order)
+            # Check user field first to avoid ID collision (same as verify_field_ownership)
+            if option.tracker_user_field_id:
+                options = FieldOption.query.filter_by(
+                    tracker_user_field_id=option.tracker_user_field_id,
+                    is_active=True
+                ).order_by(FieldOption.option_order.asc()).all()
+            elif option.tracker_field_id:
+                options = FieldOption.query.filter_by(
+                    tracker_field_id=option.tracker_field_id,
+                    is_active=True
+                ).order_by(FieldOption.option_order.asc()).all()
+            else:
+                raise ValueError("Option has no valid field reference")
+            
+            if not options:
+                return  # No options to reorder
+            
+            # Validate new order
+            if new_relative_order < 0 or new_relative_order >= len(options):
+                raise ValueError(
+                    f"Invalid order. Must be between 0 and {len(options) - 1}"
+                )
+            
+            # Find current position
+            current_relative_order = next(
+                (i for i, opt in enumerate(options) if opt.id == option.id),
+                None
+            )
+            
+            if current_relative_order is None:
+                raise ValueError("Option not found in options list")
+            
+            # No change needed
+            if current_relative_order == new_relative_order:
+                return
+            
+            # Create new ordered list using list insertion
+            new_order = options.copy()
+            new_order.pop(current_relative_order)
+            new_order.insert(new_relative_order, option)
+            
+            # Update ALL option orders (no offset needed - options start at 0)
+            for index, opt in enumerate(new_order):
+                opt.option_order = index
+                db.session.add(opt)
+                flag_modified(opt, 'option_order')
+            
+            # Commit changes
+            db.session.commit()
+            db.session.expire_all()
+            
+        except Exception as e:
+            db.session.rollback()
+            raise
+    
+    # ========================================================================
+    # FIELD ORDER NORMALIZATION
+    # ========================================================================
     
     @staticmethod
     def normalize_field_orders(category_id: int, tracker_id: int = None) -> None:

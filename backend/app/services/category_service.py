@@ -792,44 +792,10 @@ class CategoryService:
     
     @staticmethod
     def update_option_order(option_id: int, new_order: int) -> None:
-        
-        try:
-            option = FieldOption.query.filter_by(id=option_id).first()
-            if not option:
-                raise ValueError("Option not found")
-            
-            field = option.tracker_field
-            
-            # Get all options for this field
-            options = FieldOption.query.filter_by(
-                tracker_field_id=field.id
-            ).order_by(FieldOption.option_order).all()
-            
-            # Validate new_order
-            if new_order < 0 or new_order >= len(options):
-                raise ValueError(f"Invalid order. Must be between 0 and {len(options) - 1}")
-            
-            current_order = option.option_order
-            if current_order == new_order:
-                return  # No change needed
-            
-            # Reorder options
-            if new_order > current_order:
-                # Moving down: shift options up
-                for opt in options:
-                    if current_order < opt.option_order <= new_order:
-                        opt.option_order -= 1
-            else:
-                # Moving up: shift options down
-                for opt in options:
-                    if new_order <= opt.option_order < current_order:
-                        opt.option_order += 1
-            
-            option.option_order = new_order
-            db.session.commit()
-        except Exception as e:
-            db.session.rollback()
-            raise
+        """Update option order - delegates to FieldOrderingService."""
+        # Lazy import to avoid circular dependency
+        from app.services.field_ordering_service import FieldOrderingService
+        FieldOrderingService.update_option_order(option_id, new_order)
     
     @staticmethod
     def toggle_option_active_status(option_id: int) -> None:
