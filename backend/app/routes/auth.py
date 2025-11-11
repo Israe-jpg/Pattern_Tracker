@@ -142,3 +142,27 @@ def get_user_sex_info():
     except Exception as e:
         return jsonify({'error': 'Failed to obtain user sex info'}), 500
     return jsonify({'message': 'User sex info obtained successfully'}), 200
+
+#Get optional additional user data
+@auth_bp.route('/obtain-optional-user-info', methods=['POST'])
+@jwt_required()
+def obtain_optional_user_info():
+    try:
+        data = request.get_json()
+        date_of_birth = data.get('date_of_birth')
+        height = data.get('height')
+        weight = data.get('weight')
+        current_user_id = get_jwt_identity()
+        user = User.query.filter_by(id=current_user_id).first()
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+        if date_of_birth:
+            user.date_of_birth = date_of_birth
+        if height:
+            user.height = height
+        if weight:
+            user.weight = weight
+        db.session.commit()
+        return jsonify({'message': 'Optional user info obtained successfully'}), 200
+    except Exception as e:
+        return jsonify({'error': 'Failed to obtain optional user info'}), 500
