@@ -10,15 +10,18 @@ class Tracker(db.Model):
     data = db.relationship('TrackingData', backref='tracker', lazy=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     is_default = db.Column(db.Boolean, default=False)
+    # Tracker model
+    settings = db.Column(db.JSON, nullable=True)  # Store tracker-specific configurations
 
     def to_dict(self):
-        return {
+        return {    
             'id': self.id,
             'user_id': self.user_id,
             'category_id': self.category_id,
             'created_at': self.created_at.isoformat(),
             'is_default': self.is_default,
-            'entries_count': len(self.data)  
+            'entries_count': len(self.data),
+            'settings': self.settings  
         }
     
     def __repr__(self):
