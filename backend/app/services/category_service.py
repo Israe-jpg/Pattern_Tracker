@@ -1125,8 +1125,17 @@ class CategoryService:
         """
         Get all-inclusive data schema including active and inactive fields/options.
         If tracker is provided, also includes user-specific fields for prebuilt trackers.
+        
+        Returns schema organized by:
+        - active/inactive status
+        - field groups (baseline, category-specific, custom)
+        - with all options (active and inactive)
         """
         try:
+            # Expire cache to ensure fresh data
+            db.session.expire_all()
+            
+            # Initialize schema structure
             data_schema = {
                 'active': {
                     'baseline': {},
@@ -1138,15 +1147,15 @@ class CategoryService:
                 }
             }
             
-            # Process all fields (active and inactive)
+            # Process all TrackerField instances (active and inactive)
             all_fields = TrackerField.query.filter_by(
                 category_id=category.id
-            ).order_by(TrackerField.field_order).all()
+            ).order_by(TrackerField.field_order.asc()).all()
             
             for field in all_fields:
                 all_options = FieldOption.query.filter_by(
                     tracker_field_id=field.id
-                ).order_by(FieldOption.option_order).all()
+                ).order_by(FieldOption.option_order.asc()).all()
                 
                 field_data = {
                     'active': {},
@@ -1177,39 +1186,46 @@ class CategoryService:
                 elif target_field_group == 'custom':
                     data_schema[target_group]['custom'][field.field_name] = field_data
                 else:
-                    # Category-specific fields (period_tracker, etc.)
+                    # Category-specific fields (period_tracker, workout_tracker, etc.)
                     if target_field_group not in data_schema[target_group]:
                         data_schema[target_group][target_field_group] = {}
                     data_schema[target_group][target_field_group][field.field_name] = field_data
             
-            # Preserve static config-based sections
-            existing_schema = category.data_schema or {}
-            # Check all prebuilt category keys (including Period Tracker)
-            prebuilt_keys = list(CategoryService.PREBUILT_CATEGORIES.values()) + [CategoryService.PERIOD_TRACKER_KEY]
-            
-            for key in prebuilt_keys:
-                if key in existing_schema and key not in ['baseline', 'custom']:
-                    if 'static' not in data_schema:
-                        data_schema['static'] = {}
-                    data_schema['static'][key] = existing_schema[key]
-                elif key not in data_schema.get('static', {}):
-                    # Restore from config if missing
-                    # Check standard categories
-                    category_name = next(
-                        (name for name, config_key in CategoryService.PREBUILT_CATEGORIES.items() 
-                         if config_key == key),
-                        None
-                    )
-                    # Check Period Tracker
-                    if not category_name and key == CategoryService.PERIOD_TRACKER_KEY:
-                        category_name = CategoryService.PERIOD_TRACKER_NAME
+            # Process user-specific fields (if tracker provided for prebuilt categories)
+            if tracker and CategoryService.is_prebuilt_category(category.name):
+                user_fields = TrackerUserField.query.filter_by(
+                    tracker_id=tracker.id
+                ).order_by(TrackerUserField.field_order.asc()).all()
+                
+                for field in user_fields:
+                    all_options = FieldOption.query.filter_by(
+                        tracker_user_field_id=field.id
+                    ).order_by(FieldOption.option_order.asc()).all()
                     
-                    if category_name and category.name == category_name:
-                        config = CategoryService._load_config()
-                        if key in config:
-                            if 'static' not in data_schema:
-                                data_schema['static'] = {}
-                            data_schema['static'][key] = config[key]
+                    field_data = {
+                        'active': {},
+                        'inactive': {}
+                    }
+                    
+                    for option in all_options:
+                        option_schema = SchemaManager.build_option_schema({
+                            'option_type': option.option_type,
+                            'is_required': option.is_required,
+                            'min_value': option.min_value,
+                            'max_value': option.max_value,
+                            'max_length': option.max_length,
+                            'choices': option.choices,
+                            'choice_labels': option.choice_labels
+                        })
+                        
+                        if option.is_active:
+                            field_data['active'][option.option_name] = option_schema
+                        else:
+                            field_data['inactive'][option.option_name] = option_schema
+                    
+                    # User fields always go into custom section
+                    target_group = 'active' if field.is_active else 'inactive'
+                    data_schema[target_group]['custom'][field.field_name] = field_data
             
             return data_schema
         except Exception as e:
