@@ -10,7 +10,7 @@ from app.models.tracker_field import TrackerField
 from app.models.tracker_user_field import TrackerUserField
 from app.models.tracker_category import TrackerCategory
 from app.models.field_option import FieldOption
-from app.schemas.tracker_schemas import CustomCategorySchema, FieldOptionSchema
+from app.schemas.tracker_schemas import CustomCategorySchema, FieldOptionSchema, MenstruationTrackerSetupSchema
 from app.services.category_service import CategoryService
 
 trackers_bp = Blueprint('trackers', __name__)
@@ -257,18 +257,21 @@ def setup_menstruation_tracker():
         return error_response("User not found", 404)
     
     try:
-        data = request.get_json()
-        average_cycle_length = data.get('average_cycle_length')
-        average_period_length = data.get('average_period_length')
-        last_period_start_date = data.get('last_period_start_date')
-        birth_control_method = data.get('birth_control_method')
-        tracking_ovulation = data.get('tracking_ovulation')
-        trying_to_conceive = data.get('trying_to_conceive')
-        
+        data = MenstruationTrackerSetupSchema().load(request.get_json())    
+        settings = data.to_dict()
+        tracker = Tracker(
+            user_id=user_id,
+            category_id=CategoryService.PERIOD_TRACKER_ID,
+            settings=settings
+        )
+        db.session.add(tracker)
+        db.session.commit()
     except Exception as e:
         return error_response(f"Failed to setup menstruation tracker: {str(e)}", 500)
     
-    return success_response("Menstruation tracker primary variables setup successfully")
+    return success_response("Menstruation tracker primary variables setup successfully", {
+        'tracker_id': tracker.id
+    }, 201)
 
 
 # ============================================================================

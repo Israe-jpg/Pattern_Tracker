@@ -151,3 +151,19 @@ class CustomFieldSchema(Schema):
     help_text = fields.Str(allow_none=True)
     options = fields.List(fields.Nested(FieldOptionSchema), required=True, validate=validate.Length(min=1))
     
+
+class MenstruationTrackerSetupSchema(Schema):
+    average_cycle_length = fields.Int(required=True, validate=validate.Range(min=21, max=45))
+    average_period_length = fields.Int(required=True, validate=validate.Range(min=2, max=10))
+    last_period_start_date = fields.Date(required=True)
+    birth_control_method = fields.Str(required=True, validate=validate.OneOf(['none', 'pill', 'iud', 'implant', 'patch', 'ring', 'injection']), default='none')
+    tracking_ovulation = fields.Bool(required=True, default=False)
+    trying_to_conceive = fields.Bool(required=True, default=False)
+
+    @post_load
+    def clean_data(self, data, **kwargs):
+        # Strip whitespace
+        for key, value in data.items():
+            if isinstance(value, str):
+                data[key] = value.strip()
+        return data
