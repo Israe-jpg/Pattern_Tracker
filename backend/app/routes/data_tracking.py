@@ -5,6 +5,8 @@ from marshmallow import ValidationError
 from typing import Tuple, Dict, Any, Optional
 from sqlalchemy.orm import Query
 from datetime import datetime
+import csv
+import json
 
 from app import db
 from app.models.user import User
@@ -418,7 +420,105 @@ def bulk_delete_tracking_data(tracker_id: int):
 
 
 #bulk create tracking data entries (imported from a csv file)
-
+@data_tracking_bp.route('/<int:tracker_id>/bulk-create-tracking-data', methods=['POST'])
+@jwt_required()
+def bulk_create_tracking_data(tracker_id: int):
+    try:
+        _, user_id = get_current_user()
+        tracker = verify_tracker_ownership(tracker_id, user_id)
+    except ValueError as e:
+        return error_response(str(e), 404)
+    
+    try:
+        # Get csv file from request
+        csv_file = request.files.get('csv_file')
+        if not csv_file:
+            return error_response("csv_file is required", 400)
+        
+        # Read csv file
+        csv_data = csv_file.read().decode('utf-8')
+        csv_reader = csv.reader(csv_data.splitlines())
+        
+        # Skip header row
+        next(csv_reader, None)
+        
+        tracking_data_to_create = []
+        errors = []
+        
+        # Process each row
+        for row_num, row in enumerate(csv_reader, start=2):  # start=2 because header is row 1
+            try:
+                # Validate row has at least 2 columns
+                if len(row) < 2:
+                    errors.append(f"Row {row_num}: Insufficient columns (expected at least 2)")
+                    continue
+                
+                # Parse entry_date
+                entry_date_str = row[0].strip()
+                try:
+                    entry_date = datetime.strptime(entry_date_str, '%Y-%m-%d').date()
+                except ValueError:
+                    errors.append(f"Row {row_num}: Invalid date format '{entry_date_str}' (expected YYYY-MM-DD)")
+                    continue
+                
+                # Parse entry_data (JSON string)
+                entry_data_str = row[1].strip()
+                try:
+                    entry_data = json.loads(entry_data_str) if entry_data_str else {}
+                except json.JSONDecodeError as e:
+                    errors.append(f"Row {row_num}: Invalid JSON in entry_data: {str(e)}")
+                    continue
+                
+                # Parse ai_insights (optional, can be empty)
+                ai_insights = None
+                if len(row) > 2 and row[2].strip():
+                    try:
+                        ai_insights = json.loads(row[2].strip()) if row[2].strip() else None
+                    except json.JSONDecodeError:
+                        # If not valid JSON, treat as plain string
+                        ai_insights = row[2].strip()
+                
+                # Create tracking data entry
+                tracking_data = TrackingService.create_tracking_data(
+                    tracker=tracker,
+                    data=entry_data,
+                    entry_date=entry_date,
+                    ai_insights=ai_insights
+                )
+                tracking_data_to_create.append(tracking_data)
+                
+            except ValueError as e:
+                errors.append(f"Row {row_num}: {str(e)}")
+                continue
+            except Exception as e:
+                errors.append(f"Row {row_num}: Unexpected error - {str(e)}")
+                continue
+        
+        # Build response
+        response_data = {
+            'count': len(tracking_data_to_create),
+            'created_entries': [data.to_dict() for data in tracking_data_to_create]
+        }
+        
+        if errors:
+            response_data['errors'] = errors
+            response_data['error_count'] = len(errors)
+        
+        if not tracking_data_to_create and errors:
+            return error_response(
+                f"Failed to create any tracking data. {len(errors)} error(s) occurred.",
+                400,
+                {'errors': errors}
+            )
+        
+        message = f"Successfully created {len(tracking_data_to_create)} tracking data entries"
+        if errors:
+            message += f" ({len(errors)} error(s) occurred)"
+        
+        return success_response(message, response_data)
+        
+    except Exception as e:
+        return error_response(f"Failed to bulk create tracking data: {str(e)}", 500)
 
 
 #--------------------------------------------
