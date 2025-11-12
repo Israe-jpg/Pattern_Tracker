@@ -45,6 +45,9 @@ class SchemaManager:
         if option_data.get('max_length'):
             schema['max_length'] = option_data['max_length']
         
+        if option_data.get('step') is not None:
+            schema['step'] = option_data['step']
+        
         if option_data.get('choices'):
             schema['enum'] = option_data['choices']
         
@@ -1143,6 +1146,7 @@ class CategoryService:
                         'min_value': option.min_value,
                         'max_value': option.max_value,
                         'max_length': option.max_length,
+                        'step': option.step,  # Include step to determine float vs integer
                         'choices': option.choices,
                         'choice_labels': option.choice_labels
                     })
@@ -1175,6 +1179,7 @@ class CategoryService:
                         'min_value': option.min_value,
                         'max_value': option.max_value,
                         'max_length': option.max_length,
+                        'step': option.step,  # Include step to determine float vs integer
                         'choices': option.choices,
                         'choice_labels': option.choice_labels
                     })
@@ -1304,6 +1309,7 @@ class CategoryService:
                         'min_value': option.min_value,
                         'max_value': option.max_value,
                         'max_length': option.max_length,
+                        'step': option.step,  # Include step to determine float vs integer
                         'choices': option.choices,
                         'choice_labels': option.choice_labels
                     })
