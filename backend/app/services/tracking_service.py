@@ -34,12 +34,16 @@ class TrackingService:
                 raise ValueError("Tracker category not found")
             
             # Get contextual schema for Period Tracker, or full schema for other trackers
-            if category.name == CategoryService.PERIOD_TRACKER_NAME:
+            is_period_tracker = category.name == CategoryService.PERIOD_TRACKER_NAME
+            cycle_info = None
+            
+            if is_period_tracker:
                 # Use contextual schema based on cycle phase
                 contextual_result = CategoryService.get_contextual_period_schema(tracker)
                 if contextual_result.get('setup_required'):
                     raise ValueError("Period Tracker setup required. Please configure tracker settings first.")
                 schema = contextual_result.get('data_schema', {})
+                cycle_info = contextual_result.get('cycle_info', {})
             else:
                 # Rebuild schema to ensure it's up-to-date for other trackers
                 CategoryService.rebuild_category_schema(category, tracker if CategoryService.is_prebuilt_category(category.name) else None)
@@ -50,7 +54,9 @@ class TrackingService:
             if data:
                 TrackingService._validate_data_against_schema(
                     data,
-                    schema
+                    schema,
+                    tracker if is_period_tracker else None,
+                    cycle_info
                 )
             
             # Create new entry
@@ -88,12 +94,16 @@ class TrackingService:
                 raise ValueError("Tracker category not found")
             
             # Get contextual schema for Period Tracker, or full schema for other trackers
-            if category.name == CategoryService.PERIOD_TRACKER_NAME:
+            is_period_tracker = category.name == CategoryService.PERIOD_TRACKER_NAME
+            cycle_info = None
+            
+            if is_period_tracker:
                 # Use contextual schema based on cycle phase
                 contextual_result = CategoryService.get_contextual_period_schema(tracker)
                 if contextual_result.get('setup_required'):
                     raise ValueError("Period Tracker setup required. Please configure tracker settings first.")
                 schema = contextual_result.get('data_schema', {})
+                cycle_info = contextual_result.get('cycle_info', {})
             else:
                 # Rebuild schema to ensure it's up-to-date for other trackers
                 CategoryService.rebuild_category_schema(category, tracker if CategoryService.is_prebuilt_category(category.name) else None)
@@ -105,7 +115,9 @@ class TrackingService:
                 # Process data: handle null values (removal) and validate
                 processed_data = TrackingService._process_update_data(
                     data,
-                    schema
+                    schema,
+                    tracker if is_period_tracker else None,
+                    cycle_info
                 )
                 
                 # Merge processed data with existing data
@@ -189,7 +201,8 @@ class TrackingService:
             raise
     
     @staticmethod
-    def _process_update_data(data: Dict[str, Any], schema: Dict[str, Any]) -> Dict[str, Any]:
+    def _process_update_data(data: Dict[str, Any], schema: Dict[str, Any], 
+                            tracker: Tracker = None, cycle_info: Dict[str, Any] = None) -> Dict[str, Any]:
         # Separate null values (for removal) and non-null values (for validation)
         data_to_validate = {}
         for field_name, field_data in data.items():
@@ -213,13 +226,14 @@ class TrackingService:
         
         # Validate non-null values only
         if data_to_validate:
-            TrackingService._validate_data_against_schema(data_to_validate, schema)
+            TrackingService._validate_data_against_schema(data_to_validate, schema, tracker, cycle_info)
         
         # Return original data (with nulls) for processing
         return data
     
     @staticmethod
-    def _validate_data_against_schema(data: Dict[str, Any], schema: Dict[str, Any]) -> None:
+    def _validate_data_against_schema(data: Dict[str, Any], schema: Dict[str, Any], 
+                                     tracker: Tracker = None, cycle_info: Dict[str, Any] = None) -> None:
         if not schema:
             raise ValueError("Tracker schema is empty")
         
@@ -238,6 +252,19 @@ class TrackingService:
         if 'symptom_tracker' in schema:
             all_fields.update(schema['symptom_tracker'])
         
+        # For Period Tracker, check if field exists in opposite phase for better error messages
+        opposite_phase_fields = None
+        if tracker and cycle_info:
+            # Check if this is a Period Tracker by checking if cycle_info exists (only Period Tracker has this)
+            is_period_tracker = 'is_menstruating' in cycle_info
+            if is_period_tracker:
+                # Check if field exists in the opposite phase schema
+                config = CategoryService._load_config()
+                period_config = config.get(CategoryService.PERIOD_TRACKER_KEY, {})
+                is_menstruating = cycle_info.get('is_menstruating', False)
+                opposite_phase = 'menstruating' if not is_menstruating else 'not_menstruating'
+                opposite_phase_fields = period_config.get(opposite_phase, {})
+        
         # Validate each field in the data
         for field_name, field_data in data.items():
             # Check if field exists in schema (handle nested structures)
@@ -252,6 +279,17 @@ class TrackingService:
                     field_schema = schema['period_tracker'][field_name]
             
             if field_schema is None:
+                # Check if field exists in opposite phase for Period Tracker
+                if opposite_phase_fields and field_name in opposite_phase_fields:
+                    # Field exists in opposite phase - provide helpful error message
+                    is_menstruating = cycle_info.get('is_menstruating', False)
+                    phase_name = "menstruating" if is_menstruating else "not menstruating"
+                    opposite_phase_name = "not menstruating" if is_menstruating else "menstruating"
+                    raise ValueError(
+                        f"Field '{field_name}' is only available when {opposite_phase_name}. "
+                        f"You are currently {phase_name}."
+                    )
+                
                 raise ValueError(f"Field '{field_name}' does not exist in tracker schema")
             
             # Validate each option in the field
@@ -266,11 +304,14 @@ class TrackingService:
                 
                 # Validate value type
                 TrackingService._validate_option_value(
-                    option_name, option_value, option_schema
+                    option_name, option_value, option_schema,
+                    field_name, opposite_phase_fields, cycle_info
                 )
     
     @staticmethod
-    def _validate_option_value(option_name: str, value: Any, option_schema: Dict[str, Any]) -> None:
+    def _validate_option_value(option_name: str, value: Any, option_schema: Dict[str, Any],
+                               field_name: str = None, opposite_phase_fields: Dict[str, Any] = None,
+                               cycle_info: Dict[str, Any] = None) -> None:
         schema_type = option_schema.get('type')
         is_optional = option_schema.get('optional', False)
         
@@ -309,6 +350,20 @@ class TrackingService:
             if 'enum' in option_schema:
                 valid_values = option_schema['enum']
                 if value not in valid_values:
+                    # Check if value exists in opposite phase for Period Tracker
+                    if opposite_phase_fields and field_name and field_name in opposite_phase_fields:
+                        opposite_field = opposite_phase_fields[field_name]
+                        if option_name in opposite_field and 'enum' in opposite_field[option_name]:
+                            opposite_enum = opposite_field[option_name]['enum']
+                            if value in opposite_enum:
+                                is_menstruating = cycle_info.get('is_menstruating', False) if cycle_info else False
+                                phase_name = "menstruating" if is_menstruating else "not menstruating"
+                                opposite_phase_name = "not menstruating" if is_menstruating else "menstruating"
+                                raise ValueError(
+                                    f"Option '{option_name}' value '{value}' is only available when {opposite_phase_name}. "
+                                    f"You are currently {phase_name}."
+                                )
+                    
                     raise ValueError(
                         f"Option '{option_name}' value '{value}' is not in valid choices: {valid_values}"
                     )
@@ -320,11 +375,34 @@ class TrackingService:
             # Validate enum if specified (for multiple_choice)
             if 'enum' in option_schema:
                 valid_values = option_schema['enum']
+                invalid_items = []
                 for item in value:
                     if item not in valid_values:
-                        raise ValueError(
-                            f"Option '{option_name}' contains invalid value '{item}'. Valid choices: {valid_values}"
-                        )
+                        invalid_items.append(item)
+                
+                if invalid_items:
+                    # Check if invalid items exist in opposite phase for Period Tracker
+                    if opposite_phase_fields and field_name and field_name in opposite_phase_fields:
+                        opposite_field = opposite_phase_fields[field_name]
+                        if option_name in opposite_field and 'enum' in opposite_field[option_name]:
+                            opposite_enum = opposite_field[option_name]['enum']
+                            # Check which invalid items are in the opposite phase
+                            opposite_phase_items = [item for item in invalid_items if item in opposite_enum]
+                            if opposite_phase_items:
+                                is_menstruating = cycle_info.get('is_menstruating', False) if cycle_info else False
+                                phase_name = "menstruating" if is_menstruating else "not menstruating"
+                                opposite_phase_name = "not menstruating" if is_menstruating else "menstruating"
+                                items_str = "', '".join(opposite_phase_items)
+                                raise ValueError(
+                                    f"Option '{option_name}' contains values ('{items_str}') that are only available when {opposite_phase_name}. "
+                                    f"You are currently {phase_name}. Valid choices for your current phase: {valid_values}"
+                                )
+                    
+                    # Generic error for invalid items
+                    items_str = "', '".join(invalid_items)
+                    raise ValueError(
+                        f"Option '{option_name}' contains invalid value(s): '{items_str}'. Valid choices: {valid_values}"
+                    )
         
         elif schema_type == 'boolean':
             if not isinstance(value, bool):
