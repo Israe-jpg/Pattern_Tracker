@@ -36,7 +36,8 @@ class TrackerField(db.Model):
                               foreign_keys=[parent_id])
     
     # Relationship with FieldOption - this is where the actual field options are stored
-    options = db.relationship('FieldOption', backref='parent_field', cascade='all, delete-orphan', order_by='FieldOption.option_order')
+    # Note: No backref to avoid conflict with FieldOption.parent_field property
+    options = db.relationship('FieldOption', foreign_keys='FieldOption.tracker_field_id', cascade='all, delete-orphan', order_by='FieldOption.option_order')
     
     def to_dict(self):
         # Get all active options for this field

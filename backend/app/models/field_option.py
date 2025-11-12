@@ -48,8 +48,10 @@ class FieldOption(db.Model):
     is_active = db.Column(db.Boolean, default=True)
     
     # Relationships
-    tracker_field = db.relationship('TrackerField', foreign_keys=[tracker_field_id])
-    tracker_user_field = db.relationship('TrackerUserField', foreign_keys=[tracker_user_field_id])
+    # Using overlaps to acknowledge intentional relationship sharing
+    # Both relationships use the same foreign keys as their backrefs, which is intentional
+    tracker_field = db.relationship('TrackerField', foreign_keys=[tracker_field_id], overlaps="options")
+    tracker_user_field = db.relationship('TrackerUserField', foreign_keys=[tracker_user_field_id], overlaps="options")
     
     @property
     def parent_field(self):
