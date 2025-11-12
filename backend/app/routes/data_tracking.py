@@ -4,6 +4,7 @@ from flask_jwt_extended import get_jwt_identity, jwt_required
 from marshmallow import ValidationError
 from typing import Tuple, Dict, Any, Optional
 from sqlalchemy.orm import Query
+from datetime import datetime
 
 from app import db
 from app.models.user import User
@@ -370,7 +371,50 @@ def get_tracking_data_range(tracker_id: int):
 # BULK OPERATIONS
 
 #bulk delete by time range tracking data entries
-
+@data_tracking_bp.route('/<int:tracker_id>/bulk-delete-tracking-data', methods=['DELETE'])
+@jwt_required()
+def bulk_delete_tracking_data(tracker_id: int):
+    try:
+        _, user_id = get_current_user()
+        tracker = verify_tracker_ownership(tracker_id, user_id)
+    except ValueError as e:
+        return error_response(str(e), 404)
+    
+    try:
+        #get start and end date from query parameters
+        start_date_str = request.args.get('start_date')
+        end_date_str = request.args.get('end_date')
+        if not start_date_str or not end_date_str:
+            return error_response("Both start_date and end_date query parameters are required (YYYY-MM-DD)", 400)
+        
+        #parse dates
+        try:
+            start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+            end_date = datetime.strptime(end_date_str,'%Y-%m-%d').date()
+        except ValueError:
+            return error_response("Invalid date format. Use YYYY-MM-DD", 400)
+        
+        if start_date > end_date:
+            return error_response("start_date must be before or equal to end_date", 400)
+        
+        #get tracking data entries to delete
+        tracking_data_to_delete = TrackingData.query.filter(
+            TrackingData.tracker_id == tracker_id,
+            TrackingData.entry_date >= start_date,
+            TrackingData.entry_date <= end_date
+        ).all()
+        
+        if not tracking_data_to_delete:
+            return error_response("No tracking data found for this date range", 404)
+        
+        #delete tracking data entries
+        for tracking_data in tracking_data_to_delete:
+            db.session.delete(tracking_data)
+        db.session.commit()
+        
+        return success_response("Tracking data deleted successfully", {'count': len(tracking_data_to_delete)})
+    except Exception as e:
+        return error_response(f"Failed to bulk delete tracking data: {str(e)}", 500)
 
 
 #bulk create tracking data entries (imported from a csv file)
