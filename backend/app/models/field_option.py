@@ -64,7 +64,7 @@ class FieldOption(db.Model):
         'single_choice': 'string',     # Pick one option from enum
         'multiple_choice': 'array',    # Pick multiple options
         'yes_no': 'boolean',          # True/False
-        'number_input': 'integer',     # Free number input
+        'number_input': 'float',       # Free number input (float accepts both int and float)
         'text': 'string',             # Free text
         'notes': 'string'             # Free text (longer)
     }
