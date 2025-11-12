@@ -1,5 +1,5 @@
 from datetime import date
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, Response
 from flask_jwt_extended import get_jwt_identity, jwt_required
 from marshmallow import ValidationError
 from typing import Tuple, Dict, Any, Optional
@@ -7,6 +7,7 @@ from sqlalchemy.orm import Query
 from datetime import datetime
 import csv
 import json
+import io
 
 from app import db
 from app.models.user import User
@@ -525,4 +526,74 @@ def bulk_create_tracking_data(tracker_id: int):
 #UTILITY ROUTES
 
 #Export tracking data entries of a specific range of dates as a csv file
-
+@data_tracking_bp.route('/<int:tracker_id>/export-tracking-data', methods=['GET'])
+@jwt_required()
+def export_tracking_data(tracker_id: int):
+    try:
+        _, user_id = get_current_user()
+        tracker = verify_tracker_ownership(tracker_id, user_id)
+    except ValueError as e:
+        return error_response(str(e), 404)
+    
+    try:
+        #get start and end date from query parameters
+        start_date_str = request.args.get('start_date')
+        end_date_str = request.args.get('end_date')
+        if not start_date_str or not end_date_str:
+            return error_response("Both start_date and end_date query parameters are required (YYYY-MM-DD)", 400)
+        
+        #parse dates
+        try:
+            start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+            end_date = datetime.strptime(end_date_str,'%Y-%m-%d').date()
+        except ValueError:
+            return error_response("Invalid date format. Use YYYY-MM-DD", 400)
+        
+        if start_date > end_date:
+            return error_response("start_date must be before or equal to end_date", 400)
+        
+        # Get tracking data entries to export
+        tracking_data_to_export = TrackingData.query.filter(
+            TrackingData.tracker_id == tracker_id,
+            TrackingData.entry_date >= start_date,
+            TrackingData.entry_date <= end_date
+        ).order_by(TrackingData.entry_date.asc()).all()
+        
+        if not tracking_data_to_export:
+            return error_response("No tracking data found for this date range", 404)
+        
+        # Create CSV content
+        output = io.StringIO()
+        csv_writer = csv.writer(output)
+        
+        # Write header
+        csv_writer.writerow(['entry_date', 'entry_data', 'ai_insights'])
+        
+        # Write data rows
+        for tracking_data in tracking_data_to_export:
+            # Convert data and ai_insights to JSON strings
+            entry_data_str = json.dumps(tracking_data.data) if tracking_data.data else ''
+            ai_insights_str = json.dumps(tracking_data.ai_insights) if tracking_data.ai_insights else ''
+            
+            csv_writer.writerow([
+                tracking_data.entry_date.strftime('%Y-%m-%d'),
+                entry_data_str,
+                ai_insights_str
+            ])
+        
+        # Get CSV content
+        csv_content = output.getvalue()
+        output.close()
+        
+        # Create response with proper headers for file download
+        response = Response(
+            csv_content,
+            mimetype='text/csv',
+            headers={
+                'Content-Disposition': f'attachment; filename=tracking_data_{tracker_id}_{start_date_str}_to_{end_date_str}.csv'
+            }
+        )
+        
+        return response
+    except Exception as e:
+        return error_response(f"Failed to export tracking data: {str(e)}", 500)
