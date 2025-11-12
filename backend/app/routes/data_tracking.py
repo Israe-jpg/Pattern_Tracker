@@ -366,4 +366,19 @@ def get_tracking_data_range(tracker_id: int):
         return error_response(f"Failed to get tracking data range: {str(e)}", 500)
 
 
+# ------------------------------------------
+# BULK OPERATIONS
+
+#bulk delete by time range tracking data entries
+
+
+
+#bulk create tracking data entries (imported from a csv file)
+
+
+
+#--------------------------------------------
+#UTILITY ROUTES
+
+#Export tracking data entries of a specific range of dates as a csv file
 
