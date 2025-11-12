@@ -33,15 +33,24 @@ class TrackingService:
             if not category:
                 raise ValueError("Tracker category not found")
             
-            # Rebuild schema to ensure it's up-to-date
-            schema = CategoryService.rebuild_category_schema(category.id)
-            db.session.refresh(category)
+            # Get contextual schema for Period Tracker, or full schema for other trackers
+            if category.name == CategoryService.PERIOD_TRACKER_NAME:
+                # Use contextual schema based on cycle phase
+                contextual_result = CategoryService.get_contextual_period_schema(tracker)
+                if contextual_result.get('setup_required'):
+                    raise ValueError("Period Tracker setup required. Please configure tracker settings first.")
+                schema = contextual_result.get('data_schema', {})
+            else:
+                # Rebuild schema to ensure it's up-to-date for other trackers
+                CategoryService.rebuild_category_schema(category, tracker if CategoryService.is_prebuilt_category(category.name) else None)
+                db.session.refresh(category)
+                schema = category.data_schema or {}
             
             # Validate data against tracker schema (only if data is provided)
             if data:
                 TrackingService._validate_data_against_schema(
                     data,
-                    category.data_schema
+                    schema
                 )
             
             # Create new entry
@@ -78,16 +87,25 @@ class TrackingService:
             if not category:
                 raise ValueError("Tracker category not found")
             
-            # Rebuild schema to ensure it's up-to-date
-            schema = CategoryService.rebuild_category_schema(category.id)
-            db.session.refresh(category)
+            # Get contextual schema for Period Tracker, or full schema for other trackers
+            if category.name == CategoryService.PERIOD_TRACKER_NAME:
+                # Use contextual schema based on cycle phase
+                contextual_result = CategoryService.get_contextual_period_schema(tracker)
+                if contextual_result.get('setup_required'):
+                    raise ValueError("Period Tracker setup required. Please configure tracker settings first.")
+                schema = contextual_result.get('data_schema', {})
+            else:
+                # Rebuild schema to ensure it's up-to-date for other trackers
+                CategoryService.rebuild_category_schema(category, tracker if CategoryService.is_prebuilt_category(category.name) else None)
+                db.session.refresh(category)
+                schema = category.data_schema or {}
             
             # Update data if provided
             if data is not None:
                 # Process data: handle null values (removal) and validate
                 processed_data = TrackingService._process_update_data(
                     data,
-                    category.data_schema
+                    schema
                 )
                 
                 # Merge processed data with existing data
@@ -205,20 +223,36 @@ class TrackingService:
         if not schema:
             raise ValueError("Tracker schema is empty")
         
-        # Combine baseline and custom schemas
+        # Combine all field groups (baseline, period_tracker/workout_tracker, custom)
         all_fields = {}
         if 'baseline' in schema:
             all_fields.update(schema['baseline'])
         if 'custom' in schema:
             all_fields.update(schema['custom'])
+        # For Period Tracker and other prebuilt trackers, include category-specific fields
+        # Note: period_tracker may have nested structures (e.g., discharge.amount, contraception.taken)
+        if 'period_tracker' in schema:
+            all_fields.update(schema['period_tracker'])
+        if 'workout_tracker' in schema:
+            all_fields.update(schema['workout_tracker'])
+        if 'symptom_tracker' in schema:
+            all_fields.update(schema['symptom_tracker'])
         
         # Validate each field in the data
         for field_name, field_data in data.items():
-            # Check if field exists in schema
-            if field_name not in all_fields:
-                raise ValueError(f"Field '{field_name}' does not exist in tracker schema")
+            # Check if field exists in schema (handle nested structures)
+            field_schema = None
             
-            field_schema = all_fields[field_name]
+            # First, check if it's a top-level field
+            if field_name in all_fields:
+                field_schema = all_fields[field_name]
+            else:
+                # Check if it's a nested field in period_tracker (e.g., "contraception", "discharge")
+                if 'period_tracker' in schema and field_name in schema['period_tracker']:
+                    field_schema = schema['period_tracker'][field_name]
+            
+            if field_schema is None:
+                raise ValueError(f"Field '{field_name}' does not exist in tracker schema")
             
             # Validate each option in the field
             for option_name, option_value in field_data.items():
