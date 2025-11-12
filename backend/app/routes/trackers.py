@@ -112,13 +112,28 @@ def ensure_category_fields_initialized(category: TrackerCategory) -> bool:
     Ensure a category has its fields initialized (baseline + category-specific).
     Returns True if fields were created, False if they already existed.
     """
-    # Check if baseline fields exist (indicates if category is fully initialized)
+    # Check if baseline fields exist
     baseline_fields_exist = TrackerField.query.filter_by(
         category_id=category.id,
         field_group='baseline'
     ).first() is not None
     
-    if baseline_fields_exist:
+    # For prebuilt categories, also check if category-specific fields exist
+    category_specific_fields_exist = True  # Default to True for custom categories
+    if category.name in CategoryService.PREBUILT_CATEGORIES:
+        config_key = CategoryService.PREBUILT_CATEGORIES[category.name]
+        category_specific_fields_exist = TrackerField.query.filter_by(
+            category_id=category.id,
+            field_group=config_key
+        ).first() is not None
+    elif category.name == CategoryService.PERIOD_TRACKER_NAME:
+        category_specific_fields_exist = TrackerField.query.filter_by(
+            category_id=category.id,
+            field_group=CategoryService.PERIOD_TRACKER_KEY
+        ).first() is not None
+    
+    # If both baseline and category-specific fields exist, category is fully initialized
+    if baseline_fields_exist and category_specific_fields_exist:
         return False  # Already initialized
     
     # Initialize category properly (baseline + category-specific fields)
@@ -297,40 +312,6 @@ def update_tracker_settings(tracker_id: int):
     except Exception as e:
         db.session.rollback()
         return error_response(f"Failed to update tracker settings: {str(e)}", 500)
-
-
-@trackers_bp.route('/<int:tracker_id>/period-schema', methods=['GET'])
-@jwt_required()
-def get_period_tracker_schema(tracker_id: int):
-    """
-    Get contextual schema for Period Tracker based on current cycle state.
-    Returns different period_tracker fields based on whether user is menstruating or not.
-    Always includes baseline and custom fields.
-    """
-    try:
-        _, user_id = get_current_user()
-        tracker = verify_tracker_ownership(tracker_id, user_id)
-    except ValueError as e:
-        return error_response(str(e), 404)
-    
-    try:
-        # Verify this is actually a Period Tracker
-        category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
-        if not category:
-            return error_response("Tracker category not found", 404)
-        
-        if category.name != 'Period Tracker':
-            return error_response("This endpoint is only for Period Tracker", 400)
-        
-        # Get contextual schema
-        result = CategoryService.get_contextual_period_schema(tracker)
-        
-        return success_response(
-            "Period Tracker schema retrieved successfully",
-            result
-        )
-    except Exception as e:
-        return error_response(f"Failed to retrieve period schema: {str(e)}", 500)
 
 
 # ============================================================================
@@ -552,57 +533,13 @@ def create_custom_category():
 
 
 # ============================================================================
-# DATA SCHEMA ROUTES
+# UNIFIED SCHEMA ROUTES - PROFESSIONAL STRUCTURE
 # ============================================================================
-
-@trackers_bp.route('/<int:tracker_id>/get-data-schema', methods=['GET'])
-@jwt_required()
-def get_tracker_schema(tracker_id: int):
-    """
-    Get tracker data schema.
-    For Period Tracker, use /period-schema for contextual schema.
-    """
-    try:
-        _, user_id = get_current_user()
-        tracker = verify_tracker_ownership(tracker_id, user_id)
-    except ValueError as e:
-        return error_response(str(e), 404)
-    
-    try:
-        category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
-        if not category:
-            return error_response("Tracker category not found", 404)
-        if category.name == 'Period Tracker':
-            return error_response(
-                "Period Tracker gets retrieved with another endpoint",
-                400
-            )
-        # Rebuild schema to ensure it's up-to-date
-        CategoryService.rebuild_category_schema(category, tracker if CategoryService.is_prebuilt_category(category.name) else None)
-        db.session.refresh(category)
-        
-        return success_response(
-            "Data schema retrieved successfully",
-            {'data_schema': category.data_schema}
-        )
-    except Exception as e:
-        return error_response(f"Failed to retrieve schema: {str(e)}", 500)
-
 
 @trackers_bp.route('/<int:tracker_id>/form-schema', methods=['GET'])
 @jwt_required()
 def get_form_schema(tracker_id: int):
-    """
-    Get complete form schema with fields in correct order.
-    This is the PRIMARY endpoint for rendering forms/surveys.
-    Returns all fields with options in a single flat array, ready to render.
-    
-    Response includes:
-    - fields: Flat array of all fields in display order
-    - tracker_name: Name of the tracker
-    - tracker_id: ID of the tracker
-    - is_prebuilt: Whether this is a prebuilt tracker
-    """
+
     try:
         _, user_id = get_current_user()
         tracker = verify_tracker_ownership(tracker_id, user_id)
@@ -614,100 +551,136 @@ def get_form_schema(tracker_id: int):
         if not category:
             return error_response("Tracker category not found", 404)
         
-        # Expire any cached field objects to ensure fresh data
+        is_prebuilt = CategoryService.is_prebuilt_category(category.name)
+        is_period_tracker = category.name == 'Period Tracker'
+        
+        # Special handling for Period Tracker
+        if is_period_tracker:
+            result = CategoryService.get_contextual_period_schema(tracker)
+            
+            # Format response consistently with other trackers
+            return success_response(
+                "Form schema retrieved successfully",
+                {
+                    'field_groups': result.get('data_schema'),
+                    'tracker_name': category.name,
+                    'tracker_id': tracker.id,
+                    'cycle_info':{
+                        'cycle_day': result.get('cycle_info').get('cycle_day'),
+                        'cycle_phase': result.get('cycle_info').get('cycle_phase'),
+                        'is_menstruating': result.get('cycle_info').get('is_menstruating')
+                    },
+                    'predictions':{
+                        'ovulation_date': result.get('predictions').get('ovulation_date'),
+                        'next_period_date': result.get('predictions').get('next_period_date'),
+                        'period_expected_soon': result.get('predictions').get('period_expected_soon'),
+                        'period_late': result.get('predictions').get('period_late')
+                    },
+                    'is_prebuilt': True,
+                    'is_contextual': True,
+                    'context': result.get('context'),
+                    'field_count': len(result.get('data_schema').get('baseline')) + len(result.get('data_schema').get('period_tracker')) + len(result.get('data_schema').get('custom')),
+                }
+            )
+        
+        # Standard handling for all other trackers
+        # Ensure fields are initialized (safety check - creates missing category-specific fields)
+        ensure_category_fields_initialized(category)
         db.session.expire_all()
         
-        # Get baseline fields
+        # 1. Baseline fields
         baseline_fields = TrackerField.query.filter_by(
-            category_id=tracker.category_id,
+            category_id=category.id,
             field_group='baseline',
             is_active=True
         ).order_by(TrackerField.field_order.asc()).all()
         
-        # Get category-specific fields (for prebuilt categories)
+        # 2. Category-specific fields (for prebuilt trackers)
         category_specific_fields = []
-        is_prebuilt = CategoryService.is_prebuilt_category(category.name)
-        
         if is_prebuilt:
             section_key = CategoryService.PREBUILT_CATEGORIES.get(category.name)
-            if not section_key and category.name == CategoryService.PERIOD_TRACKER_NAME:
-                section_key = CategoryService.PERIOD_TRACKER_KEY
-            
             if section_key:
                 category_specific_fields = TrackerField.query.filter_by(
-                    category_id=tracker.category_id,
+                    category_id=category.id,
                     field_group=section_key,
                     is_active=True
                 ).order_by(TrackerField.field_order.asc()).all()
         
-        # Get custom fields based on tracker type
+        # 3. Custom fields (user additions)
         custom_fields = []
-        user_fields = []
-        
         if is_prebuilt:
-            # Prebuilt trackers: use user-specific fields
-            user_fields = TrackerUserField.query.filter_by(
+            # User-specific fields for prebuilt trackers
+            custom_fields = TrackerUserField.query.filter_by(
                 tracker_id=tracker.id,
                 is_active=True
             ).order_by(TrackerUserField.field_order.asc()).all()
         else:
-            # Custom trackers: use category-level custom fields
+            # Category-level custom fields
             custom_fields = TrackerField.query.filter_by(
-                category_id=tracker.category_id,
+                category_id=category.id,
                 field_group='custom',
                 is_active=True
             ).order_by(TrackerField.field_order.asc()).all()
         
         def serialize_field(field):
-            """Serialize field with its options"""
+            """Serialize field with options"""
             if isinstance(field, TrackerUserField):
                 options = FieldOption.query.filter_by(
                     tracker_user_field_id=field.id,
                     is_active=True
-                ).order_by(FieldOption.option_order).all()
+                ).order_by(FieldOption.option_order.asc()).all()
             else:
                 options = FieldOption.query.filter_by(
                     tracker_field_id=field.id,
                     is_active=True
-                ).order_by(FieldOption.option_order).all()
+                ).order_by(FieldOption.option_order.asc()).all()
             
             data = field.to_dict()
             data['options'] = [o.to_dict() for o in options]
             return data
         
-        # Combine all fields in CORRECT display order:
-        # 1. Baseline (common to all trackers)
-        # 2. Category-specific (e.g., period_tracker, workout_tracker - prebuilt only)
-        # 3. Custom fields (user's additions - either custom_fields or user_fields)
-        all_fields = []
-        all_fields.extend([serialize_field(f) for f in baseline_fields])
-        all_fields.extend([serialize_field(f) for f in category_specific_fields])
-        # Add custom fields (only one of these will have data)
-        all_fields.extend([serialize_field(f) for f in (user_fields if is_prebuilt else custom_fields)])
+        # Combine all fields in field_group order
+        field_groups = {
+            'baseline': [serialize_field(f) for f in baseline_fields],
+            'category_specific': [serialize_field(f) for f in category_specific_fields],
+            'custom': [serialize_field(f) for f in custom_fields]
+        }
+        
         
         return success_response(
             "Form schema retrieved successfully",
             {
-                'fields': all_fields,
+                'field-groups': field_groups,
                 'tracker_name': category.name,
                 'tracker_id': tracker.id,
                 'is_prebuilt': is_prebuilt,
-                'field_count': len(all_fields)
+                'is_contextual': False,
+                'context': None,
+                'field_count': len(baseline_fields) + len(category_specific_fields) + len(custom_fields)
             }
         )
     except Exception as e:
         return error_response(f"Failed to retrieve form schema: {str(e)}", 500)
 
 
-@trackers_bp.route('/<int:tracker_id>/ordered-fields', methods=['GET'])
+@trackers_bp.route('/<int:tracker_id>/management-schema', methods=['GET'])
 @jwt_required()
-def get_ordered_fields(tracker_id: int):
+def get_management_schema(tracker_id: int):
     """
-    Get fields organized by groups (baseline, custom, etc.).
-    Use this for management/admin UI where you need to see field groups.
-    For rendering forms, use /form-schema instead.
-    """
+    MANAGEMENT UI ENDPOINT: Get fields organized by groups.
     
+    Use this for:
+    - Admin/settings UI where you need to see field structure
+    - Field management (add/edit/delete/reorder)
+    - Schema configuration
+    
+    For rendering forms to users, use /form-schema instead.
+    
+    Response includes fields grouped by:
+    - baseline_fields
+    - category_fields (for prebuilt trackers)
+    - custom_fields (user additions)
+    """
     try:
         _, user_id = get_current_user()
         tracker = verify_tracker_ownership(tracker_id, user_id)
@@ -719,110 +692,97 @@ def get_ordered_fields(tracker_id: int):
         if not category:
             return error_response("Tracker category not found", 404)
         
-        # Expire any cached field objects to ensure fresh data
         db.session.expire_all()
         
         # Get baseline fields
         baseline_fields = TrackerField.query.filter_by(
-            category_id=tracker.category_id,
+            category_id=category.id,
             field_group='baseline',
             is_active=True
         ).order_by(TrackerField.field_order.asc()).all()
         
-        # Get category-specific fields (period_tracker, workout_tracker, etc.)
+        # Get category-specific fields
         category_specific_fields = []
-        if CategoryService.is_prebuilt_category(category.name):
-            # Check standard prebuilt categories first
+        is_prebuilt = CategoryService.is_prebuilt_category(category.name)
+        print(f"Is prebuilt: {is_prebuilt}")
+        if is_prebuilt:
             section_key = CategoryService.PREBUILT_CATEGORIES.get(category.name)
-            # Check Period Tracker separately
             if not section_key and category.name == CategoryService.PERIOD_TRACKER_NAME:
                 section_key = CategoryService.PERIOD_TRACKER_KEY
-            
-            # Debug
-            print(f"[DEBUG] Category: {category.name}, Is Prebuilt: True")
-            print(f"[DEBUG] Section key: {section_key}")
-            
+            print(f"Section key: {section_key}")
             if section_key:
                 category_specific_fields = TrackerField.query.filter_by(
-                    category_id=tracker.category_id,
+                    category_id=category.id,
                     field_group=section_key,
                     is_active=True
                 ).order_by(TrackerField.field_order.asc()).all()
-                
-                print(f"[DEBUG] Category-specific fields found: {len(category_specific_fields)}")
-                if not category_specific_fields:
-                    # Check if fields exist but with different field_group or is_active
-                    all_fields = TrackerField.query.filter_by(category_id=tracker.category_id).all()
-                    print(f"[DEBUG] All fields for this category: {len(all_fields)}")
-                    for f in all_fields:
-                        print(f"  - {f.field_name}: field_group={f.field_group}, is_active={f.is_active}")
+                print(f"Category specific fields: {category_specific_fields}")
+            
         
-        # For prebuilt categories: use user_fields instead of custom_fields
-        # For custom categories: use custom_fields
-        is_prebuilt = CategoryService.is_prebuilt_category(category.name)
-        
+        # Get custom fields
         custom_fields = []
-        user_fields = []
-        
         if is_prebuilt:
-            # Prebuilt trackers: users can only add user-specific fields
-            user_fields = TrackerUserField.query.filter_by(
+            # User-specific fields
+            custom_fields = TrackerUserField.query.filter_by(
                 tracker_id=tracker.id,
                 is_active=True
             ).order_by(TrackerUserField.field_order.asc()).all()
         else:
-            # Custom trackers: use category-level custom fields
+            # Category-level custom fields
             custom_fields = TrackerField.query.filter_by(
-                category_id=tracker.category_id,
+                category_id=category.id,
                 field_group='custom',
                 is_active=True
             ).order_by(TrackerField.field_order.asc()).all()
         
-        def serialize_field(field: TrackerField):
-            options = FieldOption.query.filter_by(
-                tracker_field_id=field.id,
-                is_active=True
-            ).order_by(FieldOption.option_order).all()
+        def serialize_field(field):
+            if isinstance(field, TrackerUserField):
+                options = FieldOption.query.filter_by(
+                    tracker_user_field_id=field.id,
+                    is_active=True
+                ).order_by(FieldOption.option_order.asc()).all()
+            else:
+                options = FieldOption.query.filter_by(
+                    tracker_field_id=field.id,
+                    is_active=True
+                ).order_by(FieldOption.option_order.asc()).all()
+            
             data = field.to_dict()
             data['options'] = [o.to_dict() for o in options]
-            return data
-        
-        def serialize_user_field(field: TrackerUserField):
-            options = FieldOption.query.filter_by(
-                tracker_user_field_id=field.id,
-                is_active=True
-            ).order_by(FieldOption.option_order).all()
-            data = field.to_dict()
-            data['options'] = [o.to_dict() for o in options]
+            data['is_user_field'] = isinstance(field, TrackerUserField)
             return data
         
         response_data = {
-            'baseline_fields': [serialize_field(f) for f in baseline_fields]
+            'baseline_fields': [serialize_field(f) for f in baseline_fields],
+            'custom_fields': [serialize_field(f) for f in custom_fields]
         }
         
-        # Include category-specific fields (for prebuilt categories like Period Tracker)
         if category_specific_fields:
             response_data['category_fields'] = [
                 serialize_field(f) for f in category_specific_fields
             ]
         
-        # Include custom fields (user's additions)
-        # For prebuilt: these are TrackerUserField instances
-        # For custom: these are TrackerField instances with field_group='custom'
-        if custom_fields:
-            response_data['custom_fields'] = [serialize_field(f) for f in custom_fields]
-        elif user_fields:
-            response_data['custom_fields'] = [serialize_user_field(f) for f in user_fields]
-        
-        return success_response("Fields retrieved successfully", response_data)
+        return success_response(
+            "Management schema retrieved successfully",
+            response_data
+        )
     except Exception as e:
-        return error_response(f"Failed to retrieve fields: {str(e)}", 500)
+        return error_response(f"Failed to retrieve management schema: {str(e)}", 500)
 
 
-@trackers_bp.route('/<int:tracker_id>/all-inclusive-data-schema', methods=['GET'])
+@trackers_bp.route('/<int:tracker_id>/complete-schema', methods=['GET'])
 @jwt_required()
-def get_all_inclusive_data_schema(tracker_id: int):
-
+def get_complete_schema(tracker_id: int):
+    """
+    DEVELOPER/DEBUG ENDPOINT: Get complete raw schema including inactive fields.
+    
+    Use this for:
+    - Debugging
+    - Export/import functionality
+    - Viewing full tracker configuration
+    
+    Includes both active and inactive fields/options.
+    """
     try:
         _, user_id = get_current_user()
         tracker = verify_tracker_ownership(tracker_id, user_id)
@@ -835,16 +795,21 @@ def get_all_inclusive_data_schema(tracker_id: int):
             return error_response("Tracker category not found", 404)
         
         all_inclusive_schema = CategoryService.get_all_inclusive_data_schema(
-            category, 
+            category,
             tracker if CategoryService.is_prebuilt_category(category.name) else None
         )
         
         return success_response(
-            "All inclusive data schema retrieved successfully",
-            {'data_schema': all_inclusive_schema}
+            "Complete schema retrieved successfully",
+            {
+                'data_schema': all_inclusive_schema,
+                'tracker_name': category.name,
+                'tracker_id': tracker.id
+            }
         )
     except Exception as e:
-        return error_response(f"Failed to get all inclusive data schema: {str(e)}", 500)
+        return error_response(f"Failed to get complete schema: {str(e)}", 500)
+
 
 
 # ============================================================================
