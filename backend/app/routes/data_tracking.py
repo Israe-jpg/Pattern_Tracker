@@ -2,7 +2,8 @@ from datetime import date
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import get_jwt_identity, jwt_required
 from marshmallow import ValidationError
-from typing import Tuple, Dict, Any
+from typing import Tuple, Dict, Any, Optional
+from sqlalchemy.orm import Query
 
 from app import db
 from app.models.user import User
@@ -51,12 +52,55 @@ def success_response(message: str, data: Dict[str, Any] = None, status_code: int
         response['data'] = data
     return jsonify(response), status_code
 
+def validate_pagination_params() -> Tuple[Optional[int], Optional[int], Optional[Tuple[Dict, int]]]:
+    """
+    Validates pagination query parameters.
+    Returns: (page, per_page, None) on success, or (None, None, error_response) on validation failure
+    """
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 50, type=int)
+    
+    if page < 1:
+        return None, None, error_response("page must be greater than 0", 400)
+    if per_page < 1:
+        return None, None, error_response("per_page must be greater than 0", 400)
+    if per_page > 100:
+        return None, None, error_response("per_page cannot exceed 100", 400)
+    
+    return page, per_page, None
+
+def paginate_query(query: Query, page: int, per_page: int) -> Tuple[Any, Dict[str, Any]]:
+    """
+    Applies pagination to a SQLAlchemy query and returns pagination object and metadata.
+    Returns: (pagination_object, pagination_info_dict)
+    """
+    # Apply pagination
+    pagination = query.paginate(
+        page=page,
+        per_page=per_page,
+        error_out=False  # Return empty list instead of 404 for out-of-range pages
+    )
+    
+    # Build pagination metadata
+    pagination_info = {
+        'page': page,
+        'per_page': per_page,
+        'total_count': pagination.total,
+        'total_pages': pagination.pages,
+        'has_next': pagination.has_next,
+        'has_prev': pagination.has_prev,
+        'next_page': pagination.next_num if pagination.has_next else None,
+        'prev_page': pagination.prev_num if pagination.has_prev else None
+    }
+    
+    return pagination, pagination_info
+
 #ROUTES
 
 # ------------------------------
 #BASIC CRUD ROUTES
 
-#get all tracking data for a specific tracker
+#get all tracking data for a specific tracker (with pagination)
 @data_tracking_bp.route('/<int:tracker_id>/get-all-tracking-data', methods=['GET'])
 @jwt_required()
 def get_all_tracking_data(tracker_id: int):
@@ -67,10 +111,25 @@ def get_all_tracking_data(tracker_id: int):
         return error_response(str(e), 404)
     
     try:
-        tracking_data = TrackingData.query.filter_by(tracker_id=tracker_id).all()
+        # Validate pagination parameters
+        page, per_page, error = validate_pagination_params()
+        if error:
+            return error
+        
+        # Build base query with ordering
+        base_query = TrackingData.query.filter_by(tracker_id=tracker_id).order_by(
+            TrackingData.entry_date.desc()  # Most recent first
+        )
+        
+        # Apply pagination
+        pagination, pagination_info = paginate_query(base_query, page, per_page)
+        
         return success_response(
             "All tracking data retrieved successfully",
-            {'tracking_data': [data.to_dict() for data in tracking_data]}
+            {
+                'tracking_data': [data.to_dict() for data in pagination.items],
+                'pagination': pagination_info
+            }
         )
     except Exception as e:
         return error_response(f"Failed to get all tracking data: {str(e)}", 500)
@@ -248,7 +307,7 @@ def get_tracking_data_by_date(tracker_id: int):
     except Exception as e:
         return error_response(f"Failed to get tracking data: {str(e)}", 500)
 
-#get tracking data for a date range
+#get tracking data for a date range with pagination
 @data_tracking_bp.route('/<int:tracker_id>/get-tracking-data-range', methods=['GET'])
 @jwt_required()
 def get_tracking_data_range(tracker_id: int):
@@ -277,20 +336,30 @@ def get_tracking_data_range(tracker_id: int):
         if start_date > end_date:
             return error_response("start_date must be before or equal to end_date", 400)
         
-        # Get entries in date range
-        tracking_data = TrackingData.query.filter(
+        # Validate pagination parameters
+        page, per_page, error = validate_pagination_params()
+        if error:
+            return error
+        
+        # Build base query with date range and ordering
+        base_query = TrackingData.query.filter(
             TrackingData.tracker_id == tracker_id,
             TrackingData.entry_date >= start_date,
             TrackingData.entry_date <= end_date
-        ).order_by(TrackingData.entry_date).all()
+        ).order_by(
+            TrackingData.entry_date.desc()  # Most recent first
+        )
+        
+        # Apply pagination
+        pagination, pagination_info = paginate_query(base_query, page, per_page)
         
         return success_response(
             "Tracking data retrieved successfully",
             {
-                'tracking_data': [data.to_dict() for data in tracking_data],
+                'tracking_data': [data.to_dict() for data in pagination.items],
                 'start_date': start_date_str,
                 'end_date': end_date_str,
-                'count': len(tracking_data)
+                'pagination': pagination_info
             }
         )
     except Exception as e:
