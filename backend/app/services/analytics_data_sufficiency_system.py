@@ -5,11 +5,11 @@ from enum import Enum
 
 class ConfidenceLevel(Enum):
     """Confidence levels for analytics insights"""
-    INSUFFICIENT = "insufficient"  # < min required
-    LOW = "low"                     # Just above minimum
-    MEDIUM = "medium"                # Decent sample size
-    HIGH = "high"                    # Strong statistical basis
-    VERY_HIGH = "very_high"          # Extensive data
+    INSUFFICIENT = "insufficient"
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    VERY_HIGH = "very_high"
 
 
 class InsightType(Enum):
@@ -40,31 +40,29 @@ class InsightType(Enum):
 
 
 class DataSufficiencyChecker:
-    """
-    Determines what analytics can be shown based on available data.
-    """
+    """Determines what analytics can be shown based on available data."""
     
     # Minimum entries required for each insight type
     MINIMUM_REQUIREMENTS = {
-        # Tier 1: Always show (engagement)
+        # Tier 1
         InsightType.STREAK: 1,
         InsightType.MILESTONE: 1,
         InsightType.RECENT_COMPARISON: 2,
         InsightType.COMPLETION_RATE: 1,
         
-        # Tier 2: Light analysis
+        # Tier 2
         InsightType.WEEKLY_SUMMARY: 4,
         InsightType.SIMPLE_AVERAGE: 4,
         InsightType.MOST_COMMON: 3,
         InsightType.BEST_WORST: 4,
         
-        # Tier 3: Statistical
+        # Tier 3
         InsightType.TREND_LINE: 14,
         InsightType.WEEKLY_PATTERN: 14,
         InsightType.SIMPLE_CORRELATION: 10,
         InsightType.CONSISTENCY_SCORE: 7,
         
-        # Tier 4: Advanced
+        # Tier 4
         InsightType.MULTI_FACTOR: 30,
         InsightType.PREDICTION: 30,
         InsightType.PERSONALIZED_REC: 30,
@@ -73,10 +71,18 @@ class DataSufficiencyChecker:
     
     # Recommended entries for high confidence
     RECOMMENDED_REQUIREMENTS = {
-        InsightType.WEEKLY_SUMMARY: 7,      # Daily for a week
-        InsightType.TREND_LINE: 21,          # 3 weeks
-        InsightType.WEEKLY_PATTERN: 28,      # 4 weeks
-        InsightType.MULTI_FACTOR: 60,        # 2 months
+        InsightType.WEEKLY_SUMMARY: 7,
+        InsightType.TREND_LINE: 21,
+        InsightType.WEEKLY_PATTERN: 28,
+        InsightType.MULTI_FACTOR: 60,
+    }
+    
+    # Minimum time span requirements (days)
+    MINIMUM_TIME_SPAN = {
+        InsightType.WEEKLY_PATTERN: 7,     # At least 1 week
+        InsightType.TREND_LINE: 7,          # At least 1 week
+        InsightType.CYCLICAL_DETECTION: 14, # At least 2 weeks
+        InsightType.PREDICTION: 21,         # At least 3 weeks
     }
     
     @staticmethod
@@ -86,31 +92,27 @@ class DataSufficiencyChecker:
         time_span_days: int,
         insight_type: InsightType
     ) -> Dict[str, Any]:
-        """
-        Check if a field has enough data for a specific insight.
-        
-        Args:
-            field_name: Name of the field being analyzed
-            entry_count: Number of entries with this field
-            time_span_days: Days between first and last entry
-            insight_type: Type of insight to generate
-        
-        Returns:
-            Dictionary with eligibility info
-        """
+        """Check if a field has enough data for a specific insight."""
         min_required = DataSufficiencyChecker.MINIMUM_REQUIREMENTS[insight_type]
         recommended = DataSufficiencyChecker.RECOMMENDED_REQUIREMENTS.get(
             insight_type,
             min_required
         )
+        min_time_span = DataSufficiencyChecker.MINIMUM_TIME_SPAN.get(insight_type, 0)
         
-        # Check if minimum met
-        is_eligible = entry_count >= min_required
+        # Check entry count
+        has_enough_entries = entry_count >= min_required
+        
+        # Check time span if required
+        has_adequate_time_span = time_span_days >= min_time_span if min_time_span > 0 else True
+        
+        # Both conditions must be met
+        is_eligible = has_enough_entries and has_adequate_time_span
         
         # Calculate confidence level
         if not is_eligible:
             confidence = ConfidenceLevel.INSUFFICIENT
-            confidence_score = 0
+            confidence_score = 0.0
         elif entry_count < min_required * 1.5:
             confidence = ConfidenceLevel.LOW
             confidence_score = 0.3
@@ -126,12 +128,11 @@ class DataSufficiencyChecker:
         
         # Calculate logging frequency
         frequency = entry_count / max(time_span_days, 1) if time_span_days > 0 else 0
-        
-        # Determine if frequency is adequate (at least 2x/week for trends)
-        adequate_frequency = frequency >= (2 / 7)  # 2 times per week
+        adequate_frequency = frequency >= (2 / 7)  # At least 2x/week
         
         return {
             'field_name': field_name,
+            'insight_type': insight_type.value,
             'is_eligible': is_eligible,
             'confidence': confidence.value,
             'confidence_score': confidence_score,
@@ -140,10 +141,13 @@ class DataSufficiencyChecker:
             'recommended': recommended,
             'entries_needed': max(0, min_required - entry_count),
             'time_span_days': time_span_days,
+            'min_time_span': min_time_span,
+            'time_span_adequate': has_adequate_time_span,
             'logging_frequency': round(frequency, 2),
             'adequate_frequency': adequate_frequency,
             'message': DataSufficiencyChecker._get_message(
-                entry_count, min_required, recommended, confidence
+                entry_count, min_required, recommended, confidence,
+                has_adequate_time_span, min_time_span, time_span_days
             )
         }
     
@@ -152,13 +156,24 @@ class DataSufficiencyChecker:
         entry_count: int,
         min_required: int,
         recommended: int,
-        confidence: ConfidenceLevel
+        confidence: ConfidenceLevel,
+        has_adequate_time_span: bool,
+        min_time_span: int,
+        actual_time_span: int
     ) -> str:
-        """Generate user-friendly message about data sufficiency"""
+        """Generate user-friendly message about data sufficiency."""
+        # Time span issue
+        if not has_adequate_time_span:
+            days_needed = min_time_span - actual_time_span
+            return f"Track for {days_needed} more day{'s' if days_needed > 1 else ''} to unlock this insight"
+        
+        # Entry count issue
         if entry_count < min_required:
             needed = min_required - entry_count
             return f"Log {needed} more time{'s' if needed > 1 else ''} to unlock this insight"
-        elif confidence == ConfidenceLevel.LOW:
+        
+        # Confidence levels
+        if confidence == ConfidenceLevel.LOW:
             return "Early insight - log more for accuracy"
         elif confidence == ConfidenceLevel.MEDIUM:
             more = recommended - entry_count
@@ -169,62 +184,93 @@ class DataSufficiencyChecker:
             return "Very strong data - highly reliable"
     
     @staticmethod
-    def get_available_insights(
-        field_entries: Dict[str, int],
-        time_spans: Dict[str, int]
-    ) -> Dict[str, List[InsightType]]:
+    def get_all_eligible_insights(
+        field_name: str,
+        entry_count: int,
+        time_span_days: int
+    ) -> List[Dict[str, Any]]:
         """
-        Get all available insights for each field based on data.
+        Get ALL eligible insights for a field, sorted by priority.
         
-        Args:
-            field_entries: {field_name: entry_count}
-            time_spans: {field_name: days_span}
-        
-        Returns:
-            {field_name: [available_insight_types]}
+        Returns list of eligible insights with their eligibility info.
         """
-        available = {}
+        eligible_insights = []
         
-        for field_name, entry_count in field_entries.items():
-            time_span = time_spans.get(field_name, 0)
-            field_insights = []
+        for insight_type in InsightType:
+            result = DataSufficiencyChecker.check_field_eligibility(
+                field_name,
+                entry_count,
+                time_span_days,
+                insight_type
+            )
             
-            for insight_type in InsightType:
-                result = DataSufficiencyChecker.check_field_eligibility(
-                    field_name,
-                    entry_count,
-                    time_span,
-                    insight_type
-                )
-                
-                if result['is_eligible']:
-                    field_insights.append({
-                        'type': insight_type.value,
-                        'confidence': result['confidence'],
-                        'confidence_score': result['confidence_score']
-                    })
-            
-            available[field_name] = field_insights
+            if result['is_eligible']:
+                eligible_insights.append(result)
         
-        return available
+        # Sort by confidence score (descending) and tier priority
+        tier_priority = {
+            # Tier 4 (most valuable)
+            InsightType.PREDICTION: 100,
+            InsightType.PERSONALIZED_REC: 95,
+            InsightType.MULTI_FACTOR: 90,
+            InsightType.CYCLICAL_DETECTION: 85,
+            
+            # Tier 3
+            InsightType.TREND_LINE: 80,
+            InsightType.WEEKLY_PATTERN: 75,
+            InsightType.SIMPLE_CORRELATION: 70,
+            InsightType.CONSISTENCY_SCORE: 65,
+            
+            # Tier 2
+            InsightType.WEEKLY_SUMMARY: 60,
+            InsightType.BEST_WORST: 55,
+            InsightType.SIMPLE_AVERAGE: 50,
+            InsightType.MOST_COMMON: 45,
+            
+            # Tier 1 (engagement)
+            InsightType.COMPLETION_RATE: 40,
+            InsightType.STREAK: 35,
+            InsightType.RECENT_COMPARISON: 30,
+            InsightType.MILESTONE: 25,
+        }
+        
+        def sort_key(insight):
+            insight_type = InsightType(insight['insight_type'])
+            priority = tier_priority.get(insight_type, 0)
+            confidence = insight['confidence_score']
+            # Combine priority and confidence (priority weighted higher)
+            return (priority * 10) + (confidence * 5)
+        
+        eligible_insights.sort(key=sort_key, reverse=True)
+        
+        return eligible_insights
+    
+    @staticmethod
+    def get_primary_insight(
+        field_name: str,
+        entry_count: int,
+        time_span_days: int
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Get the single BEST insight to show for a field.
+        
+        Returns the highest priority eligible insight, or None if no insights available.
+        """
+        eligible = DataSufficiencyChecker.get_all_eligible_insights(
+            field_name,
+            entry_count,
+            time_span_days
+        )
+        
+        return eligible[0] if eligible else None
 
 
 class AnalyticsDisplayStrategy:
-    """
-    Determines what to show users based on available data.
-    """
+    """Determines what to show users based on available data."""
     
     @staticmethod
     def get_display_config(entry_count: int, confidence: ConfidenceLevel) -> Dict[str, Any]:
-        """
-        Get display configuration based on data quality.
-        
-        Returns configuration for:
-        - Whether to show charts
-        - Chart type (line, bar, scatter)
-        - Whether to show disclaimer
-        - Visual indicators (confidence badges)
-        """
+        """Get display configuration based on data quality."""
         if confidence == ConfidenceLevel.INSUFFICIENT:
             return {
                 'show_insight': False,
@@ -245,8 +291,8 @@ class AnalyticsDisplayStrategy:
                 'disclaimer_text': 'Early insight - log more for better accuracy',
                 'confidence_badge': '⚠️ Limited data',
                 'badge_color': 'orange',
-                'show_data_points': True,  # Show actual dots on chart
-                'emphasize_gaps': True     # Highlight missing days
+                'show_data_points': True,
+                'emphasize_gaps': True
             }
         
         elif confidence == ConfidenceLevel.MEDIUM:
@@ -291,93 +337,51 @@ class AnalyticsDisplayStrategy:
             }
     
     @staticmethod
-    def prioritize_insights(
-        available_insights: Dict[str, List[Dict[str, Any]]],
+    def build_insight_summary(
+        eligible_insights: List[Dict[str, Any]],
         max_display: int = 5
-    ) -> List[Dict[str, Any]]:
+    ) -> Dict[str, Any]:
         """
-        Prioritize which insights to show first.
+        Build a summary of available insights for display.
         
-        Priority order:
-        1. High confidence insights
-        2. Most interesting patterns
-        3. Actionable recommendations
-        4. Engagement/motivation insights
+        Args:
+            eligible_insights: List of eligible insights (already sorted by priority)
+            max_display: Maximum number of insights to highlight
+        
+        Returns:
+            Summary with primary insight, secondary insights, and counts by tier
         """
-        all_insights = []
+        if not eligible_insights:
+            return {
+                'has_insights': False,
+                'primary_insight': None,
+                'secondary_insights': [],
+                'total_available': 0,
+                'by_tier': {
+                    'tier_1': 0,
+                    'tier_2': 0,
+                    'tier_3': 0,
+                    'tier_4': 0
+                }
+            }
         
-        for field_name, insights in available_insights.items():
-            for insight in insights:
-                all_insights.append({
-                    'field_name': field_name,
-                    **insight
-                })
+        # Categorize by tier
+        tier_1 = ['streak', 'milestone', 'recent_comparison', 'completion_rate']
+        tier_2 = ['weekly_summary', 'simple_average', 'most_common', 'best_worst']
+        tier_3 = ['trend_line', 'weekly_pattern', 'simple_correlation', 'consistency_score']
+        tier_4 = ['multi_factor', 'prediction', 'personalized_recommendation', 'cyclical_detection']
         
-        # Sort by confidence score (descending)
-        all_insights.sort(key=lambda x: x['confidence_score'], reverse=True)
+        tier_counts = {
+            'tier_1': sum(1 for i in eligible_insights if i['insight_type'] in tier_1),
+            'tier_2': sum(1 for i in eligible_insights if i['insight_type'] in tier_2),
+            'tier_3': sum(1 for i in eligible_insights if i['insight_type'] in tier_3),
+            'tier_4': sum(1 for i in eligible_insights if i['insight_type'] in tier_4),
+        }
         
-        # Take top N
-        return all_insights[:max_display]
-
-
-# ============================================================================
-# EXAMPLE USAGE
-# ============================================================================
-
-def example_usage():
-    """Example of how to use the system"""
-    
-    # User has logged mood 5 times over 2 weeks
-    field_entries = {
-        'mood': 5,
-        'sleep': 12,
-        'energy': 3
-    }
-    
-    time_spans = {
-        'mood': 14,    # 14 days
-        'sleep': 14,
-        'energy': 7
-    }
-    
-    # Check what insights are available
-    checker = DataSufficiencyChecker()
-    
-    # Check specific insight
-    result = checker.check_field_eligibility(
-        field_name='mood',
-        entry_count=5,
-        time_span_days=14,
-        insight_type=InsightType.TREND_LINE
-    )
-    
-    print(f"Trend line for mood: {result['message']}")
-    # Output: "Log 9 more times to unlock this insight"
-    
-    # Check what's available
-    result = checker.check_field_eligibility(
-        field_name='mood',
-        entry_count=5,
-        time_span_days=14,
-        insight_type=InsightType.WEEKLY_SUMMARY
-    )
-    
-    print(f"Weekly summary for mood: {result['message']}")
-    # Output: "Good data! Log 2 more for stronger insights"
-    
-    # Get all available insights
-    available = checker.get_available_insights(field_entries, time_spans)
-    
-    print("\nAvailable insights:")
-    for field, insights in available.items():
-        print(f"\n{field}:")
-        for insight in insights:
-            print(f"  - {insight['type']} (confidence: {insight['confidence']})")
-    
-    # Get display configuration
-    display_config = AnalyticsDisplayStrategy.get_display_config(
-        entry_count=5,
-        confidence=ConfidenceLevel.MEDIUM
-    )
-    
-    print(f"\nDisplay config: {display_config}")
+        return {
+            'has_insights': True,
+            'primary_insight': eligible_insights[0],
+            'secondary_insights': eligible_insights[1:max_display],
+            'total_available': len(eligible_insights),
+            'by_tier': tier_counts
+        }

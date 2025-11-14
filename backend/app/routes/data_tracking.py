@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from flask import Blueprint, request, jsonify, Response
 from flask_jwt_extended import get_jwt_identity, jwt_required
 from marshmallow import ValidationError
@@ -15,6 +15,9 @@ from app.models.tracker import Tracker
 from app.models.tracking_data import TrackingData
 from app.schemas.tracking_data_schema import TrackingDataSchema
 from app.services.tracking_service import TrackingService
+
+
+from app.services.analytics_data_sufficiency_system import DataSufficiencyChecker, InsightType, ConfidenceLevel, AnalyticsDisplayStrategy
 
 data_tracking_bp = Blueprint('data_tracking', __name__)
 
@@ -597,3 +600,169 @@ def export_tracking_data(tracker_id: int):
         return response
     except Exception as e:
         return error_response(f"Failed to export tracking data: {str(e)}", 500)
+
+
+#--------------------------------------------------------------
+#ANALYTICS ROUTES
+
+#get insights for a specific tracker about a field
+@data_tracking_bp.route('/<int:tracker_id>/get-insights-for-field', methods=['GET'])
+@jwt_required()
+def get_field_insights(tracker_id: int):
+    """
+    Get analytics insights for a specific field.
+    
+    Query params:
+    - field_name (required): Field to analyze
+    - time_range (optional): week, 2_weeks, month, 3_months, 6_months, year, all
+    - insight_type (optional): Specific insight type to calculate
+    - show_all (optional): true/false - show all eligible insights or just primary
+    """
+    try:
+        _, user_id = get_current_user()
+        tracker = verify_tracker_ownership(tracker_id, user_id)
+    except ValueError as e:
+        return error_response(str(e), 404)
+    
+    try:
+        # Get parameters
+        field_name = request.args.get('field_name')
+        if not field_name:
+            return error_response("field_name query parameter is required", 400)
+        
+        time_range = request.args.get('time_range', 'all')
+        show_all = request.args.get('show_all', 'false').lower() == 'true'
+        requested_insight_type = request.args.get('insight_type')
+        
+        # Calculate date range
+        end_date = date.today()
+        time_range_days = {
+            'week': 7, '2_weeks': 14, 'month': 30,
+            '3_months': 90, '6_months': 180, 'year': 365, 'all': None
+        }
+        
+        if time_range not in time_range_days:
+            return error_response(
+                f"Invalid time_range. Valid: {', '.join(time_range_days.keys())}",
+                400
+            )
+        
+        start_date = None
+        if time_range != 'all':
+            start_date = end_date - timedelta(days=time_range_days[time_range])
+        
+        # Get tracking data
+        query = TrackingData.query.filter_by(tracker_id=tracker_id)
+        if start_date:
+            query = query.filter(TrackingData.entry_date >= start_date)
+        query = query.filter(TrackingData.entry_date <= end_date)
+        
+        all_entries = query.order_by(TrackingData.entry_date.asc()).all()
+        
+        # Filter entries with this field
+        field_entries = [e for e in all_entries if e.data and field_name in e.data]
+        
+        if not field_entries:
+            return success_response(
+                "No data found for this field",
+                {
+                    'field_name': field_name,
+                    'time_range': time_range,
+                    'entry_count': 0,
+                    'has_insights': False,
+                    'message': f"Start tracking '{field_name}' to unlock insights"
+                }
+            )
+        
+        # Calculate metrics
+        entry_count = len(field_entries)
+        time_span_days = (field_entries[-1].entry_date - field_entries[0].entry_date).days + 1
+        
+        # Get insights
+        if requested_insight_type:
+            # User requested specific insight
+            try:
+                insight_type = InsightType(requested_insight_type)
+            except ValueError:
+                valid = [it.value for it in InsightType]
+                return error_response(
+                    f"Invalid insight_type. Valid: {', '.join(valid)}", 400
+                )
+            
+            result = DataSufficiencyChecker.check_field_eligibility(
+                field_name, entry_count, time_span_days, insight_type
+            )
+            
+            confidence = ConfidenceLevel(result['confidence'])
+            display_config = AnalyticsDisplayStrategy.get_display_config(
+                entry_count, confidence
+            )
+            
+            return success_response(
+                "Insight calculated",
+                {
+                    'field_name': field_name,
+                    'entry_count': entry_count,
+                    'time_span_days': time_span_days,
+                    'insight': result,
+                    'display_config': display_config
+                }
+            )
+        
+        elif show_all:
+            # Show all eligible insights
+            eligible = DataSufficiencyChecker.get_all_eligible_insights(
+                field_name, entry_count, time_span_days
+            )
+            
+            summary = AnalyticsDisplayStrategy.build_insight_summary(eligible)
+            
+            return success_response(
+                "All insights retrieved",
+                {
+                    'field_name': field_name,
+                    'entry_count': entry_count,
+                    'time_span_days': time_span_days,
+                    'insights_summary': summary
+                }
+            )
+        
+        else:
+            # Show primary (best) insight only
+            primary = DataSufficiencyChecker.get_primary_insight(
+                field_name, entry_count, time_span_days
+            )
+            
+            if not primary:
+                return success_response(
+                    "No insights available yet",
+                    {
+                        'field_name': field_name,
+                        'entry_count': entry_count,
+                        'has_insights': False,
+                        'message': 'Keep logging to unlock insights!'
+                    }
+                )
+            
+            confidence = ConfidenceLevel(primary['confidence'])
+            display_config = AnalyticsDisplayStrategy.get_display_config(
+                entry_count, confidence
+            )
+            
+            return success_response(
+                "Primary insight retrieved",
+                {
+                    'field_name': field_name,
+                    'entry_count': entry_count,
+                    'time_span_days': time_span_days,
+                    'primary_insight': primary,
+                    'display_config': display_config
+                }
+            )
+    
+    except Exception as e:
+        return error_response(f"Failed to get insights: {str(e)}", 500)
+
+
+
+
