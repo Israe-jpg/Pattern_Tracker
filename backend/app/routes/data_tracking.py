@@ -763,6 +763,90 @@ def get_field_insights(tracker_id: int):
     except Exception as e:
         return error_response(f"Failed to get insights: {str(e)}", 500)
 
-
-
+#get insights for a specific tracker all fields included
+@data_tracking_bp.route('/<int:tracker_id>/get-all-insights', methods=['GET'])
+@jwt_required()
+def get_insights(tracker_id: int):
+    """
+    Get insights for all fields in a tracker.
+    
+    Returns primary insight for each field (best insight per field).
+    """
+    try:
+        _, user_id = get_current_user()
+        tracker = verify_tracker_ownership(tracker_id, user_id)
+    except ValueError as e:
+        return error_response(str(e), 404)
+    
+    try:
+        
+        # Get all tracking data entries
+        all_entries = TrackingData.query.filter_by(tracker_id=tracker_id)\
+            .order_by(TrackingData.entry_date.asc()).all()
+        
+        if not all_entries:
+            return success_response("No tracking data found", {
+                'fields': [],
+                'total_fields': 0
+            })
+        
+        # Group entries by field name
+        # Structure: {field_name: [list of entries that have this field]}
+        field_entries_map = {}
+        
+        for entry in all_entries:
+            if not entry.data:
+                continue
+            
+            for field_name in entry.data.keys():
+                if field_name not in field_entries_map:
+                    field_entries_map[field_name] = []
+                field_entries_map[field_name].append(entry)
+        
+        # Calculate insights for each field
+        fields_insights = []
+        
+        for field_name, entries in field_entries_map.items():
+            # Calculate metrics for this field
+            entry_count = len(entries)
+            
+            # Time span: from first entry to last entry with this field
+            first_entry_date = entries[0].entry_date
+            last_entry_date = entries[-1].entry_date
+            time_span_days = (last_entry_date - first_entry_date).days + 1
+            
+            # Get primary (best) insight for this field
+            primary_insight = DataSufficiencyChecker.get_primary_insight(
+                field_name,
+                entry_count,
+                time_span_days
+            )
+            
+            if primary_insight:
+                # Get display config
+                confidence = ConfidenceLevel(primary_insight['confidence'])
+                display_config = AnalyticsDisplayStrategy.get_display_config(
+                    entry_count,
+                    confidence
+                )
+                
+                fields_insights.append({
+                    'field_name': field_name,
+                    'entry_count': entry_count,
+                    'time_span_days': time_span_days,
+                    'date_range': {
+                        'start_date': first_entry_date.isoformat(),
+                        'end_date': last_entry_date.isoformat()
+                    },
+                    'primary_insight': primary_insight,
+                    'display_config': display_config
+                })
+        
+        return success_response("All insights retrieved", {
+            'fields': fields_insights,
+            'total_fields': len(fields_insights)
+        })
+        
+    except Exception as e:
+        return error_response(f"Failed to get all insights: {str(e)}", 500)
 
