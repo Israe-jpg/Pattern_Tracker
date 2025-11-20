@@ -342,21 +342,126 @@ class StatisticalAnalyzer:
         )
     
     @staticmethod
-    def calculate_descriptive_stats(values: List[float]) -> Dict[str, float]:
-        """Calculate comprehensive descriptive statistics."""
+    def calculate_descriptive_stats(
+        values: List[float], 
+        field_name: Optional[str] = None, 
+        option: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Calculate comprehensive descriptive statistics.
+        
+        Args:
+            values: List of numeric values
+            field_name: Name of the field (e.g., 'sleep')
+            option: Name of the option (e.g., 'hours', 'quality')
+        
+        Returns both raw values and user-friendly descriptions.
+        """
         arr = np.array(values)
+        
+        # Calculate all statistics
+        mean_val = round(float(np.mean(arr)), 2)
+        median_val = round(float(np.median(arr)), 2)
+        std_dev_val = round(float(np.std(arr)), 2)
+        variance_val = round(float(np.var(arr)), 2)
+        min_val = round(float(np.min(arr)), 2)
+        max_val = round(float(np.max(arr)), 2)
+        range_val = round(float(np.max(arr) - np.min(arr)), 2)
+        q1_val = round(float(np.percentile(arr, 25)), 2)
+        q3_val = round(float(np.percentile(arr, 75)), 2)
+        
+        # Build display name for descriptions
+        display_name = StatisticalAnalyzer._build_display_name(field_name, option)
+        
+        # Generate user-friendly descriptions
+        descriptions = StatisticalAnalyzer._generate_stat_descriptions(
+            mean_val, median_val, std_dev_val, min_val, max_val, 
+            range_val, q1_val, q3_val, len(values), display_name
+        )
         
         return {
             'count': len(values),
-            'mean': round(float(np.mean(arr)), 2),
-            'median': round(float(np.median(arr)), 2),
-            'std_dev': round(float(np.std(arr)), 2),
-            'variance': round(float(np.var(arr)), 2),
-            'min': round(float(np.min(arr)), 2),
-            'max': round(float(np.max(arr)), 2),
-            'range': round(float(np.max(arr) - np.min(arr)), 2),
-            'q1': round(float(np.percentile(arr, 25)), 2),
-            'q3': round(float(np.percentile(arr, 75)), 2)
+            'mean': mean_val,
+            'median': median_val,
+            'std_dev': std_dev_val,
+            'variance': variance_val,
+            'min': min_val,
+            'max': max_val,
+            'range': range_val,
+            'q1': q1_val,
+            'q3': q3_val,
+            'descriptions': descriptions  # User-friendly explanations
+        }
+    
+    @staticmethod
+    def _build_display_name(field_name: Optional[str], option: Optional[str]) -> str:
+        """
+        Build a user-friendly display name from field and option.
+        
+        Examples:
+            field_name='sleep', option='hours' -> 'sleep hours'
+            field_name='energy', option='level' -> 'energy level'
+            field_name='mood', option=None -> 'mood'
+        """
+        if not field_name:
+            return "your values"
+        
+        # Convert field_name from snake_case to readable
+        field_display = field_name.replace('_', ' ').title()
+        
+        if option:
+            # Convert option from snake_case to readable
+            option_display = option.replace('_', ' ').title()
+            return f"{field_display} {option_display}"
+        else:
+            return field_display
+    
+    @staticmethod
+    def _generate_stat_descriptions(
+        mean: float, median: float, std_dev: float,
+        min_val: float, max_val: float, range_val: float,
+        q1: float, q3: float, count: int, display_name: str
+    ) -> Dict[str, str]:
+        """
+        Generate user-friendly descriptions for each statistic.
+        
+        Args:
+            display_name: User-friendly name (e.g., "Sleep Hours", "Energy Level")
+        
+        Returns:
+            Dictionary with plain-language explanations
+        """
+        # Determine consistency level
+        if std_dev < 0.5:
+            consistency = "very consistent"
+        elif std_dev < 1.0:
+            consistency = "fairly consistent"
+        elif std_dev < 2.0:
+            consistency = "somewhat variable"
+        else:
+            consistency = "highly variable"
+        
+        # Determine if mean and median are close (indicates normal distribution)
+        mean_median_diff = abs(mean - median)
+        if mean_median_diff < 0.1:
+            distribution_note = f"Your {display_name.lower()} is well-balanced."
+        elif mean > median:
+            distribution_note = f"You have some high {display_name.lower()} pulling the average up."
+        else:
+            distribution_note = f"You have some low {display_name.lower()} pulling the average down."
+        
+        return {
+            'count': f"You have {count} data points for {display_name.lower()} in this analysis.",
+            'mean': f"Your average {display_name.lower()} is {mean}. This is the typical value you can expect.",
+            'median': f"Your middle {display_name.lower()} is {median}. Half your values are above this, half are below.",
+            'std_dev': f"Your {display_name.lower()} is {consistency} (standard deviation: {std_dev}). Lower values mean more consistency.",
+            'variance': f"Your {display_name.lower()} spread is {round(std_dev**2, 2)} (variance). This measures how much your values vary.",
+            'min': f"Your lowest {display_name.lower()} was {min_val}.",
+            'max': f"Your highest {display_name.lower()} was {max_val}.",
+            'range': f"Your {display_name.lower()} spans {range_val} units (from {min_val} to {max_val}).",
+            'q1': f"25% of your {display_name.lower()} are {q1} or lower. This represents your lower range.",
+            'q3': f"75% of your {display_name.lower()} are {q3} or lower. This represents your upper range.",
+            'summary': f"On average, your {display_name.lower()} is {mean} with a middle value of {median}. {distribution_note} Your data shows {consistency} with values ranging from {min_val} to {max_val}."
         }
 
 
@@ -459,8 +564,11 @@ class TrendLineAnalyzer:
                     field_name, time_range, data_points, min_data_points
                 )
             
+            # Determine which option was used
+            result_option = option if option else (numeric_option_names[0] if numeric_option_names else None)
+            
             # Perform statistical analysis
-            analysis = TrendLineAnalyzer._perform_analysis(data_points)
+            analysis = TrendLineAnalyzer._perform_analysis(data_points, field_name, result_option)
             
             # Build response
             response = {
@@ -544,8 +652,19 @@ class TrendLineAnalyzer:
         return [e for e in all_entries if e.data and field_name in e.data]
     
     @staticmethod
-    def _perform_analysis(data_points: List[Dict]) -> Dict[str, Any]:
-        """Perform complete statistical analysis on data points."""
+    def _perform_analysis(
+        data_points: List[Dict], 
+        field_name: str, 
+        option: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Perform complete statistical analysis on data points.
+        
+        Args:
+            data_points: List of data point dictionaries
+            field_name: Name of the field being analyzed
+            option: Optional specific option name (e.g., 'hours', 'quality')
+        """
         # Extract dates and values
         dates = [datetime.fromisoformat(dp['date']).date() for dp in data_points]
         values = [dp['value'] for dp in data_points]
@@ -567,8 +686,10 @@ class TrendLineAnalyzer:
                 'value': round(trend_value, 2)
             })
         
-        # Calculate descriptive statistics
-        descriptive_stats = StatisticalAnalyzer.calculate_descriptive_stats(values)
+        # Calculate descriptive statistics with field/option context
+        descriptive_stats = StatisticalAnalyzer.calculate_descriptive_stats(
+            values, field_name, option
+        )
         
         # Combine trend stats with descriptive
         trend_stats_output = {
