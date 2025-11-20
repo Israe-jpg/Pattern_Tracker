@@ -40,14 +40,21 @@ class TrendLineAnalyzer:
         return time_range_map.get(time_range)
     
     @staticmethod
-    def _extract_numeric_value(field_data: Any) -> Optional[float]:
+    def _extract_numeric_value(
+        field_data: Any,
+        numeric_option_names: Optional[List[str]] = None
+    ) -> Optional[float]:
         """
         Extract numeric value from field data.
         Handles various data structures:
         - Direct number: 5
-        - Dict with numeric value: {"value": 5}
+        - Dict with numeric value: {"value": 5, "level": 8}
         - Nested dict: {"hours": 8}
         - String number: "5"
+        
+        Args:
+            field_data: The field data to extract from
+            numeric_option_names: List of option names that are numeric (e.g., ["level", "overall"])
         """
         if field_data is None:
             return None
@@ -63,20 +70,122 @@ class TrendLineAnalyzer:
             except (ValueError, TypeError):
                 return None
         
-        # Dictionary - try common keys
+        # Dictionary - check all keys for numeric values
         if isinstance(field_data, dict):
+            # First, check known numeric option names if provided
+            if numeric_option_names:
+                for option_name in numeric_option_names:
+                    if option_name in field_data:
+                        value = field_data[option_name]
+                        if isinstance(value, (int, float)):
+                            return float(value)
+                        # Also try converting strings
+                        if isinstance(value, str):
+                            try:
+                                return float(value)
+                            except (ValueError, TypeError):
+                                continue
+            
             # Try common numeric keys
-            for key in ['value', 'amount', 'hours', 'minutes', 'count', 'rating', 'score']:
-                if key in field_data and isinstance(field_data[key], (int, float)):
-                    return float(field_data[key])
+            for key in ['value', 'amount', 'hours', 'minutes', 'count', 'rating', 'score', 'level', 'overall']:
+                if key in field_data:
+                    value = field_data[key]
+                    if isinstance(value, (int, float)):
+                        return float(value)
+                    # Skip arrays/lists
+                    if isinstance(value, (list, dict)):
+                        continue
+                    # Try converting strings
+                    if isinstance(value, str):
+                        try:
+                            return float(value)
+                        except (ValueError, TypeError):
+                            continue
             
             # If dict has only one key-value pair and value is numeric
             if len(field_data) == 1:
                 value = list(field_data.values())[0]
                 if isinstance(value, (int, float)):
                     return float(value)
+                # Skip arrays/lists
+                if not isinstance(value, (list, dict)):
+                    if isinstance(value, str):
+                        try:
+                            return float(value)
+                        except (ValueError, TypeError):
+                            pass
+            
+            # Last resort: check ALL keys for any numeric value
+            for key, value in field_data.items():
+                # Skip non-numeric types
+                if isinstance(value, (list, dict)):
+                    continue
+                if isinstance(value, (int, float)):
+                    return float(value)
+                if isinstance(value, str):
+                    try:
+                        return float(value)
+                    except (ValueError, TypeError):
+                        continue
         
         return None
+    
+    @staticmethod
+    def _get_numeric_option_names(field_name: str, tracker_id: int) -> List[str]:
+        """
+        Get list of numeric option names for a field.
+        Returns empty list if field not found or has no numeric options.
+        """
+        try:
+            tracker = Tracker.query.get(tracker_id)
+            if not tracker:
+                return []
+            
+            numeric_types = ['number', 'number_input', 'rating', 'slider']
+            numeric_options = []
+            
+            # Check user fields first
+            user_field = TrackerUserField.query.filter_by(
+                tracker_id=tracker_id,
+                field_name=field_name,
+                is_active=True
+            ).first()
+            
+            if user_field:
+                options = FieldOption.query.filter_by(
+                    tracker_user_field_id=user_field.id,
+                    is_active=True
+                ).all()
+                numeric_options = [
+                    opt.option_name for opt in options 
+                    if opt.option_type in numeric_types
+                ]
+                if numeric_options:
+                    return numeric_options
+            
+            # Check category fields
+            category_field = TrackerField.query.filter_by(
+                category_id=tracker.category_id,
+                field_name=field_name,
+                is_active=True
+            ).first()
+            
+            if category_field:
+                options = FieldOption.query.filter_by(
+                    tracker_field_id=category_field.id,
+                    is_active=True
+                ).all()
+                numeric_options = [
+                    opt.option_name for opt in options 
+                    if opt.option_type in numeric_types
+                ]
+                if numeric_options:
+                    return numeric_options
+            
+            return []
+            
+        except Exception:
+            return []
     
     @staticmethod
     def _is_numeric_field(field_name: str, tracker_id: int) -> Tuple[bool, Optional[str]]:
@@ -209,11 +318,17 @@ class TrendLineAnalyzer:
                     'message': 'No data available for this field in the specified time range'
                 }
             
+            # Get numeric option names for this field (to help extraction)
+            numeric_option_names = TrendLineAnalyzer._get_numeric_option_names(field_name, tracker_id)
+            
             # Extract numeric values from entries
             data_points = []
             for entry in entries:
                 field_data = entry.data.get(field_name)
-                numeric_value = TrendLineAnalyzer._extract_numeric_value(field_data)
+                numeric_value = TrendLineAnalyzer._extract_numeric_value(
+                    field_data, 
+                    numeric_option_names=numeric_option_names
+                )
                 
                 if numeric_value is not None:
                     data_points.append({
