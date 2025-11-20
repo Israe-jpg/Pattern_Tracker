@@ -307,7 +307,8 @@ class TrendLineAnalyzer:
         field_name: str,
         tracker_id: int,
         time_range: str = 'all',
-        min_data_points: int = 2
+        min_data_points: int = 2,
+        option: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Analyze trend line for a specific field.
@@ -317,6 +318,8 @@ class TrendLineAnalyzer:
             tracker_id: Tracker ID
             time_range: 'week', 'month', 'all', etc.
             min_data_points: Minimum points required for analysis
+            option: Specific option name to analyze (e.g., 'hours', 'quality')
+                   If None, uses first available numeric option
         
         Returns:
             Complete trend analysis with data, statistics, and metadata
@@ -327,12 +330,28 @@ class TrendLineAnalyzer:
             if not tracker:
                 raise ValueError(f"Tracker {tracker_id} not found")
             
-            # Validate field has numeric options
-            is_valid, error_msg = NumericExtractor.validate_numeric_field(
+            # Get all numeric options for this field
+            numeric_option_names = NumericExtractor.get_numeric_option_names(
                 field_name, tracker_id
             )
-            if not is_valid:
-                raise ValueError(error_msg)
+            
+            # Validate option if provided
+            if option:
+                if option not in numeric_option_names:
+                    available = ', '.join(numeric_option_names) if numeric_option_names else 'none'
+                    raise ValueError(
+                        f"Option '{option}' is not a numeric option for field '{field_name}'. "
+                        f"Available numeric options: {available}"
+                    )
+                # Use only the specified option
+                numeric_option_names = [option]
+            elif not numeric_option_names:
+                # Validate field has numeric options
+                is_valid, error_msg = NumericExtractor.validate_numeric_field(
+                    field_name, tracker_id
+                )
+                if not is_valid:
+                    raise ValueError(error_msg)
             
             # Calculate date range
             end_date = date.today()
@@ -349,11 +368,7 @@ class TrendLineAnalyzer:
                     "No data available for this field in the specified time range"
                 )
             
-            # Extract numeric values
-            numeric_option_names = NumericExtractor.get_numeric_option_names(
-                field_name, tracker_id
-            )
-            
+            # Extract numeric values (using specific option if provided)
             data_points = []
             for entry in entries:
                 field_data = entry.data.get(field_name)
@@ -378,7 +393,7 @@ class TrendLineAnalyzer:
             analysis = TrendLineAnalyzer._perform_analysis(data_points)
             
             # Build response
-            return {
+            response = {
                 'field_name': field_name,
                 'time_range': time_range,
                 'data_points': data_points,
@@ -404,6 +419,17 @@ class TrendLineAnalyzer:
                     )
                 }
             }
+            
+            # Add option info if specific option was analyzed
+            if option:
+                response['option'] = option
+            elif numeric_option_names:
+                # Show which option was used (first one)
+                response['option'] = numeric_option_names[0] if len(numeric_option_names) == 1 else None
+                if len(numeric_option_names) > 1:
+                    response['available_options'] = numeric_option_names
+            
+            return response
             
         except ValueError as e:
             raise e
@@ -527,17 +553,24 @@ class ChartGenerator:
     def generate_trend_chart(
         field_name: str,
         tracker_id: int,
-        time_range: str = 'all'
+        time_range: str = 'all',
+        option: Optional[str] = None
     ) -> bytes:
         """
         Generate PNG chart showing data points and trend line.
+        
+        Args:
+            field_name: Field to analyze
+            tracker_id: Tracker ID
+            time_range: Time range string
+            option: Specific numeric option to analyze (e.g., 'hours', 'quality')
         
         Returns:
             PNG image as bytes
         """
         try:
             # Get trend data
-            result = TrendLineAnalyzer.analyze(field_name, tracker_id, time_range)
+            result = TrendLineAnalyzer.analyze(field_name, tracker_id, time_range, option=option)
             
             # Handle insufficient data
             if not result.get('data_points') or len(result['data_points']) < 2:
@@ -548,6 +581,9 @@ class ChartGenerator:
             data_points = result['data_points']
             trend_points = result['trend_line_points']
             trend_info = result['trend']
+            
+            # Get option from result (may be set by analyze method)
+            result_option = result.get('option') or option
             
             # Extract dates and values
             dates = [datetime.fromisoformat(dp['date']).date() for dp in data_points]
@@ -571,9 +607,16 @@ class ChartGenerator:
             
             # Styling
             ax.set_xlabel('Date', fontsize=13, fontweight='bold', labelpad=10)
-            ax.set_ylabel('Value', fontsize=13, fontweight='bold', labelpad=10)
             
-            title = f'{field_name.replace("_", " ").title()} - Trend Analysis'
+            # Build title and y-label with option info
+            field_display = field_name.replace("_", " ").title()
+            option_display = result_option.replace("_", " ").title() if result_option else None
+            if option_display:
+                title = f'{field_display} - {option_display} - Trend Analysis'
+                ax.set_ylabel(option_display, fontsize=13, fontweight='bold', labelpad=10)
+            else:
+                title = f'{field_display} - Trend Analysis'
+                ax.set_ylabel('Value', fontsize=13, fontweight='bold', labelpad=10)
             subtitle = f'({time_range.replace("_", " ").title()} | r={trend_info["correlation"]:.2f} | p={trend_info["p_value"]:.4f})'
             ax.set_title(f'{title}\n{subtitle}', fontsize=15, fontweight='bold', pad=20)
             

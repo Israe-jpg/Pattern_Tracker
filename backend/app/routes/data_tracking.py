@@ -8,7 +8,6 @@ from datetime import datetime
 import csv
 import json
 import io
-from flask import Response
 
 from app import db
 from app.models.user import User
@@ -868,6 +867,8 @@ def get_trend_line(tracker_id: int):
     Query params:
     - field_name (required): Field to analyze
     - time_range (optional): week, 2_weeks, month, 3_months, 6_months, year, all (default: all)
+    - option (optional): Specific numeric option to analyze (e.g., 'hours', 'quality')
+                        If not provided, uses first available numeric option
     """
     try:
         _, user_id = get_current_user()
@@ -889,8 +890,10 @@ def get_trend_line(tracker_id: int):
                 400
             )
         
+        option = request.args.get('option')  # Optional: specific option to analyze
+        
         # Analyze trend line
-        result = TrendLineAnalyzer.analyze(field_name, tracker_id, time_range)
+        result = TrendLineAnalyzer.analyze(field_name, tracker_id, time_range, option=option)
         
         return success_response("Trend line retrieved successfully", result)
         
@@ -930,17 +933,25 @@ def get_trend_chart(tracker_id: int):
                 400
             )
         
+        option = request.args.get('option')  # Optional: specific option to analyze
+        
         # Generate chart image
         image_data = ChartGenerator.generate_trend_chart(
-            field_name, tracker_id, time_range
+            field_name, tracker_id, time_range, option=option
         )
+        
+        # Build filename
+        filename = f'trend_chart_{field_name}'
+        if option:
+            filename += f'_{option}'
+        filename += f'_{time_range}.png'
         
         # Return image as response
         return Response(
             image_data,
             mimetype='image/png',
             headers={
-                'Content-Disposition': f'inline; filename=trend_chart_{field_name}_{time_range}.png'
+                'Content-Disposition': f'inline; filename={filename}'
             }
         )
         
