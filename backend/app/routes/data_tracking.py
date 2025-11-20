@@ -15,6 +15,7 @@ from app.models.tracker import Tracker
 from app.models.tracking_data import TrackingData
 from app.schemas.tracking_data_schema import TrackingDataSchema
 from app.services.tracking_service import TrackingService
+from app.services.analytics_service import TrendLineAnalyzer
 
 
 from app.services.analytics_data_sufficiency_system import DataSufficiencyChecker, InsightType, ConfidenceLevel, AnalyticsDisplayStrategy
@@ -566,27 +567,27 @@ def export_tracking_data(tracker_id: int):
             return error_response("No tracking data found for this date range", 404)
         
         # Create CSV content
-        output = io.StringIO()
-        csv_writer = csv.writer(output)
-        
-        # Write header
-        csv_writer.writerow(['entry_date', 'entry_data', 'ai_insights'])
-        
-        # Write data rows
-        for tracking_data in tracking_data_to_export:
-            # Convert data and ai_insights to JSON strings
-            entry_data_str = json.dumps(tracking_data.data) if tracking_data.data else ''
-            ai_insights_str = json.dumps(tracking_data.ai_insights) if tracking_data.ai_insights else ''
+        # Use context manager to ensure proper cleanup
+        with io.StringIO() as output:
+            csv_writer = csv.writer(output)
             
-            csv_writer.writerow([
-                tracking_data.entry_date.strftime('%Y-%m-%d'),
-                entry_data_str,
-                ai_insights_str
-            ])
-        
-        # Get CSV content
-        csv_content = output.getvalue()
-        output.close()
+            # Write header
+            csv_writer.writerow(['entry_date', 'entry_data', 'ai_insights'])
+            
+            # Write data rows
+            for tracking_data in tracking_data_to_export:
+                # Convert data and ai_insights to JSON strings
+                entry_data_str = json.dumps(tracking_data.data) if tracking_data.data else ''
+                ai_insights_str = json.dumps(tracking_data.ai_insights) if tracking_data.ai_insights else ''
+                
+                csv_writer.writerow([
+                    tracking_data.entry_date.strftime('%Y-%m-%d'),
+                    entry_data_str,
+                    ai_insights_str
+                ])
+            
+            # Get CSV content before buffer closes
+            csv_content = output.getvalue()
         
         # Create response with proper headers for file download
         response = Response(
@@ -604,6 +605,9 @@ def export_tracking_data(tracker_id: int):
 
 #--------------------------------------------------------------
 #ANALYTICS ROUTES
+
+#----------------------------------------------------------------
+#ANALYTICS SUFFICIENCY SYSTEM ROUTES
 
 #get insights for a specific tracker about a field
 @data_tracking_bp.route('/<int:tracker_id>/get-insights-for-field', methods=['GET'])
@@ -849,4 +853,100 @@ def get_insights(tracker_id: int):
         
     except Exception as e:
         return error_response(f"Failed to get all insights: {str(e)}", 500)
+
+
+#--------------------------------------------------------------
+#ANALYTICS TREND LINE ROUTES
+
+@data_tracking_bp.route('/<int:tracker_id>/get-trend-line', methods=['GET'])
+@jwt_required()
+def get_trend_line(tracker_id: int):
+    """
+    Get trend line analysis for a specific field.
+    
+    Query params:
+    - field_name (required): Field to analyze
+    - time_range (optional): week, 2_weeks, month, 3_months, 6_months, year, all (default: all)
+    """
+    try:
+        _, user_id = get_current_user()
+        tracker = verify_tracker_ownership(tracker_id, user_id)
+    except ValueError as e:
+        return error_response(str(e), 404)
+    
+    try:
+        # Get parameters
+        field_name = request.args.get('field_name')
+        if not field_name:
+            return error_response("field_name query parameter is required", 400)
+        
+        time_range = request.args.get('time_range', 'all')
+        valid_ranges = ['week', '2_weeks', 'month', '3_months', '6_months', 'year', 'all']
+        if time_range not in valid_ranges:
+            return error_response(
+                f"Invalid time_range. Valid: {', '.join(valid_ranges)}",
+                400
+            )
+        
+        # Analyze trend line
+        result = TrendLineAnalyzer.analyze(field_name, tracker_id, time_range)
+        
+        return success_response("Trend line retrieved successfully", result)
+        
+    except ValueError as e:
+        return error_response(str(e), 400)
+    except Exception as e:
+        return error_response(f"Failed to get trend line: {str(e)}", 500)
+
+
+@data_tracking_bp.route('/<int:tracker_id>/trend-chart', methods=['GET'])
+@jwt_required()
+def get_trend_chart(tracker_id: int):
+    """
+    Get trend line chart image for a specific field.
+    
+    Query params:
+    - field_name (required): Field to analyze
+    - time_range (optional): week, 2_weeks, month, 3_months, 6_months, year, all (default: all)
+    """
+    try:
+        _, user_id = get_current_user()
+        tracker = verify_tracker_ownership(tracker_id, user_id)
+    except ValueError as e:
+        return error_response(str(e), 404)
+    
+    try:
+        # Get parameters
+        field_name = request.args.get('field_name')
+        if not field_name:
+            return error_response("field_name query parameter is required", 400)
+        
+        time_range = request.args.get('time_range', 'all')
+        valid_ranges = ['week', '2_weeks', 'month', '3_months', '6_months', 'year', 'all']
+        if time_range not in valid_ranges:
+            return error_response(
+                f"Invalid time_range. Valid: {', '.join(valid_ranges)}",
+                400
+            )
+        
+        # Generate chart image
+        from app.services.analytics_service import TrendLineAnalyzer
+        image_data = TrendLineAnalyzer.generate_chart_image(
+            field_name, tracker_id, time_range
+        )
+        
+        # Return image as response
+        from flask import Response
+        return Response(
+            image_data,
+            mimetype='image/png',
+            headers={
+                'Content-Disposition': f'inline; filename=trend_chart_{field_name}_{time_range}.png'
+            }
+        )
+        
+    except ValueError as e:
+        return error_response(str(e), 400)
+    except Exception as e:
+        return error_response(f"Failed to generate chart: {str(e)}", 500)
 
