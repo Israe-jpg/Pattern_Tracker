@@ -8,6 +8,7 @@ from datetime import datetime
 import csv
 import json
 import io
+from flask import Response
 
 from app import db
 from app.models.user import User
@@ -15,7 +16,7 @@ from app.models.tracker import Tracker
 from app.models.tracking_data import TrackingData
 from app.schemas.tracking_data_schema import TrackingDataSchema
 from app.services.tracking_service import TrackingService
-from app.services.analytics_service import TrendLineAnalyzer
+from app.services.analytics_service import TrendLineAnalyzer, ChartGenerator
 
 
 from app.services.analytics_data_sufficiency_system import DataSufficiencyChecker, InsightType, ConfidenceLevel, AnalyticsDisplayStrategy
@@ -930,13 +931,11 @@ def get_trend_chart(tracker_id: int):
             )
         
         # Generate chart image
-        from app.services.analytics_service import TrendLineAnalyzer
-        image_data = TrendLineAnalyzer.generate_chart_image(
+        image_data = ChartGenerator.generate_trend_chart(
             field_name, tracker_id, time_range
         )
         
         # Return image as response
-        from flask import Response
         return Response(
             image_data,
             mimetype='image/png',
