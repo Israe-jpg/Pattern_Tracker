@@ -247,6 +247,13 @@ class StatisticalAnalyzer:
         
         # Statistical significance (convert to Python bool for JSON serialization)
         is_significant = bool(p_value < 0.05)
+        confidence = 'high' if is_significant and abs(r_value) > 0.7 else \
+                     'medium' if is_significant else 'low'
+        
+        # Generate user-friendly summary message
+        summary = StatisticalAnalyzer._generate_user_summary(
+            direction, strength, confidence, abs(r_value), is_significant
+        )
         
         return {
             'direction': direction,
@@ -257,8 +264,8 @@ class StatisticalAnalyzer:
             'p_value': round(p_value, 6),
             'std_error': round(std_err, 4),
             'is_significant': is_significant,
-            'confidence': 'high' if is_significant and abs(r_value) > 0.7 else 
-                         'medium' if is_significant else 'low'
+            'confidence': confidence,
+            'summary': summary  # User-friendly interpretation
         }
     
     @staticmethod
@@ -270,6 +277,69 @@ class StatisticalAnalyzer:
             return 'moderate'
         else:
             return 'weak'
+    
+    @staticmethod
+    def _generate_user_summary(
+        direction: str,
+        strength: str,
+        confidence: str,
+        abs_r_value: float,
+        is_significant: bool
+    ) -> str:
+        """
+        Generate user-friendly summary message explaining the trend.
+        
+        Args:
+            direction: 'increasing', 'decreasing', or 'stable'
+            strength: 'strong', 'moderate', 'weak', or 'none'
+            confidence: 'high', 'medium', or 'low'
+            abs_r_value: Absolute correlation value (0-1)
+            is_significant: Whether trend is statistically significant
+        
+        Returns:
+            Human-readable summary string
+        """
+        if direction == 'stable':
+            if is_significant:
+                return "Your data shows a stable trend with no significant change over time."
+            else:
+                return "Your data appears stable, but there's not enough evidence to confirm a clear pattern."
+        
+        # Build direction description
+        direction_desc = {
+            'increasing': 'increasing',
+            'decreasing': 'decreasing'
+        }.get(direction, 'changing')
+        
+        # Build strength description
+        strength_desc = {
+            'strong': 'strong',
+            'moderate': 'moderate',
+            'weak': 'weak'
+        }.get(strength, 'some')
+        
+        # Build confidence description
+        if confidence == 'high':
+            confidence_desc = "high confidence"
+        elif confidence == 'medium':
+            confidence_desc = "moderate confidence"
+        else:
+            confidence_desc = "low confidence"
+        
+        # Build significance message
+        if is_significant:
+            significance_msg = "This trend is statistically significant"
+        else:
+            significance_msg = "This trend may not be statistically significant"
+        
+        # Combine into readable message
+        if strength == 'none':
+            return f"Your data shows a {direction_desc} trend, but the pattern is not clear enough to be confident."
+        
+        return (
+            f"Your data shows a {strength_desc} {direction_desc} trend "
+            f"with {confidence_desc}. {significance_msg}."
+        )
     
     @staticmethod
     def calculate_descriptive_stats(values: List[float]) -> Dict[str, float]:
@@ -538,17 +608,17 @@ class TrendLineAnalyzer:
         """Response when insufficient data points."""
         return {
             'field_name': field_name,
-            'time_range': time_range,
-            'data_points': data_points,
-            'trend': None,
-            'statistics': {'total_entries': len(data_points)},
-            'message': f'Need at least {min_required} data points to calculate trend (found {len(data_points)})'
-        }
+        'time_range': time_range,
+        'data_points': data_points,
+        'trend': None,
+        'statistics': {'total_entries': len(data_points)},
+        'message': f'Need at least {min_required} data points to calculate trend (found {len(data_points)})'
+}
 
 
 class ChartGenerator:
     """Generates matplotlib charts for trend visualization."""
-    
+
     @staticmethod
     def generate_trend_chart(
         field_name: str,
@@ -650,7 +720,7 @@ class ChartGenerator:
             
         except Exception as e:
             return ChartGenerator._generate_error_chart(f'Error: {str(e)}')
-    
+
     @staticmethod
     def _generate_error_chart(message: str) -> bytes:
         """Generate error message chart."""
