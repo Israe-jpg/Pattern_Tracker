@@ -578,6 +578,7 @@ class TrendLineAnalyzer:
     TIME_RANGE_DAYS = {
         'week': 7,
         '2_weeks': 14,
+        '3_weeks': 21,
         'month': 30,
         '3_months': 90,
         '6_months': 180,
@@ -591,7 +592,9 @@ class TrendLineAnalyzer:
         time_range: str = 'all',
         min_data_points: int = 2,
         option: Optional[str] = None,
-        skip_sufficiency_check: bool = False  # NEW: Allow bypassing check
+        skip_sufficiency_check: bool = False,  # NEW: Allow bypassing check
+        start_date: Optional[date] = None,  # Optional: custom start date
+        end_date: Optional[date] = None  # Optional: custom end date
     ) -> Dict[str, Any]:
         """
         Analyze trend line for a specific field.
@@ -646,8 +649,11 @@ class TrendLineAnalyzer:
                     raise ValueError(error_msg)
             
             # Calculate date range
-            end_date = date.today()
-            start_date = TrendLineAnalyzer._calculate_start_date(time_range, end_date)
+            # Use provided dates if available, otherwise calculate from time_range
+            if end_date is None:
+                end_date = date.today()
+            if start_date is None:
+                start_date = TrendLineAnalyzer._calculate_start_date(time_range, end_date)
             
             # Fetch entries
             entries = TrendLineAnalyzer._fetch_entries(
@@ -904,7 +910,9 @@ class ChartGenerator:
         field_name: str,
         tracker_id: int,
         time_range: str = 'all',
-        option: Optional[str] = None
+        option: Optional[str] = None,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None
     ) -> bytes:
         """
         Generate PNG chart showing data points and trend line.
@@ -1064,6 +1072,7 @@ class CategoricalAnalyzer:
     TIME_RANGE_DAYS = {
         'week': 7,
         '2_weeks': 14,
+        '3_weeks': 21,
         'month': 30,
         '3_months': 90,
         '6_months': 180,
@@ -1075,7 +1084,9 @@ class CategoricalAnalyzer:
         field_name: str,
         tracker_id: int,
         time_range: str = 'all',
-        option: Optional[str] = None
+        option: Optional[str] = None,
+        start_date: Optional[date] = None,  # Optional: custom start date
+        end_date: Optional[date] = None  # Optional: custom end date
     ) -> Dict[str, Any]:
         """
         Analyze categorical/non-numeric field patterns.
@@ -1096,8 +1107,11 @@ class CategoricalAnalyzer:
                 raise ValueError(f"Tracker {tracker_id} not found")
             
             # Calculate date range
-            end_date = date.today()
-            start_date = CategoricalAnalyzer._calculate_start_date(time_range, end_date)
+            # Use provided dates if available, otherwise calculate from time_range
+            if end_date is None:
+                end_date = date.today()
+            if start_date is None:
+                start_date = CategoricalAnalyzer._calculate_start_date(time_range, end_date)
             
             # Fetch entries
             entries = CategoricalAnalyzer._fetch_entries(
@@ -1327,7 +1341,9 @@ class CategoricalAnalyzer:
         field_name: str,
         tracker_id: int,
         time_range: str = 'all',
-        option: Optional[str] = None
+        option: Optional[str] = None,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None
     ) -> bytes:
         """
         Generate bar chart showing frequency distribution of categorical data.
@@ -1337,7 +1353,10 @@ class CategoricalAnalyzer:
         """
         try:
             # Get frequency data
-            result = CategoricalAnalyzer.analyze(field_name, tracker_id, time_range, option)
+            result = CategoricalAnalyzer.analyze(
+                field_name, tracker_id, time_range, option,
+                start_date=start_date, end_date=end_date
+            )
             
             # Handle insufficient data
             if not result.get('frequency') or result.get('message'):
@@ -1405,7 +1424,9 @@ class UnifiedAnalyzer:
         tracker_id: int,
         time_range: str = 'all',
         option: Optional[str] = None,
-        force_type: Optional[str] = None  # Allow manual override: 'numeric' or 'categorical'
+        force_type: Optional[str] = None,  # Allow manual override: 'numeric' or 'categorical'
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None
     ) -> Dict[str, Any]:
         """
         Automatically analyze field using appropriate analyzer.
@@ -1435,12 +1456,14 @@ class UnifiedAnalyzer:
             # Route to appropriate analyzer
             if field_type == 'numeric':
                 result = TrendLineAnalyzer.analyze(
-                    field_name, tracker_id, time_range, option=option
+                    field_name, tracker_id, time_range, option=option,
+                    start_date=start_date, end_date=end_date
                 )
                 result['analysis_type'] = 'trend'
             else:
                 result = CategoricalAnalyzer.analyze(
-                    field_name, tracker_id, time_range, option=option
+                    field_name, tracker_id, time_range, option=option,
+                    start_date=start_date, end_date=end_date
                 )
                 result['analysis_type'] = 'categorical'
             
@@ -1459,7 +1482,9 @@ class UnifiedAnalyzer:
         tracker_id: int,
         time_range: str = 'all',
         option: Optional[str] = None,
-        force_type: Optional[str] = None
+        force_type: Optional[str] = None,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None
     ) -> bytes:
         """
         Generate appropriate chart based on field type.
@@ -1479,11 +1504,13 @@ class UnifiedAnalyzer:
             # Generate appropriate chart
             if field_type == 'numeric':
                 return ChartGenerator.generate_trend_chart(
-                    field_name, tracker_id, time_range, option
+                    field_name, tracker_id, time_range, option,
+                    start_date=start_date, end_date=end_date
                 )
             else:
                 return CategoricalAnalyzer.generate_bar_chart(
-                    field_name, tracker_id, time_range, option
+                    field_name, tracker_id, time_range, option,
+                    start_date=start_date, end_date=end_date
                 )
                 
         except Exception as e:

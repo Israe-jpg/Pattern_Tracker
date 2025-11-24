@@ -60,6 +60,34 @@ def success_response(message: str, data: Dict[str, Any] = None, status_code: int
         response['data'] = data
     return jsonify(response), status_code
 
+def parse_optional_dates() -> Tuple[Optional[date], Optional[date], Optional[Tuple[Dict, int]]]:
+    """
+    Parses optional start_date and end_date query parameters.
+    Returns: (start_date, end_date, None) on success, or (None, None, error_response) on validation failure
+    """
+    start_date_str = request.args.get('start_date')
+    end_date_str = request.args.get('end_date')
+    
+    start_date = None
+    end_date = None
+    
+    if start_date_str:
+        try:
+            start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+        except ValueError:
+            return None, None, error_response("Invalid start_date format. Use YYYY-MM-DD", 400)
+    
+    if end_date_str:
+        try:
+            end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+        except ValueError:
+            return None, None, error_response("Invalid end_date format. Use YYYY-MM-DD", 400)
+    
+    if start_date and end_date and start_date > end_date:
+        return None, None, error_response("start_date must be before or equal to end_date", 400)
+    
+    return start_date, end_date, None
+
 def validate_pagination_params() -> Tuple[Optional[int], Optional[int], Optional[Tuple[Dict, int]]]:
     """
     Validates pagination query parameters.
@@ -639,22 +667,34 @@ def get_field_insights(tracker_id: int):
         requested_insight_type = request.args.get('insight_type')
         option = request.args.get('option')  # Optional: specific option to check
         
+        # Parse optional date parameters (if provided, use them; otherwise calculate from time_range)
+        custom_start_date, custom_end_date, error = parse_optional_dates()
+        if error:
+            return error
+        
         # Calculate date range
-        end_date = date.today()
-        time_range_days = {
-            'week': 7, '2_weeks': 14, 'month': 30,
-            '3_months': 90, '6_months': 180, 'year': 365, 'all': None
-        }
+        if custom_end_date:
+            end_date = custom_end_date
+        else:
+            end_date = date.today()
         
-        if time_range not in time_range_days:
-            return error_response(
-                f"Invalid time_range. Valid: {', '.join(time_range_days.keys())}",
-                400
-            )
-        
-        start_date = None
-        if time_range != 'all':
-            start_date = end_date - timedelta(days=time_range_days[time_range])
+        if custom_start_date:
+            start_date = custom_start_date
+        else:
+            time_range_days = {
+                'week': 7, '2_weeks': 14, 'month': 30,
+                '3_months': 90, '6_months': 180, 'year': 365, 'all': None
+            }
+            
+            if time_range not in time_range_days:
+                return error_response(
+                    f"Invalid time_range. Valid: {', '.join(time_range_days.keys())}",
+                    400
+                )
+            
+            start_date = None
+            if time_range != 'all':
+                start_date = end_date - timedelta(days=time_range_days[time_range])
         
         # Get tracking data
         query = TrackingData.query.filter_by(tracker_id=tracker_id)
@@ -916,7 +956,7 @@ def get_unified_analysis(tracker_id: int):
             return error_response("field_name query parameter is required", 400)
         
         time_range = request.args.get('time_range', 'all')
-        valid_ranges = ['week', '2_weeks', 'month', '3_months', '6_months', 'year', 'all']
+        valid_ranges = ['week', '2_weeks','3_weeks', 'month', '3_months', '6_months', 'year', 'all']
         if time_range not in valid_ranges:
             return error_response(
                 f"Invalid time_range. Valid: {', '.join(valid_ranges)}",
@@ -925,9 +965,15 @@ def get_unified_analysis(tracker_id: int):
         
         option = request.args.get('option')  # Optional: specific option to analyze
         
+        # Parse optional date parameters
+        start_date, end_date, error = parse_optional_dates()
+        if error:
+            return error
+        
         # Generate unified analysis
         result = UnifiedAnalyzer.analyze(
-            field_name, tracker_id, time_range, option=option
+            field_name, tracker_id, time_range, option=option,
+            start_date=start_date, end_date=end_date
         )
         return success_response("Unified analysis retrieved successfully", result)
     except ValueError as e:
@@ -954,7 +1000,7 @@ def get_unified_chart(tracker_id: int):
             return error_response("field_name query parameter is required", 400)
 
         time_range = request.args.get('time_range', 'all')
-        valid_ranges = ['week', '2_weeks', 'month', '3_months', '6_months', 'year', 'all']
+        valid_ranges = ['week', '2_weeks', '3_weeks', 'month', '3_months', '6_months', 'year', 'all']
         if time_range not in valid_ranges:
             return error_response(
                 f"Invalid time_range. Valid: {', '.join(valid_ranges)}",
@@ -963,9 +1009,15 @@ def get_unified_chart(tracker_id: int):
         
         option = request.args.get('option')  # Optional: specific option to analyze
         
+        # Parse optional date parameters
+        start_date, end_date, error = parse_optional_dates()
+        if error:
+            return error
+        
         # Generate unified chart (returns bytes - PNG image)
         image_data = UnifiedAnalyzer.generate_chart(
-            field_name, tracker_id, time_range, option=option
+            field_name, tracker_id, time_range, option=option,
+            start_date=start_date, end_date=end_date
         )
         
         # Build filename
