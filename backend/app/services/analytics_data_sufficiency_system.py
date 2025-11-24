@@ -95,6 +95,10 @@ class DataSufficiencyChecker:
     ) -> Dict[str, Any]:
         
         """Check if a field has enough data for a specific insight."""
+        # Ensure types are correct
+        entry_count = int(entry_count)
+        time_span_days = int(time_span_days)
+        
         min_required = DataSufficiencyChecker.MINIMUM_REQUIREMENTS[insight_type]
         recommended = DataSufficiencyChecker.RECOMMENDED_REQUIREMENTS.get(
             insight_type,

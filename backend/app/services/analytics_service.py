@@ -578,7 +578,7 @@ class TrendLineAnalyzer:
             # Determine which option was used
             result_option = option if option else (numeric_option_names[0] if numeric_option_names else None)
             
-            # Perform statistical analysis
+            # Perform statistical analysis (no sufficiency check - just calculate the trend)
             analysis = TrendLineAnalyzer._perform_analysis(data_points, field_name, result_option)
             
 
@@ -741,13 +741,14 @@ class TrendLineAnalyzer:
     ) -> Dict[str, Any]:
         """Response when insufficient data points."""
         return {
-        'field_name': field_name,
-        'time_range': time_range,
-        'data_points': data_points,
-        'trend': None,
-        'statistics': {'total_entries': len(data_points)},
-        'message': f'Need at least {min_required} data points to calculate trend (found {len(data_points)})'
-}
+            'field_name': field_name,
+            'time_range': time_range,
+            'data_points': data_points,
+            'trend': None,
+            'trend_line_points': [],  # Empty list for consistency
+            'statistics': {'total_entries': len(data_points)},
+            'message': f'Need at least {min_required} data points to calculate trend (found {len(data_points)})'
+        }
 
 
 class ChartGenerator:
@@ -776,15 +777,39 @@ class ChartGenerator:
             # Get trend data
             result = TrendLineAnalyzer.analyze(field_name, tracker_id, time_range, option=option)
             
-            # Handle insufficient data
+            # Handle insufficient data or missing trend data
             if not result.get('data_points') or len(result['data_points']) < 2:
                 return ChartGenerator._generate_error_chart(
                     result.get('message', 'Insufficient data for chart')
                 )
             
+            # Check if trend_line_points exists
+            if 'trend_line_points' not in result or not result.get('trend_line_points'):
+                return ChartGenerator._generate_error_chart(
+                    'Trend line points not available. Data may be insufficient for trend analysis.'
+                )
+            
+            # Check if trend info exists
+            if 'trend' not in result or not result.get('trend'):
+                return ChartGenerator._generate_error_chart(
+                    'Trend information not available. Unable to generate chart.'
+                )
+            
             data_points = result['data_points']
-            trend_points = result['trend_line_points']
-            trend_info = result['trend']
+            trend_points = result.get('trend_line_points', [])
+            trend_info = result.get('trend', {})
+            
+            # Validate trend_points structure
+            if not isinstance(trend_points, list) or len(trend_points) == 0:
+                return ChartGenerator._generate_error_chart(
+                    'Trend line points not available. Unable to generate chart.'
+                )
+            
+            # Validate trend_points have required structure
+            if not all('value' in tp for tp in trend_points):
+                return ChartGenerator._generate_error_chart(
+                    'Invalid trend line points structure. Unable to generate chart.'
+                )
             
             # Get option from result (may be set by analyze method)
             result_option = result.get('option') or option
@@ -793,6 +818,12 @@ class ChartGenerator:
             dates = [datetime.fromisoformat(dp['date']).date() for dp in data_points]
             values = [dp['value'] for dp in data_points]
             trend_values = [tp['value'] for tp in trend_points]
+            
+            # Ensure trend_values and values have same length
+            if len(trend_values) != len(values):
+                return ChartGenerator._generate_error_chart(
+                    f'Mismatch between data points ({len(values)}) and trend points ({len(trend_values)}). Unable to generate chart.'
+                )
             
             # Create figure
             fig, ax = plt.subplots(figsize=(12, 7))
