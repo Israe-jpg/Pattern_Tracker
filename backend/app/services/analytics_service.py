@@ -1084,6 +1084,9 @@ class CategoricalAnalyzer:
         
         # Most common
         most_common = max(frequency.items(), key=lambda x: x[1])
+
+        # Least common
+        least_common = min(frequency.items(), key=lambda x: x[1])
         
         # Percentage distribution (ensure Python float types)
         distribution = {
@@ -1102,6 +1105,11 @@ class CategoricalAnalyzer:
                 'value': str(most_common[0]),  # Ensure string
                 'count': int(most_common[1]),  # Ensure int
                 'percentage': round(float(most_common[1] / total) * 100, 1)  # Ensure float
+            },
+            'least_common': {
+                'value': str(least_common[0]),  # Ensure string
+                'count': int(least_common[1]),  # Ensure int
+                'percentage': round(float(least_common[1] / total) * 100, 1)  # Ensure float
             },
             'distribution': distribution,
             'diversity': 'high' if diversity > 5 else 'medium' if diversity > 2 else 'low'
