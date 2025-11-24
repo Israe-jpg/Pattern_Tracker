@@ -15,7 +15,7 @@ from app.models.tracker import Tracker
 from app.models.tracking_data import TrackingData
 from app.schemas.tracking_data_schema import TrackingDataSchema
 from app.services.tracking_service import TrackingService
-from app.services.analytics_service import TrendLineAnalyzer, ChartGenerator
+from app.services.analytics_service import TrendLineAnalyzer, ChartGenerator, CategoricalAnalyzer
 
 
 from app.services.analytics_data_sufficiency_system import DataSufficiencyChecker, InsightType, ConfidenceLevel, AnalyticsDisplayStrategy
@@ -960,3 +960,103 @@ def get_trend_chart(tracker_id: int):
     except Exception as e:
         return error_response(f"Failed to generate chart: {str(e)}", 500)
 
+#---------------------------------------------------------------
+#ANALYTICS CATEGORICAL BAR CHARTS ROUTES
+
+@data_tracking_bp.route('/<int:tracker_id>/get-categorical-analysis', methods=['GET'])
+@jwt_required()
+def get_categorical_analysis(tracker_id: int):
+    """
+    Get categorical analysis for a specific field.
+    
+    Query params:
+    - field_name (required): Field to analyze
+    - time_range (optional): week, 2_weeks, month, 3_months, 6_months, year, all (default: all)
+    """
+    try:
+        _, user_id = get_current_user()
+        tracker = verify_tracker_ownership(tracker_id, user_id)
+    except ValueError as e:
+        return error_response(str(e), 404)
+    
+    try:
+        # Get parameters
+        field_name = request.args.get('field_name')
+        if not field_name:
+            return error_response("field_name query parameter is required", 400)
+        
+        time_range = request.args.get('time_range', 'all')
+        valid_ranges = ['week', '2_weeks', 'month', '3_months', '6_months', 'year', 'all']
+        if time_range not in valid_ranges:
+            return error_response(
+                f"Invalid time_range. Valid: {', '.join(valid_ranges)}",
+                400
+            )
+        
+        option = request.args.get('option')  # Optional: specific option to analyze
+        
+        # Generate chart image
+        result = CategoricalAnalyzer.analyze(
+            field_name, tracker_id, time_range, option=option
+        )
+        return success_response("Categorical analysis retrieved successfully", result)
+    except ValueError as e:
+        return error_response(str(e), 400)
+    except Exception as e:
+        return error_response(f"Failed to get categorical analysis: {str(e)}", 500)
+
+
+@data_tracking_bp.route('/<int:tracker_id>/get-categorical-bar-chart', methods=['GET'])
+@jwt_required()
+def get_categorical_bar_chart(tracker_id: int):
+    """
+    Get bar chart for a specific field.
+    
+    Query params:
+    - field_name (required): Field to analyze
+    - time_range (optional): week, 2_weeks, month, 3_months, 6_months, year, all (default: all)
+    """
+    try:
+        _, user_id = get_current_user()
+        tracker = verify_tracker_ownership(tracker_id, user_id)
+    except ValueError as e:
+        return error_response(str(e), 404)
+    try:
+        # Get parameters
+        field_name = request.args.get('field_name')
+        if not field_name:
+            return error_response("field_name query parameter is required", 400)
+        
+        time_range = request.args.get('time_range', 'all')
+        valid_ranges = ['week', '2_weeks', 'month', '3_months', '6_months', 'year', 'all']
+        if time_range not in valid_ranges:
+            return error_response(
+                f"Invalid time_range. Valid: {', '.join(valid_ranges)}",
+                400 
+            )
+        
+        option = request.args.get('option')  # Optional: specific option to analyze
+        
+        # Generate chart image
+        image_data = CategoricalAnalyzer.generate_bar_chart(
+            field_name, tracker_id, time_range, option=option
+        )
+        
+        # Build filename
+        filename = f'bar_chart_{field_name}'
+        if option:
+            filename += f'_{option}'
+        filename += f'_{time_range}.png'
+        
+        # Return image as response (not JSON!)
+        return Response(
+            image_data,
+            mimetype='image/png',
+            headers={
+                'Content-Disposition': f'inline; filename={filename}'
+            }
+        )
+    except ValueError as e:
+        return error_response(str(e), 400)
+    except Exception as e:
+        return error_response(f"Failed to get categorical bar chart: {str(e)}", 500)

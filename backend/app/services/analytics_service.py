@@ -438,7 +438,7 @@ class StatisticalAnalyzer:
             consistency = "fairly consistent"
         elif std_dev < 2.0:
             consistency = "somewhat variable"
-            else:
+        else:
             consistency = "highly variable"
         
         # Determine if mean and median are close (indicates normal distribution)
@@ -447,7 +447,7 @@ class StatisticalAnalyzer:
             distribution_note = f"Your {display_name.lower()} is well-balanced."
         elif mean > median:
             distribution_note = f"You have some high {display_name.lower()} pulling the average up."
-            else:
+        else:
             distribution_note = f"You have some low {display_name.lower()} pulling the average down."
         
         return {
@@ -735,8 +735,8 @@ class TrendLineAnalyzer:
         min_required: int
     ) -> Dict[str, Any]:
         """Response when insufficient data points."""
-            return {
-                'field_name': field_name,
+        return {
+        'field_name': field_name,
         'time_range': time_range,
         'data_points': data_points,
         'trend': None,
@@ -1085,22 +1085,23 @@ class CategoricalAnalyzer:
         # Most common
         most_common = max(frequency.items(), key=lambda x: x[1])
         
-        # Percentage distribution
+        # Percentage distribution (ensure Python float types)
         distribution = {
-            key: round((count / total) * 100, 1)
+            key: round(float(count / total) * 100, 1)
             for key, count in frequency.items()
         }
         
         # Diversity (how many unique values)
         diversity = len(frequency)
         
+        # Ensure all values are Python types for JSON serialization
         return {
-            'total_count': total,
-            'unique_values': diversity,
+            'total_count': int(total),
+            'unique_values': int(diversity),
             'most_common': {
-                'value': most_common[0],
-                'count': most_common[1],
-                'percentage': round((most_common[1] / total) * 100, 1)
+                'value': str(most_common[0]),  # Ensure string
+                'count': int(most_common[1]),  # Ensure int
+                'percentage': round(float(most_common[1] / total) * 100, 1)  # Ensure float
             },
             'distribution': distribution,
             'diversity': 'high' if diversity > 5 else 'medium' if diversity > 2 else 'low'
