@@ -438,7 +438,7 @@ class StatisticalAnalyzer:
             consistency = "fairly consistent"
         elif std_dev < 2.0:
             consistency = "somewhat variable"
-        else:
+            else:
             consistency = "highly variable"
         
         # Determine if mean and median are close (indicates normal distribution)
@@ -447,7 +447,7 @@ class StatisticalAnalyzer:
             distribution_note = f"Your {display_name.lower()} is well-balanced."
         elif mean > median:
             distribution_note = f"You have some high {display_name.lower()} pulling the average up."
-        else:
+            else:
             distribution_note = f"You have some low {display_name.lower()} pulling the average down."
         
         return {
@@ -466,7 +466,15 @@ class StatisticalAnalyzer:
 
 
 class TrendLineAnalyzer:
-    """Main analyzer for calculating trend lines from tracking data."""
+    """
+    Analyzer for NUMERIC data - calculates trend lines using linear regression.
+    
+    Use this for:
+    - Numeric fields (integers, floats)
+    - Fields with numeric options (e.g., sleep.hours, energy.level)
+    
+    Returns: Line chart with trend analysis
+    """
     
     TIME_RANGE_DAYS = {
         'week': 7,
@@ -727,8 +735,8 @@ class TrendLineAnalyzer:
         min_required: int
     ) -> Dict[str, Any]:
         """Response when insufficient data points."""
-        return {
-            'field_name': field_name,
+            return {
+                'field_name': field_name,
         'time_range': time_range,
         'data_points': data_points,
         'trend': None,
@@ -858,3 +866,339 @@ class ChartGenerator:
         
         plt.close(fig)
         return image_data
+
+
+class CategoricalAnalyzer:
+    """
+    Analyzer for NON-NUMERIC data - calculates frequency and distribution patterns.
+    
+    Use this for:
+    - Categorical fields (strings, enums)
+    - Boolean fields (yes/no)
+    - Array fields (multiple choice)
+    
+    Returns: Bar chart with frequency analysis
+    """
+    
+    TIME_RANGE_DAYS = {
+        'week': 7,
+        '2_weeks': 14,
+        'month': 30,
+        '3_months': 90,
+        '6_months': 180,
+        'year': 365
+    }
+    
+    @staticmethod
+    def analyze(
+        field_name: str,
+        tracker_id: int,
+        time_range: str = 'all',
+        option: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Analyze categorical/non-numeric field patterns.
+        
+        Args:
+            field_name: Field to analyze
+            tracker_id: Tracker ID
+            time_range: 'week', 'month', 'all', etc.
+            option: Specific option name to analyze (e.g., 'physical', 'emotional')
+        
+        Returns:
+            Frequency analysis with distribution patterns
+        """
+        try:
+            # Validate tracker
+            tracker = Tracker.query.get(tracker_id)
+            if not tracker:
+                raise ValueError(f"Tracker {tracker_id} not found")
+            
+            # Calculate date range
+            end_date = date.today()
+            start_date = CategoricalAnalyzer._calculate_start_date(time_range, end_date)
+            
+            # Fetch entries
+            entries = CategoricalAnalyzer._fetch_entries(
+                tracker_id, field_name, start_date, end_date
+            )
+            
+            if not entries:
+                return CategoricalAnalyzer._no_data_response(
+                    field_name, time_range,
+                    "No data available for this field in the specified time range"
+                )
+            
+            # Extract categorical values
+            frequency_data = CategoricalAnalyzer._extract_frequencies(
+                entries, field_name, option
+            )
+            
+            if not frequency_data:
+                return CategoricalAnalyzer._no_data_response(
+                    field_name, time_range,
+                    "No valid categorical data found for this field"
+                )
+            
+            # Calculate statistics
+            stats = CategoricalAnalyzer._calculate_categorical_stats(frequency_data)
+            
+            # Build response
+            display_name = CategoricalAnalyzer._build_display_name(field_name, option)
+            
+            return {
+                'field_name': field_name,
+                'option': option,
+                'time_range': time_range,
+                'display_name': display_name,
+                'frequency': frequency_data,
+                'statistics': stats,
+                'metadata': {
+                    'total_entries': len(entries),
+                    'unique_values': len(frequency_data),
+                    'date_range': {
+                        'start_date': entries[0].entry_date.isoformat(),
+                        'end_date': entries[-1].entry_date.isoformat()
+                    }
+                }
+            }
+            
+        except ValueError as e:
+            raise e
+        except Exception as e:
+            raise ValueError(f"Failed to analyze categorical data: {str(e)}")
+    
+    @staticmethod
+    def _calculate_start_date(time_range: str, end_date: date) -> Optional[date]:
+        """Calculate start date based on time range."""
+        if time_range == 'all':
+            return None
+        
+        days = CategoricalAnalyzer.TIME_RANGE_DAYS.get(time_range)
+        if not days:
+            raise ValueError(
+                f"Invalid time_range. Valid options: {', '.join(CategoricalAnalyzer.TIME_RANGE_DAYS.keys())}, all"
+            )
+        
+        return end_date - timedelta(days=days)
+    
+    @staticmethod
+    def _fetch_entries(
+        tracker_id: int,
+        field_name: str,
+        start_date: Optional[date],
+        end_date: date
+    ) -> List[TrackingData]:
+        """Fetch entries containing the field."""
+        query = TrackingData.query.filter_by(tracker_id=tracker_id)
+        
+        if start_date:
+            query = query.filter(
+                and_(
+                    TrackingData.entry_date >= start_date,
+                    TrackingData.entry_date <= end_date
+                )
+            )
+        
+        all_entries = query.order_by(TrackingData.entry_date.asc()).all()
+        
+        # Filter entries with the field
+        return [e for e in all_entries if e.data and field_name in e.data]
+    
+    @staticmethod
+    def _extract_frequencies(
+        entries: List[TrackingData],
+        field_name: str,
+        option: Optional[str] = None
+    ) -> Dict[str, int]:
+        """
+        Extract frequency counts for categorical values.
+        
+        Handles:
+        - Direct values: "positive", "negative"
+        - Boolean: true, false
+        - Arrays: ["symptom1", "symptom2"]
+        - Nested: {"option": "value"}
+        """
+        frequency = {}
+        
+        for entry in entries:
+            field_data = entry.data.get(field_name)
+            if field_data is None:
+                continue
+            
+            # Handle nested option
+            if option and isinstance(field_data, dict):
+                field_data = field_data.get(option)
+                if field_data is None:
+                    continue
+            
+            # Extract values based on type
+            values = CategoricalAnalyzer._extract_categorical_values(field_data)
+            
+            for value in values:
+                # Normalize value for counting
+                normalized = str(value).lower().strip()
+                frequency[normalized] = frequency.get(normalized, 0) + 1
+        
+        # Sort by frequency (descending)
+        return dict(sorted(frequency.items(), key=lambda x: x[1], reverse=True))
+    
+    @staticmethod
+    def _extract_categorical_values(field_data: Any) -> List[str]:
+        """Extract categorical values from various data structures."""
+        if field_data is None:
+            return []
+        
+        # Boolean values
+        if isinstance(field_data, bool):
+            return ["yes" if field_data else "no"]
+        
+        # String values
+        if isinstance(field_data, str):
+            return [field_data]
+        
+        # Array values
+        if isinstance(field_data, list):
+            return [str(v) for v in field_data if v is not None]
+        
+        # Dictionary - extract all string values
+        if isinstance(field_data, dict):
+            values = []
+            for v in field_data.values():
+                if isinstance(v, (str, bool)):
+                    values.append(str(v))
+                elif isinstance(v, list):
+                    values.extend([str(item) for item in v])
+            return values
+        
+        # Fallback: convert to string
+        return [str(field_data)]
+    
+    @staticmethod
+    def _calculate_categorical_stats(frequency: Dict[str, int]) -> Dict[str, Any]:
+        """Calculate statistics for categorical data."""
+        total = sum(frequency.values())
+        if total == 0:
+            return {}
+        
+        # Most common
+        most_common = max(frequency.items(), key=lambda x: x[1])
+        
+        # Percentage distribution
+        distribution = {
+            key: round((count / total) * 100, 1)
+            for key, count in frequency.items()
+        }
+        
+        # Diversity (how many unique values)
+        diversity = len(frequency)
+        
+        return {
+            'total_count': total,
+            'unique_values': diversity,
+            'most_common': {
+                'value': most_common[0],
+                'count': most_common[1],
+                'percentage': round((most_common[1] / total) * 100, 1)
+            },
+            'distribution': distribution,
+            'diversity': 'high' if diversity > 5 else 'medium' if diversity > 2 else 'low'
+        }
+    
+    @staticmethod
+    def _build_display_name(field_name: str, option: Optional[str] = None) -> str:
+        """Build user-friendly display name."""
+        field_display = field_name.replace('_', ' ').title()
+        
+        if option:
+            option_display = option.replace('_', ' ').title()
+            return f"{field_display} {option_display}"
+        else:
+            return field_display
+    
+    @staticmethod
+    def _no_data_response(
+        field_name: str,
+        time_range: str,
+        message: str
+    ) -> Dict[str, Any]:
+        """Response when no data is available."""
+        return {
+            'field_name': field_name,
+            'time_range': time_range,
+            'frequency': {},
+            'statistics': {},
+            'message': message
+        }
+    
+    @staticmethod
+    def generate_bar_chart(
+        field_name: str,
+        tracker_id: int,
+        time_range: str = 'all',
+        option: Optional[str] = None
+    ) -> bytes:
+        """
+        Generate bar chart showing frequency distribution of categorical data.
+        
+        Returns:
+            PNG image as bytes
+        """
+        try:
+            # Get frequency data
+            result = CategoricalAnalyzer.analyze(field_name, tracker_id, time_range, option)
+            
+            # Handle insufficient data
+            if not result.get('frequency') or result.get('message'):
+                return ChartGenerator._generate_error_chart(
+                    result.get('message', 'Insufficient data for chart')
+                )
+            
+            frequency = result['frequency']
+            stats = result['statistics']
+            display_name = result.get('display_name', field_name)
+            
+            # Create figure
+            fig, ax = plt.subplots(figsize=(12, 7))
+            
+            # Prepare data for chart
+            values = list(frequency.keys())
+            counts = list(frequency.values())
+            
+            # Create bar chart
+            bars = ax.bar(values, counts, color='#3498db', alpha=0.8, edgecolor='white', linewidth=1.5)
+            
+            # Add value labels on bars
+            for bar in bars:
+                height = bar.get_height()
+                ax.text(bar.get_x() + bar.get_width()/2., height,
+                       f'{int(height)}',
+                       ha='center', va='bottom', fontsize=11, fontweight='bold')
+            
+            # Styling
+            ax.set_xlabel('Values', fontsize=13, fontweight='bold', labelpad=10)
+            ax.set_ylabel('Frequency', fontsize=13, fontweight='bold', labelpad=10)
+            
+            title = f'{display_name} - Frequency Distribution'
+            subtitle = f'({time_range.replace("_", " ").title()} | Total: {stats.get("total_count", 0)} entries)'
+            ax.set_title(f'{title}\n{subtitle}', fontsize=15, fontweight='bold', pad=20)
+            
+            # Rotate x-axis labels if needed
+            if len(values) > 5:
+                plt.xticks(rotation=45, ha='right')
+            
+            ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.7, axis='y')
+            plt.tight_layout()
+            
+            # Save to bytes
+            with io.BytesIO() as buffer:
+                plt.savefig(buffer, format='png', dpi=120, bbox_inches='tight')
+                buffer.seek(0)
+                image_data = buffer.getvalue()
+            
+            plt.close(fig)
+            return image_data
+            
+        except Exception as e:
+            return ChartGenerator._generate_error_chart(f'Error generating chart: {str(e)}')
