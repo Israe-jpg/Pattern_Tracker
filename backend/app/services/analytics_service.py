@@ -1553,3 +1553,555 @@ class UnifiedAnalyzer:
                 
         except Exception as e:
             return ChartGenerator._generate_error_chart(f"Error: {str(e)}")
+        
+    @staticmethod
+    def analyze_evolution(
+        field_name: str,
+        tracker_id: int,
+        time_range: str = 'month',
+        option: Optional[str] = None,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None
+    ) -> Dict[str, Any]:
+        """
+        Analyze how field evolves over time (unified interface).
+        """
+        field_type, detection_reason = FieldTypeDetector.detect_field_type(
+            field_name, tracker_id, option
+        )
+        
+        if field_type == 'numeric':
+            result = TimeEvolutionAnalyzer.analyze_numeric_evolution(
+                field_name, tracker_id, time_range, option, start_date, end_date
+            )
+        else:
+            result = TimeEvolutionAnalyzer.analyze_categorical_evolution(
+                field_name, tracker_id, time_range, option, start_date, end_date
+            )
+        
+        result['field_type'] = field_type
+        result['detection_reason'] = detection_reason
+        return result
+    
+    @staticmethod
+    def generate_evolution_chart(
+        field_name: str,
+        tracker_id: int,
+        time_range: str = 'month',
+        option: Optional[str] = None,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None
+    ) -> bytes:
+        """
+        Generate time evolution chart (unified interface).
+        """
+        return TimeEvolutionAnalyzer.generate_evolution_chart(
+            field_name, tracker_id, time_range, option, start_date, end_date
+        )
+
+class TimeEvolutionAnalyzer:
+    """
+    Analyzes how data evolves over time with appropriate visualizations.
+    
+    - Numeric fields: Line chart showing value changes over time
+    - Categorical fields: Stacked area/bar chart showing distribution changes over time
+    """
+    
+    TIME_RANGE_DAYS = {
+        'week': 7,
+        '2_weeks': 14,
+        '3_weeks': 21,
+        'month': 30,
+        '3_months': 90,
+        '6_months': 180,
+        'year': 365
+    }
+    
+    # Time bucket configurations
+    TIME_BUCKET_CONFIG = {
+        'week': 'daily',           # 7 days -> daily buckets
+        '2_weeks': 'daily',        # 14 days -> daily buckets
+        '3_weeks': 'every_2_days', # 21 days -> every 2 days
+        'month': 'every_3_days',   # 30 days -> every 3 days
+        '3_months': 'weekly',      # 90 days -> weekly buckets
+        '6_months': 'biweekly',    # 180 days -> bi-weekly buckets
+        'year': 'monthly'          # 365 days -> monthly buckets
+    }
+    
+    @staticmethod
+    def analyze_numeric_evolution(
+        field_name: str,
+        tracker_id: int,
+        time_range: str = 'month',
+        option: Optional[str] = None,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None
+    ) -> Dict[str, Any]:
+        """
+        Analyze how numeric values evolve over time.
+        
+        Returns time-bucketed data suitable for line charts.
+        """
+        try:
+            # Use TrendLineAnalyzer to get the base data
+            result = TrendLineAnalyzer.analyze(
+                field_name, tracker_id, time_range, option=option,
+                start_date=start_date, end_date=end_date
+            )
+            
+            if not result.get('data_points'):
+                return result  # Return error response as-is
+            
+            # Determine bucketing strategy
+            bucket_strategy = TimeEvolutionAnalyzer.TIME_BUCKET_CONFIG.get(
+                time_range, 'daily'
+            )
+            
+            # Bucket the data
+            bucketed_data = TimeEvolutionAnalyzer._bucket_numeric_data(
+                result['data_points'], bucket_strategy
+            )
+            
+            # Add evolution-specific metadata
+            result['evolution'] = {
+                'bucketed_data': bucketed_data,
+                'bucket_strategy': bucket_strategy,
+                'chart_type': 'line',
+                'visualization_note': 'Shows value changes over time'
+            }
+            
+            return result
+            
+        except Exception as e:
+            raise ValueError(f"Failed to analyze numeric evolution: {str(e)}")
+    
+    @staticmethod
+    def analyze_categorical_evolution(
+        field_name: str,
+        tracker_id: int,
+        time_range: str = 'month',
+        option: Optional[str] = None,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None
+    ) -> Dict[str, Any]:
+        """
+        Analyze how categorical distributions evolve over time.
+        
+        Returns time-bucketed frequency data suitable for stacked area/bar charts.
+        """
+        try:
+            # Validate tracker
+            tracker = Tracker.query.get(tracker_id)
+            if not tracker:
+                raise ValueError(f"Tracker {tracker_id} not found")
+            
+            # Calculate date range
+            if end_date is None:
+                end_date = date.today()
+            if start_date is None:
+                start_date = TimeEvolutionAnalyzer._calculate_start_date(time_range, end_date)
+            
+            # Fetch entries
+            query = TrackingData.query.filter_by(tracker_id=tracker_id)
+            if start_date:
+                query = query.filter(
+                    and_(
+                        TrackingData.entry_date >= start_date,
+                        TrackingData.entry_date <= end_date
+                    )
+                )
+            
+            entries = query.order_by(TrackingData.entry_date.asc()).all()
+            entries = [e for e in entries if e.data and field_name in e.data]
+            
+            if not entries:
+                return {
+                    'field_name': field_name,
+                    'time_range': time_range,
+                    'message': 'No data available for this field in the specified time range'
+                }
+            
+            # Determine bucketing strategy
+            bucket_strategy = TimeEvolutionAnalyzer.TIME_BUCKET_CONFIG.get(
+                time_range, 'daily'
+            )
+            
+            # Extract and bucket categorical data over time
+            evolution_data = TimeEvolutionAnalyzer._bucket_categorical_data(
+                entries, field_name, option, bucket_strategy, start_date, end_date
+            )
+            
+            if not evolution_data['buckets']:
+                return {
+                    'field_name': field_name,
+                    'time_range': time_range,
+                    'message': 'No valid categorical data found for this field'
+                }
+            
+            display_name = CategoricalAnalyzer._build_display_name(field_name, option)
+            
+            return {
+                'field_name': field_name,
+                'option': option,
+                'time_range': time_range,
+                'display_name': display_name,
+                'evolution': evolution_data,
+                'metadata': {
+                    'total_entries': len(entries),
+                    'bucket_strategy': bucket_strategy,
+                    'chart_type': 'stacked_area',
+                    'visualization_note': 'Shows how category frequencies change over time'
+                }
+            }
+            
+        except Exception as e:
+            raise ValueError(f"Failed to analyze categorical evolution: {str(e)}")
+    
+    @staticmethod
+    def _calculate_start_date(time_range: str, end_date: date) -> Optional[date]:
+        """Calculate start date based on time range."""
+        if time_range == 'all':
+            return None
+        
+        days = TimeEvolutionAnalyzer.TIME_RANGE_DAYS.get(time_range)
+        if not days:
+            raise ValueError(f"Invalid time_range: {time_range}")
+        
+        return end_date - timedelta(days=days)
+    
+    @staticmethod
+    def _bucket_numeric_data(
+        data_points: List[Dict],
+        bucket_strategy: str
+    ) -> List[Dict[str, Any]]:
+        """
+        Bucket numeric data points by time period.
+        
+        Returns list of buckets with aggregated values (mean, min, max).
+        """
+        if not data_points:
+            return []
+        
+        # Parse dates
+        dated_points = [
+            (datetime.fromisoformat(dp['date']).date(), dp['value'])
+            for dp in data_points
+        ]
+        dated_points.sort(key=lambda x: x[0])
+        
+        # Determine bucket size in days
+        bucket_days = {
+            'daily': 1,
+            'every_2_days': 2,
+            'every_3_days': 3,
+            'weekly': 7,
+            'biweekly': 14,
+            'monthly': 30
+        }.get(bucket_strategy, 1)
+        
+        # Create buckets
+        buckets = []
+        current_bucket_start = dated_points[0][0]
+        current_bucket_values = []
+        
+        for date_val, value in dated_points:
+            # Check if we need a new bucket
+            if (date_val - current_bucket_start).days >= bucket_days:
+                # Save current bucket
+                if current_bucket_values:
+                    buckets.append({
+                        'date': current_bucket_start.isoformat(),
+                        'mean': round(np.mean(current_bucket_values), 2),
+                        'min': round(min(current_bucket_values), 2),
+                        'max': round(max(current_bucket_values), 2),
+                        'count': len(current_bucket_values)
+                    })
+                
+                # Start new bucket
+                current_bucket_start = date_val
+                current_bucket_values = [value]
+            else:
+                current_bucket_values.append(value)
+        
+        # Add final bucket
+        if current_bucket_values:
+            buckets.append({
+                'date': current_bucket_start.isoformat(),
+                'mean': round(np.mean(current_bucket_values), 2),
+                'min': round(min(current_bucket_values), 2),
+                'max': round(max(current_bucket_values), 2),
+                'count': len(current_bucket_values)
+            })
+        
+        return buckets
+    
+    @staticmethod
+    def _bucket_categorical_data(
+        entries: List[TrackingData],
+        field_name: str,
+        option: Optional[str],
+        bucket_strategy: str,
+        start_date: date,
+        end_date: date
+    ) -> Dict[str, Any]:
+        """
+        Bucket categorical data by time period.
+        
+        Returns time-bucketed frequency distributions.
+        """
+        # Determine bucket size in days
+        bucket_days = {
+            'daily': 1,
+            'every_2_days': 2,
+            'every_3_days': 3,
+            'weekly': 7,
+            'biweekly': 14,
+            'monthly': 30
+        }.get(bucket_strategy, 1)
+        
+        # Create time buckets
+        buckets = []
+        current_date = start_date
+        
+        while current_date <= end_date:
+            bucket_end = current_date + timedelta(days=bucket_days - 1)
+            if bucket_end > end_date:
+                bucket_end = end_date
+            
+            # Get entries in this bucket
+            bucket_entries = [
+                e for e in entries
+                if current_date <= e.entry_date <= bucket_end
+            ]
+            
+            # Extract categorical frequencies for this bucket
+            bucket_frequency = {}
+            for entry in bucket_entries:
+                field_data = entry.data.get(field_name)
+                if field_data is None:
+                    continue
+                
+                # Handle nested option
+                if option and isinstance(field_data, dict):
+                    field_data = field_data.get(option)
+                    if field_data is None:
+                        continue
+                
+                # Extract values
+                values = CategoricalAnalyzer._extract_categorical_values(field_data)
+                
+                for value in values:
+                    normalized = str(value).lower().strip()
+                    bucket_frequency[normalized] = bucket_frequency.get(normalized, 0) + 1
+            
+            # Only add bucket if it has data
+            if bucket_frequency:
+                buckets.append({
+                    'date': current_date.isoformat(),
+                    'date_end': bucket_end.isoformat(),
+                    'frequency': bucket_frequency,
+                    'total': sum(bucket_frequency.values())
+                })
+            
+            current_date = bucket_end + timedelta(days=1)
+        
+        # Get all unique categories across all buckets
+        all_categories = set()
+        for bucket in buckets:
+            all_categories.update(bucket['frequency'].keys())
+        
+        return {
+            'buckets': buckets,
+            'categories': sorted(list(all_categories)),
+            'bucket_strategy': bucket_strategy
+        }
+    
+    @staticmethod
+    def generate_evolution_chart(
+        field_name: str,
+        tracker_id: int,
+        time_range: str = 'month',
+        option: Optional[str] = None,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None
+    ) -> bytes:
+        """
+        Generate appropriate time evolution chart based on field type.
+        
+        - Numeric: Line chart with mean values over time
+        - Categorical: Stacked area chart showing distribution changes
+        """
+        try:
+            # Detect field type
+            field_type, _ = FieldTypeDetector.detect_field_type(
+                field_name, tracker_id, option
+            )
+            
+            if field_type == 'numeric':
+                return TimeEvolutionAnalyzer._generate_numeric_evolution_chart(
+                    field_name, tracker_id, time_range, option, start_date, end_date
+                )
+            else:
+                return TimeEvolutionAnalyzer._generate_categorical_evolution_chart(
+                    field_name, tracker_id, time_range, option, start_date, end_date
+                )
+                
+        except Exception as e:
+            return ChartGenerator._generate_error_chart(f"Error: {str(e)}")
+    
+    @staticmethod
+    def _generate_numeric_evolution_chart(
+        field_name: str,
+        tracker_id: int,
+        time_range: str,
+        option: Optional[str],
+        start_date: Optional[date],
+        end_date: Optional[date]
+    ) -> bytes:
+        """Generate line chart for numeric evolution."""
+        try:
+            result = TimeEvolutionAnalyzer.analyze_numeric_evolution(
+                field_name, tracker_id, time_range, option, start_date, end_date
+            )
+            
+            if not result.get('evolution') or not result['evolution'].get('bucketed_data'):
+                return ChartGenerator._generate_error_chart(
+                    result.get('message', 'Insufficient data for evolution chart')
+                )
+            
+            bucketed_data = result['evolution']['bucketed_data']
+            
+            # Extract data for plotting
+            dates = [datetime.fromisoformat(b['date']).date() for b in bucketed_data]
+            means = [b['mean'] for b in bucketed_data]
+            mins = [b['min'] for b in bucketed_data]
+            maxs = [b['max'] for b in bucketed_data]
+            
+            # Create figure
+            fig, ax = plt.subplots(figsize=(14, 8))
+            
+            # Convert to datetime for matplotlib
+            date_objs = [datetime.combine(d, datetime.min.time()) for d in dates]
+            
+            # Plot shaded area for min/max range
+            ax.fill_between(date_objs, mins, maxs, alpha=0.2, color='#3498db',
+                           label='Min-Max Range')
+            
+            # Plot mean line
+            ax.plot(date_objs, means, 'o-', color='#3498db',
+                   label='Average Value', linewidth=3, markersize=8,
+                   markeredgecolor='white', markeredgewidth=2)
+            
+            # Styling
+            field_display = field_name.replace("_", " ").title()
+            option_display = option.replace("_", " ").title() if option else None
+            
+            if option_display:
+                title = f'{field_display} - {option_display} - Evolution Over Time'
+                ax.set_ylabel(option_display, fontsize=13, fontweight='bold', labelpad=10)
+            else:
+                title = f'{field_display} - Evolution Over Time'
+                ax.set_ylabel('Value', fontsize=13, fontweight='bold', labelpad=10)
+            
+            subtitle = f'({time_range.replace("_", " ").title()} | Bucketed by {result["evolution"]["bucket_strategy"].replace("_", " ")})'
+            ax.set_title(f'{title}\n{subtitle}', fontsize=15, fontweight='bold', pad=20)
+            
+            ax.set_xlabel('Date', fontsize=13, fontweight='bold', labelpad=10)
+            ax.legend(loc='best', fontsize=11, framealpha=0.9)
+            ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.7)
+            
+            # Format x-axis
+            ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
+            ax.xaxis.set_major_locator(mdates.AutoDateLocator())
+            plt.xticks(rotation=45, ha='right')
+            
+            plt.tight_layout()
+            
+            # Save to bytes
+            with io.BytesIO() as buffer:
+                plt.savefig(buffer, format='png', dpi=120, bbox_inches='tight')
+                buffer.seek(0)
+                image_data = buffer.getvalue()
+            
+            plt.close(fig)
+            return image_data
+            
+        except Exception as e:
+            return ChartGenerator._generate_error_chart(f"Error: {str(e)}")
+    
+    @staticmethod
+    def _generate_categorical_evolution_chart(
+        field_name: str,
+        tracker_id: int,
+        time_range: str,
+        option: Optional[str],
+        start_date: Optional[date],
+        end_date: Optional[date]
+    ) -> bytes:
+        """Generate stacked area chart for categorical evolution."""
+        try:
+            result = TimeEvolutionAnalyzer.analyze_categorical_evolution(
+                field_name, tracker_id, time_range, option, start_date, end_date
+            )
+            
+            if not result.get('evolution') or not result['evolution'].get('buckets'):
+                return ChartGenerator._generate_error_chart(
+                    result.get('message', 'Insufficient data for evolution chart')
+                )
+            
+            evolution = result['evolution']
+            buckets = evolution['buckets']
+            categories = evolution['categories']
+            
+            # Prepare data for stacked area chart
+            dates = [datetime.fromisoformat(b['date']).date() for b in buckets]
+            date_objs = [datetime.combine(d, datetime.min.time()) for d in dates]
+            
+            # Build matrix of category counts over time
+            category_data = {cat: [] for cat in categories}
+            for bucket in buckets:
+                for cat in categories:
+                    category_data[cat].append(bucket['frequency'].get(cat, 0))
+            
+            # Create figure
+            fig, ax = plt.subplots(figsize=(14, 8))
+            
+            # Generate colors for categories
+            colors = plt.cm.Set3(np.linspace(0, 1, len(categories)))
+            
+            # Plot stacked area chart
+            ax.stackplot(date_objs, *[category_data[cat] for cat in categories],
+                        labels=categories, colors=colors, alpha=0.8)
+            
+            # Styling
+            display_name = result.get('display_name', field_name)
+            title = f'{display_name} - Distribution Evolution Over Time'
+            subtitle = f'({time_range.replace("_", " ").title()} | Bucketed by {evolution["bucket_strategy"].replace("_", " ")})'
+            ax.set_title(f'{title}\n{subtitle}', fontsize=15, fontweight='bold', pad=20)
+            
+            ax.set_xlabel('Date', fontsize=13, fontweight='bold', labelpad=10)
+            ax.set_ylabel('Frequency', fontsize=13, fontweight='bold', labelpad=10)
+            
+            # Legend
+            ax.legend(loc='upper left', bbox_to_anchor=(1, 1), fontsize=10, framealpha=0.9)
+            ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.7)
+            
+            # Format x-axis
+            ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
+            ax.xaxis.set_major_locator(mdates.AutoDateLocator())
+            plt.xticks(rotation=45, ha='right')
+            
+            plt.tight_layout()
+            
+            # Save to bytes
+            with io.BytesIO() as buffer:
+                plt.savefig(buffer, format='png', dpi=120, bbox_inches='tight')
+                buffer.seek(0)
+                image_data = buffer.getvalue()
+            
+            plt.close(fig)
+            return image_data
+            
+        except Exception as e:
+            return ChartGenerator._generate_error_chart(f"Error: {str(e)}")
+
