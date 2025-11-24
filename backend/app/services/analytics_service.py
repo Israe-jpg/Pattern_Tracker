@@ -468,6 +468,108 @@ class StatisticalAnalyzer:
         }
 
 
+class FieldTypeDetector:
+    """
+    Automatically detects whether a field should be analyzed as numeric or categorical.
+    """
+    
+    @staticmethod
+    def detect_field_type(
+        field_name: str,
+        tracker_id: int,
+        option: Optional[str] = None
+    ) -> Tuple[str, Optional[str]]:
+        """
+        Detect if field should be analyzed as 'numeric' or 'categorical'.
+        
+        Args:
+            field_name: Field to analyze
+            tracker_id: Tracker ID
+            option: Specific option to analyze (if provided)
+        
+        Returns:
+            Tuple of (field_type, reason)
+            - field_type: 'numeric' or 'categorical'
+            - reason: Human-readable explanation of detection
+        """
+        try:
+            # Get numeric options for this field
+            numeric_option_names = NumericExtractor.get_numeric_option_names(
+                field_name, tracker_id
+            )
+            
+            # If option is specified, check if it's numeric
+            if option:
+                if option in numeric_option_names:
+                    return 'numeric', f"Option '{option}' is a numeric field"
+                else:
+                    return 'categorical', f"Option '{option}' is not numeric"
+            
+            # If field has numeric options, it's numeric
+            if numeric_option_names:
+                if len(numeric_option_names) == 1:
+                    return 'numeric', f"Field has numeric option: {numeric_option_names[0]}"
+                else:
+                    return 'numeric', f"Field has numeric options: {', '.join(numeric_option_names)}"
+            
+            # Check actual data to determine type
+            sample_data = FieldTypeDetector._sample_field_data(field_name, tracker_id)
+            
+            if not sample_data:
+                # No data yet - default to categorical (safer default)
+                return 'categorical', "No data available yet - defaulting to categorical"
+            
+            # Analyze sample data
+            numeric_count = 0
+            total_count = len(sample_data)
+            
+            for field_data in sample_data:
+                numeric_value = NumericExtractor.extract(field_data, numeric_option_names)
+                if numeric_value is not None:
+                    numeric_count += 1
+            
+            # If majority of samples are numeric, treat as numeric
+            if numeric_count / total_count >= 0.5:
+                return 'numeric', f"Field contains numeric data ({numeric_count}/{total_count} samples)"
+            else:
+                return 'categorical', f"Field contains categorical data ({total_count - numeric_count}/{total_count} samples)"
+                
+        except Exception as e:
+            # Default to categorical on error (safer)
+            return 'categorical', f"Error detecting type: {str(e)}"
+    
+    @staticmethod
+    def _sample_field_data(field_name: str, tracker_id: int, sample_size: int = 10) -> List[Any]:
+        """
+        Get sample of field data from recent entries.
+        
+        Args:
+            field_name: Field to sample
+            tracker_id: Tracker ID
+            sample_size: Number of samples to retrieve
+        
+        Returns:
+            List of field data values
+        """
+        try:
+            entries = TrackingData.query.filter_by(
+                tracker_id=tracker_id
+            ).order_by(
+                TrackingData.entry_date.desc()
+            ).limit(sample_size).all()
+            
+            sample_data = []
+            for entry in entries:
+                if entry.data and field_name in entry.data:
+                    sample_data.append(entry.data[field_name])
+            
+            return sample_data
+        except Exception:
+            return []
+
+
+
+
 class TrendLineAnalyzer:
     """
     Analyzer for NUMERIC data - calculates trend lines using linear regression.
