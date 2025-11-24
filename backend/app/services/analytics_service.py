@@ -573,12 +573,6 @@ class FieldTypeDetector:
 class TrendLineAnalyzer:
     """
     Analyzer for NUMERIC data - calculates trend lines using linear regression.
-    
-    Use this for:
-    - Numeric fields (integers, floats)
-    - Fields with numeric options (e.g., sleep.hours, energy.level)
-    
-    Returns: Line chart with trend analysis
     """
     
     TIME_RANGE_DAYS = {
@@ -596,7 +590,8 @@ class TrendLineAnalyzer:
         tracker_id: int,
         time_range: str = 'all',
         min_data_points: int = 2,
-        option: Optional[str] = None
+        option: Optional[str] = None,
+        skip_sufficiency_check: bool = False  # NEW: Allow bypassing check
     ) -> Dict[str, Any]:
         """
         Analyze trend line for a specific field.
@@ -607,7 +602,7 @@ class TrendLineAnalyzer:
             time_range: 'week', 'month', 'all', etc.
             min_data_points: Minimum points required for analysis
             option: Specific option name to analyze (e.g., 'hours', 'quality')
-                   If None, uses first available numeric option
+            skip_sufficiency_check: If True, skip data sufficiency validation
         
         Returns:
             Complete trend analysis with data, statistics, and metadata
@@ -617,6 +612,17 @@ class TrendLineAnalyzer:
             tracker = Tracker.query.get(tracker_id)
             if not tracker:
                 raise ValueError(f"Tracker {tracker_id} not found")
+            
+            # Auto-detect field type to ensure it's numeric
+            field_type, detection_reason = FieldTypeDetector.detect_field_type(
+                field_name, tracker_id, option
+            )
+            
+            if field_type != 'numeric':
+                raise ValueError(
+                    f"Field '{field_name}' is not numeric. {detection_reason}. "
+                    f"Use CategoricalAnalyzer instead."
+                )
             
             # Get all numeric options for this field
             numeric_option_names = NumericExtractor.get_numeric_option_names(
@@ -631,10 +637,8 @@ class TrendLineAnalyzer:
                         f"Option '{option}' is not a numeric option for field '{field_name}'. "
                         f"Available numeric options: {available}"
                     )
-                # Use only the specified option
                 numeric_option_names = [option]
             elif not numeric_option_names:
-                # Validate field has numeric options
                 is_valid, error_msg = NumericExtractor.validate_numeric_field(
                     field_name, tracker_id
                 )
@@ -656,7 +660,7 @@ class TrendLineAnalyzer:
                     "No data available for this field in the specified time range"
                 )
             
-            # Extract numeric values (using specific option if provided)
+            # Extract numeric values
             data_points = []
             for entry in entries:
                 field_data = entry.data.get(field_name)
@@ -677,13 +681,45 @@ class TrendLineAnalyzer:
                     field_name, time_range, data_points, min_data_points
                 )
             
+            # Data Sufficiency Check
+            if not skip_sufficiency_check:
+                sufficiency_result = DataSufficiencyChecker.check_data_sufficiency(
+                    data_points=len(data_points),
+                    time_span_days=(
+                        datetime.fromisoformat(data_points[-1]['date']).date() -
+                        datetime.fromisoformat(data_points[0]['date']).date()
+                    ).days + 1,
+                    insight_type=InsightType.TREND
+                )
+                
+                # Add sufficiency info to response metadata
+                sufficiency_info = {
+                    'is_sufficient': sufficiency_result.is_sufficient,
+                    'confidence_level': sufficiency_result.confidence_level.value,
+                    'display_strategy': sufficiency_result.display_strategy.value,
+                    'reasons': sufficiency_result.reasons,
+                    'recommendations': sufficiency_result.recommendations
+                }
+                
+                # If data is insufficient, return early with warning
+                if not sufficiency_result.is_sufficient:
+                    return {
+                        'field_name': field_name,
+                        'time_range': time_range,
+                        'data_points': data_points,
+                        'trend': None,
+                        'trend_line_points': [],
+                        'statistics': {'total_entries': len(data_points)},
+                        'data_sufficiency': sufficiency_info,
+                        'message': 'Insufficient data for reliable trend analysis. ' + 
+                                   ' '.join(sufficiency_result.recommendations)
+                    }
+            
             # Determine which option was used
             result_option = option if option else (numeric_option_names[0] if numeric_option_names else None)
             
-            # Perform statistical analysis (no sufficiency check - just calculate the trend)
+            # Perform statistical analysis
             analysis = TrendLineAnalyzer._perform_analysis(data_points, field_name, result_option)
-            
-
             
             # Build response
             response = {
@@ -713,11 +749,14 @@ class TrendLineAnalyzer:
                 }
             }
             
-            # Add option info if specific option was analyzed
+            # Add data sufficiency info if check was performed
+            if not skip_sufficiency_check:
+                response['data_sufficiency'] = sufficiency_info
+            
+            # Add option info
             if option:
                 response['option'] = option
             elif numeric_option_names:
-                # Show which option was used (first one)
                 response['option'] = numeric_option_names[0] if len(numeric_option_names) == 1 else None
                 if len(numeric_option_names) > 1:
                     response['available_options'] = numeric_option_names
