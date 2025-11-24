@@ -637,6 +637,7 @@ def get_field_insights(tracker_id: int):
         time_range = request.args.get('time_range', 'all')
         show_all = request.args.get('show_all', 'false').lower() == 'true'
         requested_insight_type = request.args.get('insight_type')
+        option = request.args.get('option')  # Optional: specific option to check
         
         # Calculate date range
         end_date = date.today()
@@ -678,9 +679,43 @@ def get_field_insights(tracker_id: int):
                 }
             )
         
-        # Calculate metrics
-        entry_count = len(field_entries)
-        time_span_days = (field_entries[-1].entry_date - field_entries[0].entry_date).days + 1
+        # If option is specified, filter to entries that actually have that option
+        option_entries = field_entries
+        if option:
+            option_entries = []
+            for entry in field_entries:
+                field_data = entry.data.get(field_name)
+                if field_data:
+                    # Check if option exists in the field data
+                    if isinstance(field_data, dict):
+                        # For nested structure: {"hours": 8.5, "quality": 7}
+                        if option in field_data and field_data[option] is not None:
+                            option_entries.append(entry)
+                    elif isinstance(field_data, list):
+                        # For array fields, check if option is in the array
+                        if option in field_data:
+                            option_entries.append(entry)
+                    else:
+                        # Direct value - if option matches the value
+                        if str(field_data).lower() == option.lower():
+                            option_entries.append(entry)
+            
+            if not option_entries:
+                return success_response(
+                    f"No data found for '{field_name}.{option}'",
+                    {
+                        'field_name': field_name,
+                        'option': option,
+                        'time_range': time_range,
+                        'entry_count': 0,
+                        'has_insights': False,
+                        'message': f"Start tracking '{field_name}.{option}' to unlock insights"
+                    }
+                )
+        
+        # Calculate metrics based on option-specific entries
+        entry_count = len(option_entries)
+        time_span_days = (option_entries[-1].entry_date - option_entries[0].entry_date).days + 1
         
         # Get insights
         if requested_insight_type:
@@ -694,7 +729,7 @@ def get_field_insights(tracker_id: int):
                 )
             
             result = DataSufficiencyChecker.check_field_eligibility(
-                field_name, entry_count, time_span_days, insight_type
+                field_name, entry_count, time_span_days, insight_type, option=option
             )
             
             confidence = ConfidenceLevel(result['confidence'])
@@ -702,39 +737,41 @@ def get_field_insights(tracker_id: int):
                 entry_count, confidence
             )
             
-            return success_response(
-                "Insight calculated",
-                {
-                    'field_name': field_name,
-                    'entry_count': entry_count,
-                    'time_span_days': time_span_days,
-                    'insight': result,
-                    'display_config': display_config
-                }
-            )
+            response_data = {
+                'field_name': field_name,
+                'entry_count': entry_count,
+                'time_span_days': time_span_days,
+                'insight': result,
+                'display_config': display_config
+            }
+            if option:
+                response_data['option'] = option
+            
+            return success_response("Insight calculated", response_data)
         
         elif show_all:
             # Show all eligible insights
             eligible = DataSufficiencyChecker.get_all_eligible_insights(
-                field_name, entry_count, time_span_days
+                field_name, entry_count, time_span_days, option=option
             )
             
             summary = AnalyticsDisplayStrategy.build_insight_summary(eligible)
             
-            return success_response(
-                "All insights retrieved",
-                {
-                    'field_name': field_name,
-                    'entry_count': entry_count,
-                    'time_span_days': time_span_days,
-                    'insights_summary': summary
-                }
-            )
+            response_data = {
+                'field_name': field_name,
+                'entry_count': entry_count,
+                'time_span_days': time_span_days,
+                'insights_summary': summary
+            }
+            if option:
+                response_data['option'] = option
+            
+            return success_response("All insights retrieved", response_data)
         
         else:
             # Show primary (best) insight only
             primary = DataSufficiencyChecker.get_primary_insight(
-                field_name, entry_count, time_span_days
+                field_name, entry_count, time_span_days, option=option
             )
             
             if not primary:
@@ -753,16 +790,17 @@ def get_field_insights(tracker_id: int):
                 entry_count, confidence
             )
             
-            return success_response(
-                "Primary insight retrieved",
-                {
-                    'field_name': field_name,
-                    'entry_count': entry_count,
-                    'time_span_days': time_span_days,
-                    'primary_insight': primary,
-                    'display_config': display_config
-                }
-            )
+            response_data = {
+                'field_name': field_name,
+                'entry_count': entry_count,
+                'time_span_days': time_span_days,
+                'primary_insight': primary,
+                'display_config': display_config
+            }
+            if option:
+                response_data['option'] = option
+            
+            return success_response("Primary insight retrieved", response_data)
     
     except Exception as e:
         return error_response(f"Failed to get insights: {str(e)}", 500)

@@ -90,8 +90,10 @@ class DataSufficiencyChecker:
         field_name: str,
         entry_count: int,
         time_span_days: int,
-        insight_type: InsightType
+        insight_type: InsightType,
+        option: Optional[str] = None
     ) -> Dict[str, Any]:
+        
         """Check if a field has enough data for a specific insight."""
         min_required = DataSufficiencyChecker.MINIMUM_REQUIREMENTS[insight_type]
         recommended = DataSufficiencyChecker.RECOMMENDED_REQUIREMENTS.get(
@@ -187,7 +189,8 @@ class DataSufficiencyChecker:
     def get_all_eligible_insights(
         field_name: str,
         entry_count: int,
-        time_span_days: int
+        time_span_days: int,
+        option: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
         Get ALL eligible insights for a field, sorted by priority.
@@ -201,7 +204,8 @@ class DataSufficiencyChecker:
                 field_name,
                 entry_count,
                 time_span_days,
-                insight_type
+                insight_type,
+                option=option
             )
             
             if result['is_eligible']:
@@ -249,17 +253,19 @@ class DataSufficiencyChecker:
     def get_primary_insight(
         field_name: str,
         entry_count: int,
-        time_span_days: int
+        time_span_days: int,
+        option: Optional[str] = None
     ) -> Optional[Dict[str, Any]]:
         """
-        Get the single BEST insight to show for a field.
+        Get the single BEST insight to show for a field/option.
         
         Returns the highest priority eligible insight, or None if no insights available.
         """
         eligible = DataSufficiencyChecker.get_all_eligible_insights(
             field_name,
             entry_count,
-            time_span_days
+            time_span_days,
+            option=option
         )
         
         return eligible[0] if eligible else None

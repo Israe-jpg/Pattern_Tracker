@@ -9,12 +9,15 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import io
 
+from app.services.analytics_data_sufficiency_system import DataSufficiencyChecker, InsightType, ConfidenceLevel, AnalyticsDisplayStrategy
+
 from app import db
 from app.models.tracking_data import TrackingData
 from app.models.tracker import Tracker
 from app.models.tracker_field import TrackerField
 from app.models.tracker_user_field import TrackerUserField
 from app.models.field_option import FieldOption
+
 
 
 class NumericExtractor:
@@ -577,6 +580,8 @@ class TrendLineAnalyzer:
             
             # Perform statistical analysis
             analysis = TrendLineAnalyzer._perform_analysis(data_points, field_name, result_option)
+            
+
             
             # Build response
             response = {
