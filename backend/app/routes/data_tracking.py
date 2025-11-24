@@ -15,7 +15,7 @@ from app.models.tracker import Tracker
 from app.models.tracking_data import TrackingData
 from app.schemas.tracking_data_schema import TrackingDataSchema
 from app.services.tracking_service import TrackingService
-from app.services.analytics_service import TrendLineAnalyzer, ChartGenerator, CategoricalAnalyzer,UnifiedAnalyzer
+from app.services.analytics_service import TrendLineAnalyzer, ChartGenerator, CategoricalAnalyzer,UnifiedAnalyzer, TimeEvolutionAnalyzer
 
 
 from app.services.analytics_data_sufficiency_system import DataSufficiencyChecker, InsightType, ConfidenceLevel, AnalyticsDisplayStrategy
@@ -1039,6 +1039,96 @@ def get_unified_chart(tracker_id: int):
     except Exception as e:
         return error_response(f"Failed to get unified chart: {str(e)}", 500)
 
+# time evolution analysis and charts
+
+@data_tracking_bp.route('/<int:tracker_id>/time-evolution-analysis', methods=['GET'])
+@jwt_required()
+def get_time_evolution_analysis(tracker_id: int):
+    """
+    Get time evolution analysis for a specific field.
+    """
+    try:
+        _, user_id = get_current_user()
+        tracker = verify_tracker_ownership(tracker_id, user_id)
+
+        field_name = request.args.get('field_name')
+        if not field_name:
+            return error_response("field_name query parameter is required", 400)
+        
+        time_range = request.args.get('time_range', 'all')
+        valid_ranges = ['week', '2_weeks', '3_weeks', 'month', '3_months', '6_months', 'year', 'all']
+        if time_range not in valid_ranges:
+            return error_response(f"Invalid time_range. Valid: {', '.join(valid_ranges)}", 400)
+        
+        option = request.args.get('option')  # Optional: specific option to analyze
+        
+        # Parse optional date parameters
+        start_date, end_date, error = parse_optional_dates()
+        if error:
+            return error
+        
+        # Generate time evolution analysis
+
+        result = TimeEvolutionAnalyzer.analyze(
+            field_name, tracker_id, time_range, option=option,
+            start_date=start_date, end_date=end_date
+        )
+        return success_response("Time evolution analysis retrieved successfully", result)
+    except ValueError as e:
+        return error_response(str(e), 400)
+    except Exception as e:
+        return error_response(f"Failed to get time evolution analysis: {str(e)}", 500)
 
 
-
+@data_tracking_bp.route('/<int:tracker_id>/time-evolution-chart', methods=['GET'])
+@jwt_required()
+def get_time_evolution_chart(tracker_id: int):
+    """
+    Get time evolution chart for a specific field.
+    """
+    try:
+        _, user_id = get_current_user()
+        tracker = verify_tracker_ownership(tracker_id, user_id)
+    except ValueError as e:
+        return error_response(str(e), 404)
+    try:
+        field_name = request.args.get('field_name')
+        if not field_name:
+            return error_response("field_name query parameter is required", 400)
+        
+        time_range = request.args.get('time_range', 'all')
+        valid_ranges = ['week', '2_weeks', '3_weeks', 'month', '3_months', '6_months', 'year', 'all']
+        if time_range not in valid_ranges:
+            return error_response(f"Invalid time_range. Valid: {', '.join(valid_ranges)}", 400)
+        
+        option = request.args.get('option')  # Optional: specific option to analyze
+        
+        # Parse optional date parameters
+        start_date, end_date, error = parse_optional_dates()
+        if error:
+            return error
+        
+        # Generate time evolution chart (returns bytes - PNG image)
+        image_data = TimeEvolutionAnalyzer.generate_chart(
+            field_name, tracker_id, time_range, option=option,
+            start_date=start_date, end_date=end_date
+        )
+        
+        # Build filename
+        filename = f'time_evolution_chart_{field_name}'
+        if option:
+            filename += f'_{option}'
+        filename += f'_{time_range}.png'
+        
+        # Return image as response (not JSON!)
+        return Response(
+            image_data,
+            mimetype='image/png',
+            headers={
+                'Content-Disposition': f'inline; filename={filename}'
+            }
+        )
+    except ValueError as e:
+        return error_response(str(e), 400)
+    except Exception as e:
+        return error_response(f"Failed to get time evolution chart: {str(e)}", 500)
