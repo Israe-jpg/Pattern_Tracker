@@ -650,9 +650,26 @@ class TrendLineAnalyzer:
             
             # Calculate date range
             # Use provided dates if available, otherwise calculate from time_range
-            if end_date is None:
+            if start_date and end_date:
+                # Both dates provided - use them as-is
+                pass
+            elif start_date and not end_date:
+                # Start date provided but no end date - calculate end_date from start_date + time_range
+                if time_range != 'all':
+                    days = TrendLineAnalyzer.TIME_RANGE_DAYS.get(time_range)
+                    if days:
+                        end_date = start_date + timedelta(days=days)
+                    else:
+                        end_date = date.today()
+                else:
+                    end_date = date.today()
+            elif not start_date and end_date:
+                # End date provided but no start date - calculate start_date from end_date - time_range
+                end_date = end_date if end_date else date.today()
+                start_date = TrendLineAnalyzer._calculate_start_date(time_range, end_date)
+            else:
+                # Neither provided - calculate from time_range relative to today
                 end_date = date.today()
-            if start_date is None:
                 start_date = TrendLineAnalyzer._calculate_start_date(time_range, end_date)
             
             # Fetch entries
@@ -927,8 +944,12 @@ class ChartGenerator:
             PNG image as bytes
         """
         try:
-            # Get trend data
-            result = TrendLineAnalyzer.analyze(field_name, tracker_id, time_range, option=option)
+            # Get trend data (skip sufficiency check for chart - we just need 2+ points)
+            result = TrendLineAnalyzer.analyze(
+                field_name, tracker_id, time_range, option=option,
+                start_date=start_date, end_date=end_date,
+                skip_sufficiency_check=True  # Allow chart with just 2+ data points
+            )
             
             # Handle insufficient data or missing trend data
             if not result.get('data_points') or len(result['data_points']) < 2:
@@ -1108,9 +1129,26 @@ class CategoricalAnalyzer:
             
             # Calculate date range
             # Use provided dates if available, otherwise calculate from time_range
-            if end_date is None:
+            if start_date and end_date:
+                # Both dates provided - use them as-is
+                pass
+            elif start_date and not end_date:
+                # Start date provided but no end date - calculate end_date from start_date + time_range
+                if time_range != 'all':
+                    days = CategoricalAnalyzer.TIME_RANGE_DAYS.get(time_range)
+                    if days:
+                        end_date = start_date + timedelta(days=days)
+                    else:
+                        end_date = date.today()
+                else:
+                    end_date = date.today()
+            elif not start_date and end_date:
+                # End date provided but no start date - calculate start_date from end_date - time_range
+                end_date = end_date if end_date else date.today()
+                start_date = CategoricalAnalyzer._calculate_start_date(time_range, end_date)
+            else:
+                # Neither provided - calculate from time_range relative to today
                 end_date = date.today()
-            if start_date is None:
                 start_date = CategoricalAnalyzer._calculate_start_date(time_range, end_date)
             
             # Fetch entries
