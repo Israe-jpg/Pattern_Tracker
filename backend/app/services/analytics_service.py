@@ -1388,3 +1388,99 @@ class CategoricalAnalyzer:
             
         except Exception as e:
             return ChartGenerator._generate_error_chart(f'Error generating chart: {str(e)}')
+
+
+class UnifiedAnalyzer:
+    """
+    Unified interface that automatically detects field type and routes to correct analyzer.
+    """
+    
+    @staticmethod
+    def analyze(
+        field_name: str,
+        tracker_id: int,
+        time_range: str = 'all',
+        option: Optional[str] = None,
+        force_type: Optional[str] = None  # Allow manual override: 'numeric' or 'categorical'
+    ) -> Dict[str, Any]:
+        """
+        Automatically analyze field using appropriate analyzer.
+        
+        Args:
+            field_name: Field to analyze
+            tracker_id: Tracker ID
+            time_range: Time range string
+            option: Specific option to analyze
+            force_type: Force specific analyzer type ('numeric' or 'categorical')
+        
+        Returns:
+            Analysis results with field_type metadata
+        """
+        try:
+            # Determine field type
+            if force_type:
+                if force_type not in ['numeric', 'categorical']:
+                    raise ValueError("force_type must be 'numeric' or 'categorical'")
+                field_type = force_type
+                detection_reason = f"Manually forced to {force_type}"
+            else:
+                field_type, detection_reason = FieldTypeDetector.detect_field_type(
+                    field_name, tracker_id, option
+                )
+            
+            # Route to appropriate analyzer
+            if field_type == 'numeric':
+                result = TrendLineAnalyzer.analyze(
+                    field_name, tracker_id, time_range, option=option
+                )
+                result['analysis_type'] = 'trend'
+            else:
+                result = CategoricalAnalyzer.analyze(
+                    field_name, tracker_id, time_range, option=option
+                )
+                result['analysis_type'] = 'categorical'
+            
+            # Add detection metadata
+            result['field_type'] = field_type
+            result['detection_reason'] = detection_reason
+            
+            return result
+            
+        except Exception as e:
+            raise ValueError(f"Failed to analyze field: {str(e)}")
+    
+    @staticmethod
+    def generate_chart(
+        field_name: str,
+        tracker_id: int,
+        time_range: str = 'all',
+        option: Optional[str] = None,
+        force_type: Optional[str] = None
+    ) -> bytes:
+        """
+        Generate appropriate chart based on field type.
+        
+        Returns:
+            PNG image as bytes
+        """
+        try:
+            # Determine field type
+            if force_type:
+                field_type = force_type
+            else:
+                field_type, _ = FieldTypeDetector.detect_field_type(
+                    field_name, tracker_id, option
+                )
+            
+            # Generate appropriate chart
+            if field_type == 'numeric':
+                return ChartGenerator.generate_trend_chart(
+                    field_name, tracker_id, time_range, option
+                )
+            else:
+                return CategoricalAnalyzer.generate_bar_chart(
+                    field_name, tracker_id, time_range, option
+                )
+                
+        except Exception as e:
+            return ChartGenerator._generate_error_chart(f"Error: {str(e)}")
