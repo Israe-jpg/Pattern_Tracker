@@ -683,26 +683,31 @@ class TrendLineAnalyzer:
             
             # Data Sufficiency Check
             if not skip_sufficiency_check:
-                sufficiency_result = DataSufficiencyChecker.check_data_sufficiency(
-                    data_points=len(data_points),
-                    time_span_days=(
-                        datetime.fromisoformat(data_points[-1]['date']).date() -
-                        datetime.fromisoformat(data_points[0]['date']).date()
-                    ).days + 1,
-                    insight_type=InsightType.TREND
+                time_span_days = (
+                    datetime.fromisoformat(data_points[-1]['date']).date() -
+                    datetime.fromisoformat(data_points[0]['date']).date()
+                ).days + 1
+                
+                sufficiency_result = DataSufficiencyChecker.check_field_eligibility(
+                    field_name=field_name,
+                    entry_count=len(data_points),
+                    time_span_days=time_span_days,
+                    insight_type=InsightType.TREND_LINE,
+                    option=option
                 )
                 
                 # Add sufficiency info to response metadata
                 sufficiency_info = {
-                    'is_sufficient': sufficiency_result.is_sufficient,
-                    'confidence_level': sufficiency_result.confidence_level.value,
-                    'display_strategy': sufficiency_result.display_strategy.value,
-                    'reasons': sufficiency_result.reasons,
-                    'recommendations': sufficiency_result.recommendations
+                    'is_eligible': sufficiency_result.get('is_eligible', False),
+                    'confidence': sufficiency_result.get('confidence', 'insufficient'),
+                    'confidence_score': sufficiency_result.get('confidence_score', 0.0),
+                    'entry_count': sufficiency_result.get('entry_count', len(data_points)),
+                    'min_required': sufficiency_result.get('min_required', 14),
+                    'message': sufficiency_result.get('message', '')
                 }
                 
                 # If data is insufficient, return early with warning
-                if not sufficiency_result.is_sufficient:
+                if not sufficiency_result.get('is_eligible', False):
                     return {
                         'field_name': field_name,
                         'time_range': time_range,
@@ -711,8 +716,7 @@ class TrendLineAnalyzer:
                         'trend_line_points': [],
                         'statistics': {'total_entries': len(data_points)},
                         'data_sufficiency': sufficiency_info,
-                        'message': 'Insufficient data for reliable trend analysis. ' + 
-                                   ' '.join(sufficiency_result.recommendations)
+                        'message': sufficiency_result.get('message', 'Insufficient data for reliable trend analysis.')
                     }
             
             # Determine which option was used
