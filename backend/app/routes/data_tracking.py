@@ -1069,15 +1069,15 @@ def get_time_evolution_analysis(tracker_id: int):
         
         # Generate time evolution analysis
 
-        result = TimeEvolutionAnalyzer.analyze(
+        result = UnifiedAnalyzer.analyze_evolution(
             field_name, tracker_id, time_range, option=option,
             start_date=start_date, end_date=end_date
         )
-        return success_response("Time evolution analysis retrieved successfully", result)
+        return success_response("Unified analysis retrieved successfully", result)
     except ValueError as e:
         return error_response(str(e), 400)
     except Exception as e:
-        return error_response(f"Failed to get time evolution analysis: {str(e)}", 500)
+        return error_response(f"Failed to get unified analysis: {str(e)}", 500)
 
 
 @data_tracking_bp.route('/<int:tracker_id>/time-evolution-chart', methods=['GET'])
@@ -1109,7 +1109,7 @@ def get_time_evolution_chart(tracker_id: int):
             return error
         
         # Generate time evolution chart (returns bytes - PNG image)
-        image_data = TimeEvolutionAnalyzer.generate_chart(
+        image_data = UnifiedAnalyzer.generate_evolution_chart(
             field_name, tracker_id, time_range, option=option,
             start_date=start_date, end_date=end_date
         )
@@ -1131,4 +1131,4 @@ def get_time_evolution_chart(tracker_id: int):
     except ValueError as e:
         return error_response(str(e), 400)
     except Exception as e:
-        return error_response(f"Failed to get time evolution chart: {str(e)}", 500)
+        return error_response(f"Failed to get unified chart: {str(e)}", 500)
