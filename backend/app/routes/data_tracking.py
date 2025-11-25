@@ -987,6 +987,10 @@ def get_unified_analysis(tracker_id: int):
 def get_unified_chart(tracker_id: int):
     """
     Get unified chart for a specific field.
+    
+    Chart types:
+    - For categorical static: bar (default), pie, horizontal_bar
+    - For numeric static: scatter, box_plot
     """
     try:
         _, user_id = get_current_user()
@@ -1008,6 +1012,7 @@ def get_unified_chart(tracker_id: int):
             )
         
         option = request.args.get('option')  # Optional: specific option to analyze
+        chart_type = request.args.get('chart_type')  # Optional: chart type override
         
         # Parse optional date parameters
         start_date, end_date, error = parse_optional_dates()
@@ -1017,6 +1022,7 @@ def get_unified_chart(tracker_id: int):
         # Generate unified chart (returns bytes - PNG image)
         image_data = UnifiedAnalyzer.generate_chart(
             field_name, tracker_id, time_range, option=option,
+            chart_type=chart_type,
             start_date=start_date, end_date=end_date
         )
         
@@ -1024,6 +1030,8 @@ def get_unified_chart(tracker_id: int):
         filename = f'unified_chart_{field_name}'
         if option:
             filename += f'_{option}'
+        if chart_type:
+            filename += f'_{chart_type}'
         filename += f'_{time_range}.png'
         
         # Return image as response (not JSON!)
@@ -1085,6 +1093,10 @@ def get_time_evolution_analysis(tracker_id: int):
 def get_time_evolution_chart(tracker_id: int):
     """
     Get time evolution chart for a specific field.
+    
+    Chart types:
+    - For categorical evolution: stacked_area (default), stacked_bar
+    - For numeric evolution: line (default), line_with_range
     """
     try:
         _, user_id = get_current_user()
@@ -1102,6 +1114,7 @@ def get_time_evolution_chart(tracker_id: int):
             return error_response(f"Invalid time_range. Valid: {', '.join(valid_ranges)}", 400)
         
         option = request.args.get('option')  # Optional: specific option to analyze
+        chart_type = request.args.get('chart_type')  # Optional: chart type override
         
         # Parse optional date parameters
         start_date, end_date, error = parse_optional_dates()
@@ -1111,6 +1124,7 @@ def get_time_evolution_chart(tracker_id: int):
         # Generate time evolution chart (returns bytes - PNG image)
         image_data = UnifiedAnalyzer.generate_evolution_chart(
             field_name, tracker_id, time_range, option=option,
+            chart_type=chart_type,
             start_date=start_date, end_date=end_date
         )
         
@@ -1118,6 +1132,8 @@ def get_time_evolution_chart(tracker_id: int):
         filename = f'time_evolution_chart_{field_name}'
         if option:
             filename += f'_{option}'
+        if chart_type:
+            filename += f'_{chart_type}'
         filename += f'_{time_range}.png'
         
         # Return image as response (not JSON!)

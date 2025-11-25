@@ -1076,6 +1076,177 @@ class ChartGenerator:
         
         plt.close(fig)
         return image_data
+    
+    @staticmethod
+    def generate_scatter_chart(
+        field_name: str,
+        tracker_id: int,
+        time_range: str = 'all',
+        option: Optional[str] = None,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None
+    ) -> bytes:
+        """
+        Generate scatter plot chart for numeric data.
+        
+        Returns:
+            PNG image as bytes
+        """
+        try:
+            # Get trend data (skip sufficiency check for chart - we just need 2+ points)
+            result = TrendLineAnalyzer.analyze(
+                field_name, tracker_id, time_range, option=option,
+                start_date=start_date, end_date=end_date,
+                skip_sufficiency_check=True
+            )
+            
+            # Handle insufficient data
+            if not result.get('data_points') or len(result['data_points']) < 2:
+                return ChartGenerator._generate_error_chart(
+                    result.get('message', 'Insufficient data for chart')
+                )
+            
+            data_points = result['data_points']
+            
+            # Extract dates and values
+            dates = [datetime.fromisoformat(dp['date']).date() for dp in data_points]
+            values = [dp['value'] for dp in data_points]
+            
+            # Create figure
+            fig, ax = plt.subplots(figsize=(12, 7))
+            
+            # Convert to datetime objects for matplotlib
+            date_objs = [datetime.combine(d, datetime.min.time()) for d in dates]
+            
+            # Plot scatter
+            ax.scatter(date_objs, values, color='#3498db', s=100, alpha=0.6,
+                     edgecolors='white', linewidths=1.5, zorder=3)
+            
+            # Styling
+            ax.set_xlabel('Date', fontsize=13, fontweight='bold', labelpad=10)
+            
+            # Build title and y-label with option info
+            field_display = field_name.replace("_", " ").title()
+            result_option = result.get('option') or option
+            option_display = result_option.replace("_", " ").title() if result_option else None
+            if option_display:
+                title = f'{field_display} - {option_display} - Scatter Plot'
+                ax.set_ylabel(option_display, fontsize=13, fontweight='bold', labelpad=10)
+            else:
+                title = f'{field_display} - Scatter Plot'
+                ax.set_ylabel('Value', fontsize=13, fontweight='bold', labelpad=10)
+            
+            subtitle = f'({time_range.replace("_", " ").title()} | {len(data_points)} data points)'
+            ax.set_title(f'{title}\n{subtitle}', fontsize=15, fontweight='bold', pad=20)
+            
+            ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.7)
+            
+            # Format x-axis
+            ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
+            ax.xaxis.set_major_locator(mdates.AutoDateLocator())
+            plt.xticks(rotation=45, ha='right')
+            
+            plt.tight_layout()
+            
+            # Save to bytes
+            with io.BytesIO() as buffer:
+                plt.savefig(buffer, format='png', dpi=120, bbox_inches='tight')
+                buffer.seek(0)
+                image_data = buffer.getvalue()
+            
+            plt.close(fig)
+            return image_data
+            
+        except Exception as e:
+            return ChartGenerator._generate_error_chart(f'Error: {str(e)}')
+    
+    @staticmethod
+    def generate_box_plot_chart(
+        field_name: str,
+        tracker_id: int,
+        time_range: str = 'all',
+        option: Optional[str] = None,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None
+    ) -> bytes:
+        """
+        Generate box plot chart for numeric data distribution.
+        
+        Returns:
+            PNG image as bytes
+        """
+        try:
+            # Get trend data (skip sufficiency check for chart - we just need 2+ points)
+            result = TrendLineAnalyzer.analyze(
+                field_name, tracker_id, time_range, option=option,
+                start_date=start_date, end_date=end_date,
+                skip_sufficiency_check=True
+            )
+            
+            # Handle insufficient data
+            if not result.get('data_points') or len(result['data_points']) < 2:
+                return ChartGenerator._generate_error_chart(
+                    result.get('message', 'Insufficient data for chart')
+                )
+            
+            data_points = result['data_points']
+            stats = result.get('statistics', {})
+            
+            # Extract values
+            values = [dp['value'] for dp in data_points]
+            
+            # Create figure
+            fig, ax = plt.subplots(figsize=(10, 7))
+            
+            # Create box plot
+            bp = ax.boxplot(values, vert=True, patch_artist=True,
+                           boxprops=dict(facecolor='#3498db', alpha=0.7),
+                           medianprops=dict(color='#e74c3c', linewidth=2),
+                           whiskerprops=dict(color='#34495e', linewidth=1.5),
+                           capprops=dict(color='#34495e', linewidth=1.5))
+            
+            # Styling
+            ax.set_ylabel('Value', fontsize=13, fontweight='bold', labelpad=10)
+            
+            # Build title with option info
+            field_display = field_name.replace("_", " ").title()
+            result_option = result.get('option') or option
+            option_display = result_option.replace("_", " ").title() if result_option else None
+            if option_display:
+                title = f'{field_display} - {option_display} - Distribution (Box Plot)'
+            else:
+                title = f'{field_display} - Distribution (Box Plot)'
+            
+            subtitle = f'({time_range.replace("_", " ").title()} | Median: {stats.get("median", "N/A")} | Mean: {stats.get("mean", "N/A")})'
+            ax.set_title(f'{title}\n{subtitle}', fontsize=15, fontweight='bold', pad=20)
+            
+            # Add statistics text
+            stats_text = (
+                f'Min: {stats.get("min", "N/A")} | '
+                f'Q1: {stats.get("q1", "N/A")} | '
+                f'Median: {stats.get("median", "N/A")} | '
+                f'Q3: {stats.get("q3", "N/A")} | '
+                f'Max: {stats.get("max", "N/A")}'
+            )
+            ax.text(0.5, 0.02, stats_text, transform=ax.transAxes,
+                   ha='center', fontsize=10, bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+            
+            ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.7, axis='y')
+            ax.set_xticklabels(['Distribution'])
+            
+            plt.tight_layout()
+            
+            # Save to bytes
+            with io.BytesIO() as buffer:
+                plt.savefig(buffer, format='png', dpi=120, bbox_inches='tight')
+                buffer.seek(0)
+                image_data = buffer.getvalue()
+            
+            plt.close(fig)
+            return image_data
+            
+        except Exception as e:
+            return ChartGenerator._generate_error_chart(f'Error: {str(e)}')
 
 
 class CategoricalAnalyzer:
@@ -1449,6 +1620,151 @@ class CategoricalAnalyzer:
             
         except Exception as e:
             return ChartGenerator._generate_error_chart(f'Error generating chart: {str(e)}')
+    
+    @staticmethod
+    def generate_pie_chart(
+        field_name: str,
+        tracker_id: int,
+        time_range: str = 'all',
+        option: Optional[str] = None,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None
+    ) -> bytes:
+        """
+        Generate pie chart showing frequency distribution of categorical data.
+        
+        Returns:
+            PNG image as bytes
+        """
+        try:
+            # Get frequency data
+            result = CategoricalAnalyzer.analyze(
+                field_name, tracker_id, time_range, option,
+                start_date=start_date, end_date=end_date
+            )
+            
+            # Handle insufficient data
+            if not result.get('frequency') or result.get('message'):
+                return ChartGenerator._generate_error_chart(
+                    result.get('message', 'Insufficient data for chart')
+                )
+            
+            frequency = result['frequency']
+            stats = result['statistics']
+            display_name = result.get('display_name', field_name)
+            
+            # Create figure
+            fig, ax = plt.subplots(figsize=(10, 8))
+            
+            # Prepare data for chart
+            values = list(frequency.keys())
+            counts = list(frequency.values())
+            
+            # Generate colors
+            colors = plt.cm.Set3(np.linspace(0, 1, len(values)))
+            
+            # Create pie chart
+            wedges, texts, autotexts = ax.pie(
+                counts, labels=values, colors=colors, autopct='%1.1f%%',
+                startangle=90, textprops={'fontsize': 11}
+            )
+            
+            # Make percentage text bold
+            for autotext in autotexts:
+                autotext.set_color('white')
+                autotext.set_fontweight('bold')
+                autotext.set_fontsize(10)
+            
+            # Styling
+            title = f'{display_name} - Frequency Distribution'
+            subtitle = f'({time_range.replace("_", " ").title()} | Total: {stats.get("total_count", 0)} entries)'
+            ax.set_title(f'{title}\n{subtitle}', fontsize=15, fontweight='bold', pad=20)
+            
+            plt.tight_layout()
+            
+            # Save to bytes
+            with io.BytesIO() as buffer:
+                plt.savefig(buffer, format='png', dpi=120, bbox_inches='tight')
+                buffer.seek(0)
+                image_data = buffer.getvalue()
+            
+            plt.close(fig)
+            return image_data
+            
+        except Exception as e:
+            return ChartGenerator._generate_error_chart(f'Error generating pie chart: {str(e)}')
+    
+    @staticmethod
+    def generate_horizontal_bar_chart(
+        field_name: str,
+        tracker_id: int,
+        time_range: str = 'all',
+        option: Optional[str] = None,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None
+    ) -> bytes:
+        """
+        Generate horizontal bar chart showing frequency distribution of categorical data.
+        
+        Returns:
+            PNG image as bytes
+        """
+        try:
+            # Get frequency data
+            result = CategoricalAnalyzer.analyze(
+                field_name, tracker_id, time_range, option,
+                start_date=start_date, end_date=end_date
+            )
+            
+            # Handle insufficient data
+            if not result.get('frequency') or result.get('message'):
+                return ChartGenerator._generate_error_chart(
+                    result.get('message', 'Insufficient data for chart')
+                )
+            
+            frequency = result['frequency']
+            stats = result['statistics']
+            display_name = result.get('display_name', field_name)
+            
+            # Create figure
+            fig, ax = plt.subplots(figsize=(12, 7))
+            
+            # Prepare data for chart
+            values = list(frequency.keys())
+            counts = list(frequency.values())
+            
+            # Create horizontal bar chart
+            bars = ax.barh(values, counts, color='#3498db', alpha=0.8, edgecolor='white', linewidth=1.5)
+            
+            # Add value labels on bars
+            for i, bar in enumerate(bars):
+                width = bar.get_width()
+                ax.text(width, bar.get_y() + bar.get_height()/2.,
+                       f'{int(width)}',
+                       ha='left', va='center', fontsize=11, fontweight='bold')
+            
+            # Styling
+            ax.set_xlabel('Frequency', fontsize=13, fontweight='bold', labelpad=10)
+            ax.set_ylabel('Values', fontsize=13, fontweight='bold', labelpad=10)
+            
+            title = f'{display_name} - Frequency Distribution'
+            subtitle = f'({time_range.replace("_", " ").title()} | Total: {stats.get("total_count", 0)} entries)'
+            ax.set_title(f'{title}\n{subtitle}', fontsize=15, fontweight='bold', pad=20)
+            
+            ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.7, axis='x')
+            plt.tight_layout()
+            
+            # Save to bytes
+            with io.BytesIO() as buffer:
+                plt.savefig(buffer, format='png', dpi=120, bbox_inches='tight')
+                buffer.seek(0)
+                image_data = buffer.getvalue()
+            
+            plt.close(fig)
+            return image_data
+            
+        except Exception as e:
+            return ChartGenerator._generate_error_chart(f'Error generating horizontal bar chart: {str(e)}')
 
 
 class UnifiedAnalyzer:
@@ -1521,16 +1837,27 @@ class UnifiedAnalyzer:
         time_range: str = 'all',
         option: Optional[str] = None,
         force_type: Optional[str] = None,
+        chart_type: Optional[str] = None,
         start_date: Optional[date] = None,
         end_date: Optional[date] = None
     ) -> bytes:
         """
         Generate appropriate chart based on field type.
         
+        Chart types:
+        - For categorical static: bar (default), pie, horizontal_bar
+        - For numeric static: scatter, box_plot
+        
         Returns:
             PNG image as bytes
         """
         try:
+            # Normalize chart_type (handle None and empty string)
+            if chart_type:
+                chart_type = chart_type.strip().lower()
+            else:
+                chart_type = None
+            
             # Determine field type
             if force_type:
                 field_type = force_type
@@ -1541,15 +1868,41 @@ class UnifiedAnalyzer:
             
             # Generate appropriate chart
             if field_type == 'numeric':
-                return ChartGenerator.generate_trend_chart(
-                    field_name, tracker_id, time_range, option,
-                    start_date=start_date, end_date=end_date
-                )
+                # Numeric static charts
+                if chart_type == 'scatter':
+                    return ChartGenerator.generate_scatter_chart(
+                        field_name, tracker_id, time_range, option,
+                        start_date=start_date, end_date=end_date
+                    )
+                elif chart_type == 'box_plot':
+                    return ChartGenerator.generate_box_plot_chart(
+                        field_name, tracker_id, time_range, option,
+                        start_date=start_date, end_date=end_date
+                    )
+                else:
+                    # Default: trend chart (line with trend line)
+                    return ChartGenerator.generate_trend_chart(
+                        field_name, tracker_id, time_range, option,
+                        start_date=start_date, end_date=end_date
+                    )
             else:
-                return CategoricalAnalyzer.generate_bar_chart(
-                    field_name, tracker_id, time_range, option,
-                    start_date=start_date, end_date=end_date
-                )
+                # Categorical static charts
+                if chart_type == 'pie':
+                    return CategoricalAnalyzer.generate_pie_chart(
+                        field_name, tracker_id, time_range, option,
+                        start_date=start_date, end_date=end_date
+                    )
+                elif chart_type == 'horizontal_bar':
+                    return CategoricalAnalyzer.generate_horizontal_bar_chart(
+                        field_name, tracker_id, time_range, option,
+                        start_date=start_date, end_date=end_date
+                    )
+                else:
+                    # Default: vertical bar chart
+                    return CategoricalAnalyzer.generate_bar_chart(
+                        field_name, tracker_id, time_range, option,
+                        start_date=start_date, end_date=end_date
+                    )
                 
         except Exception as e:
             return ChartGenerator._generate_error_chart(f"Error: {str(e)}")
@@ -1589,15 +1942,21 @@ class UnifiedAnalyzer:
         tracker_id: int,
         time_range: str = 'month',
         option: Optional[str] = None,
+        chart_type: Optional[str] = None,
         start_date: Optional[date] = None,
         end_date: Optional[date] = None
     ) -> bytes:
         """
         Generate time evolution chart (unified interface).
+        
+        Chart types:
+        - For categorical evolution: stacked_area (default), stacked_bar
+        - For numeric evolution: line (default), line_with_range
         """
         return TimeEvolutionAnalyzer.generate_evolution_chart(
-            field_name, tracker_id, time_range, option, start_date, end_date
+            field_name, tracker_id, time_range, option, chart_type, start_date, end_date
         )
+        
 
 class TimeEvolutionAnalyzer:
     """
@@ -1922,29 +2281,51 @@ class TimeEvolutionAnalyzer:
         tracker_id: int,
         time_range: str = 'month',
         option: Optional[str] = None,
+        chart_type: Optional[str] = None,
         start_date: Optional[date] = None,
         end_date: Optional[date] = None
     ) -> bytes:
         """
         Generate appropriate time evolution chart based on field type.
         
-        - Numeric: Line chart with mean values over time
-        - Categorical: Stacked area chart showing distribution changes
+        Chart types:
+        - For categorical evolution: stacked_area (default), stacked_bar
+        - For numeric evolution: line (default), line_with_range
         """
         try:
+            # Normalize chart_type (handle None and empty string)
+            if chart_type:
+                chart_type = chart_type.strip().lower()
+            else:
+                chart_type = None
+            
             # Detect field type
             field_type, _ = FieldTypeDetector.detect_field_type(
                 field_name, tracker_id, option
             )
             
             if field_type == 'numeric':
-                return TimeEvolutionAnalyzer._generate_numeric_evolution_chart(
-                    field_name, tracker_id, time_range, option, start_date, end_date
-                )
+                # Numeric evolution charts
+                if chart_type == 'line_with_range':
+                    return TimeEvolutionAnalyzer._generate_numeric_evolution_chart(
+                        field_name, tracker_id, time_range, option, start_date, end_date
+                    )
+                else:
+                    # Default: simple line chart
+                    return TimeEvolutionAnalyzer._generate_numeric_evolution_line_chart(
+                        field_name, tracker_id, time_range, option, start_date, end_date
+                    )
             else:
-                return TimeEvolutionAnalyzer._generate_categorical_evolution_chart(
-                    field_name, tracker_id, time_range, option, start_date, end_date
-                )
+                # Categorical evolution charts
+                if chart_type == 'stacked_bar':
+                    return TimeEvolutionAnalyzer._generate_categorical_evolution_stacked_bar_chart(
+                        field_name, tracker_id, time_range, option, start_date, end_date
+                    )
+                else:
+                    # Default: stacked area chart
+                    return TimeEvolutionAnalyzer._generate_categorical_evolution_chart(
+                        field_name, tracker_id, time_range, option, start_date, end_date
+                    )
                 
         except Exception as e:
             return ChartGenerator._generate_error_chart(f"Error: {str(e)}")
@@ -1988,6 +2369,80 @@ class TimeEvolutionAnalyzer:
                            label='Min-Max Range')
             
             # Plot mean line
+            ax.plot(date_objs, means, 'o-', color='#3498db',
+                   label='Average Value', linewidth=3, markersize=8,
+                   markeredgecolor='white', markeredgewidth=2)
+            
+            # Styling
+            field_display = field_name.replace("_", " ").title()
+            option_display = option.replace("_", " ").title() if option else None
+            
+            if option_display:
+                title = f'{field_display} - {option_display} - Evolution Over Time'
+                ax.set_ylabel(option_display, fontsize=13, fontweight='bold', labelpad=10)
+            else:
+                title = f'{field_display} - Evolution Over Time'
+                ax.set_ylabel('Value', fontsize=13, fontweight='bold', labelpad=10)
+            
+            subtitle = f'({time_range.replace("_", " ").title()} | Bucketed by {result["evolution"]["bucket_strategy"].replace("_", " ")})'
+            ax.set_title(f'{title}\n{subtitle}', fontsize=15, fontweight='bold', pad=20)
+            
+            ax.set_xlabel('Date', fontsize=13, fontweight='bold', labelpad=10)
+            ax.legend(loc='best', fontsize=11, framealpha=0.9)
+            ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.7)
+            
+            # Format x-axis
+            ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
+            ax.xaxis.set_major_locator(mdates.AutoDateLocator())
+            plt.xticks(rotation=45, ha='right')
+            
+            plt.tight_layout()
+            
+            # Save to bytes
+            with io.BytesIO() as buffer:
+                plt.savefig(buffer, format='png', dpi=120, bbox_inches='tight')
+                buffer.seek(0)
+                image_data = buffer.getvalue()
+            
+            plt.close(fig)
+            return image_data
+            
+        except Exception as e:
+            return ChartGenerator._generate_error_chart(f"Error: {str(e)}")
+    
+    @staticmethod
+    def _generate_numeric_evolution_line_chart(
+        field_name: str,
+        tracker_id: int,
+        time_range: str,
+        option: Optional[str],
+        start_date: Optional[date],
+        end_date: Optional[date]
+    ) -> bytes:
+        """Generate simple line chart for numeric evolution (without range shading)."""
+        try:
+            result = TimeEvolutionAnalyzer.analyze_numeric_evolution(
+                field_name, tracker_id, time_range, option, start_date, end_date
+            )
+            
+            if not result.get('evolution') or not result['evolution'].get('bucketed_data'):
+                return ChartGenerator._generate_error_chart(
+                    result.get('message', 'Insufficient data for evolution chart')
+                )
+            
+            bucketed_data = result['evolution']['bucketed_data']
+            
+            # Extract data for plotting
+            dates = [datetime.fromisoformat(b['date']).date() for b in bucketed_data]
+            means = [b['mean'] for b in bucketed_data]
+            
+            # Create figure
+            fig, ax = plt.subplots(figsize=(14, 8))
+            
+            # Convert to datetime for matplotlib
+            date_objs = [datetime.combine(d, datetime.min.time()) for d in dates]
+            
+            # Plot mean line only (no range shading)
             ax.plot(date_objs, means, 'o-', color='#3498db',
                    label='Average Value', linewidth=3, markersize=8,
                    markeredgecolor='white', markeredgewidth=2)
@@ -2090,6 +2545,85 @@ class TimeEvolutionAnalyzer:
             ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
             ax.xaxis.set_major_locator(mdates.AutoDateLocator())
             plt.xticks(rotation=45, ha='right')
+            
+            plt.tight_layout()
+            
+            # Save to bytes
+            with io.BytesIO() as buffer:
+                plt.savefig(buffer, format='png', dpi=120, bbox_inches='tight')
+                buffer.seek(0)
+                image_data = buffer.getvalue()
+            
+            plt.close(fig)
+            return image_data
+            
+        except Exception as e:
+            return ChartGenerator._generate_error_chart(f"Error: {str(e)}")
+    
+    @staticmethod
+    def _generate_categorical_evolution_stacked_bar_chart(
+        field_name: str,
+        tracker_id: int,
+        time_range: str,
+        option: Optional[str],
+        start_date: Optional[date],
+        end_date: Optional[date]
+    ) -> bytes:
+        """Generate stacked bar chart for categorical evolution."""
+        try:
+            result = TimeEvolutionAnalyzer.analyze_categorical_evolution(
+                field_name, tracker_id, time_range, option, start_date, end_date
+            )
+            
+            if not result.get('evolution') or not result['evolution'].get('buckets'):
+                return ChartGenerator._generate_error_chart(
+                    result.get('message', 'Insufficient data for evolution chart')
+                )
+            
+            evolution = result['evolution']
+            buckets = evolution['buckets']
+            categories = evolution['categories']
+            
+            # Prepare data for stacked bar chart
+            dates = [datetime.fromisoformat(b['date']).date() for b in buckets]
+            
+            # Build matrix of category counts over time
+            category_data = {cat: [] for cat in categories}
+            for bucket in buckets:
+                for cat in categories:
+                    category_data[cat].append(bucket['frequency'].get(cat, 0))
+            
+            # Create figure
+            fig, ax = plt.subplots(figsize=(14, 8))
+            
+            # Generate colors for categories
+            colors = plt.cm.Set3(np.linspace(0, 1, len(categories)))
+            
+            # Prepare data for stacked bar
+            bottom = np.zeros(len(buckets))
+            
+            # Plot stacked bars
+            for i, cat in enumerate(categories):
+                ax.bar(range(len(buckets)), category_data[cat], 
+                      bottom=bottom, label=cat, color=colors[i], alpha=0.8)
+                bottom += np.array(category_data[cat])
+            
+            # Set x-axis labels
+            ax.set_xticks(range(len(buckets)))
+            ax.set_xticklabels([d.strftime('%Y-%m-%d') for d in dates], rotation=45, ha='right')
+            
+            # Styling
+            display_name = result.get('display_name', field_name)
+            title = f'{display_name} - Distribution Evolution Over Time (Stacked Bar)'
+            subtitle = f'({time_range.replace("_", " ").title()} | Bucketed by {evolution["bucket_strategy"].replace("_", " ")})'
+            ax.set_title(f'{title}\n{subtitle}', fontsize=15, fontweight='bold', pad=20)
+            
+            ax.set_xlabel('Date', fontsize=13, fontweight='bold', labelpad=10)
+            ax.set_ylabel('Frequency', fontsize=13, fontweight='bold', labelpad=10)
+            
+            # Legend
+            ax.legend(loc='upper left', bbox_to_anchor=(1, 1), fontsize=10, framealpha=0.9)
+            ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.7, axis='y')
             
             plt.tight_layout()
             
