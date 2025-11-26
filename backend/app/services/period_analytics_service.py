@@ -237,9 +237,15 @@ class PeriodAnalyticsService:
     @staticmethod
     def _get_period_start_dates(tracker_id: int, months: int) -> List[date]:
         """Extract period start dates from tracking data."""
-        # Query entries where period started (flow != none/spotting)
-        # This is period-specific logic
-        pass
+        try:
+            tracker = Tracker.query.get(tracker_id)
+            if not tracker:
+                raise ValueError(f"Tracker {tracker_id} not found")
+            if tracker.category.name != 'Period Tracker':
+                raise ValueError("This endpoint is only for Period Trackers")
+            period_starts = []
+            entries = TrackingData.query.filter_by(tracker_id=tracker_id ).order_by(TrackingData.entry_date.asc()).all()
+            
     
     @staticmethod
     def _get_entries_with_phases(

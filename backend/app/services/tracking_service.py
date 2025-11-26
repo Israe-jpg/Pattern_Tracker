@@ -69,6 +69,11 @@ class TrackingService:
             
             db.session.add(tracking_data)
             db.session.commit()
+            
+            # Check if user marked period as started (Period Tracker only)
+            if is_period_tracker:
+                TrackingService._handle_period_start_marker(tracker, data, entry_date)
+            
             return tracking_data
             
         except Exception as e:
@@ -158,6 +163,13 @@ class TrackingService:
                 existing_entry.ai_insights = ai_insights
             
             db.session.commit()
+            
+            # Check if user marked period as started (Period Tracker only)
+            if is_period_tracker:
+                # Get the final merged data
+                final_data = existing_entry.data or {}
+                TrackingService._handle_period_start_marker(tracker, final_data, entry_date)
+            
             return existing_entry
             
         except Exception as e:
@@ -419,3 +431,35 @@ class TrackingService:
                     raise ValueError(
                         f"Option '{option_name}' value {value} is out of range [{min_val}, {max_val}]"
                     )
+    
+    @staticmethod
+    def _handle_period_start_marker(tracker: Tracker, data: Dict[str, Any], entry_date: date) -> None:
+        """
+        Handle when user explicitly marks "period_started: true" in their tracking data.
+        This updates the last_period_start_date to today's date.
+        """
+        try:
+            # Check if user marked period as started
+            menstruating_data = data.get('menstruating', {})
+            period_started = menstruating_data.get('period_started')
+            
+            # Only proceed if period_started is explicitly set to true
+            if period_started is not True:
+                return
+            
+            # Ensure tracker has settings
+            if not tracker.settings:
+                tracker.settings = {}
+            
+            settings = tracker.settings
+            
+            # Update last_period_start_date to today
+            settings['last_period_start_date'] = entry_date.isoformat()
+            tracker.settings = settings
+            db.session.commit()
+                
+        except Exception as e:
+            # Don't fail the whole operation if period start update fails
+            # Just log the error (in production, use proper logging)
+            print(f"Error updating period start date: {str(e)}")
+            # Don't rollback - the tracking data was already saved successfully

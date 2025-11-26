@@ -2,7 +2,8 @@ from flask import Blueprint, request, jsonify
 from flask_jwt_extended import get_jwt_identity, jwt_required
 from marshmallow import ValidationError
 from typing import Tuple, Dict, Any
-from datetime import datetime
+from datetime import datetime, date, timedelta
+from sqlalchemy.orm.attributes import flag_modified
 
 from app import db
 from app.models.user import User
@@ -11,8 +12,13 @@ from app.models.tracker_field import TrackerField
 from app.models.tracker_user_field import TrackerUserField
 from app.models.tracker_category import TrackerCategory
 from app.models.field_option import FieldOption
+from app.models.period_cycle import PeriodCycle
 from app.schemas.tracker_schemas import CustomCategorySchema, FieldOptionSchema, MenstruationTrackerSetupSchema
 from app.services.category_service import CategoryService
+from app.utils.menstruation_calculations import (
+    predict_ovulation_date,
+    predict_next_period_date
+)
 
 trackers_bp = Blueprint('trackers', __name__)
 
@@ -550,7 +556,7 @@ def get_form_schema(tracker_id: int):
         category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
         if not category:
             return error_response("Tracker category not found", 404)
-        
+         
         is_prebuilt = CategoryService.is_prebuilt_category(category.name)
         is_period_tracker = category.name == 'Period Tracker'
         
@@ -1374,3 +1380,127 @@ def get_available_option_types():
         "Option types retrieved successfully",
         {'option_types': option_types}
     )
+
+
+# ============================================================================
+# PERIOD TRACKING ROUTES
+# ============================================================================
+
+@trackers_bp.route('/<int:tracker_id>/log-period', methods=['POST'])
+@jwt_required()
+def log_period_start(tracker_id: int):
+    """
+    Log the start of a new period cycle.
+    This creates a new PeriodCycle record and updates tracker predictions.
+    Can log periods for today or past dates.
+    """
+    try:
+        _, user_id = get_current_user()
+        tracker = verify_tracker_ownership(tracker_id, user_id)
+    except ValueError as e:
+        return error_response(str(e), 404)
+    
+    try:
+        # Verify this is a Period Tracker
+        category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
+        if not category or category.name != 'Period Tracker':
+            return error_response("This endpoint is only available for Period Tracker", 400)
+        
+        # Get period date from request (default to today)
+        data = request.json or {}
+        period_date_str = data.get('period_date')
+        
+        if period_date_str:
+            try:
+                period_date = datetime.fromisoformat(period_date_str).date()
+            except (ValueError, TypeError):
+                return error_response("Invalid date format. Use ISO format (YYYY-MM-DD)", 400)
+        else:
+            period_date = date.today()
+        
+        # Ensure tracker has settings
+        if not tracker.settings:
+            tracker.settings = {}
+        
+        settings = tracker.settings.copy()
+        
+        # Get average cycle length and period length from settings
+        average_cycle_length = settings.get('average_cycle_length', 28)
+        average_period_length = settings.get('average_period_length', 5)
+        
+        # Close any previous incomplete cycles
+        previous_cycles = PeriodCycle.query.filter_by(
+            tracker_id=tracker_id,
+            cycle_end_date=None
+        ).all()
+        
+        for prev_cycle in previous_cycles:
+            # Only close if the new period date is after the previous cycle start
+            if period_date > prev_cycle.cycle_start_date:
+                prev_cycle.cycle_end_date = period_date
+                # Calculate cycle length
+                cycle_length = (period_date - prev_cycle.cycle_start_date).days
+                prev_cycle.cycle_length = cycle_length
+                
+                # If period_end_date is not set, set it based on average period length
+                if not prev_cycle.period_end_date:
+                    estimated_period_end = prev_cycle.period_start_date + timedelta(days=average_period_length - 1)
+                    prev_cycle.period_end_date = min(estimated_period_end, period_date)
+                    period_length = (prev_cycle.period_end_date - prev_cycle.period_start_date).days + 1
+                    prev_cycle.period_length = period_length
+        
+        # Check if a cycle already exists for this date
+        existing_cycle = PeriodCycle.query.filter_by(
+            tracker_id=tracker_id,
+            cycle_start_date=period_date
+        ).first()
+        
+        if existing_cycle:
+            return error_response(
+                f"A period cycle already exists for {period_date.isoformat()}. "
+                "If you want to update it, please use the update endpoint.",
+                409
+            )
+        
+        # Calculate predictions for the new cycle
+        # Convert date to datetime for prediction functions
+        period_datetime = datetime.combine(period_date, datetime.min.time())
+        predicted_ovulation = predict_ovulation_date(period_datetime, average_cycle_length)
+        predicted_next_period = predict_next_period_date(period_datetime, average_cycle_length)
+        
+        # Extract date from datetime results
+        predicted_ovulation_date_obj = predicted_ovulation.date() if predicted_ovulation else None
+        predicted_next_period_date_obj = predicted_next_period.date() if predicted_next_period else None
+        
+        # Create new PeriodCycle
+        new_cycle = PeriodCycle(
+            tracker_id=tracker_id,
+            cycle_start_date=period_date,
+            period_start_date=period_date,
+            predicted_ovulation_date=predicted_ovulation_date_obj,
+            predicted_next_period_date=predicted_next_period_date_obj
+        )
+        
+        db.session.add(new_cycle)
+        
+        # Update tracker settings with new predictions
+        settings['last_period_start_date'] = period_date.isoformat()
+        settings['predicted_ovulation'] = predicted_ovulation_date_obj.isoformat() if predicted_ovulation_date_obj else None
+        settings['predicted_next_period'] = predicted_next_period_date_obj.isoformat() if predicted_next_period_date_obj else None
+        
+        tracker.settings = settings
+        flag_modified(tracker, 'settings')
+        
+        db.session.commit()
+        
+        return success_response(
+            "Period logged successfully",
+            {
+                'period_cycle': new_cycle.to_dict(),
+                'updated_settings': tracker.settings
+            }
+        )
+    
+    except Exception as e:
+        db.session.rollback()
+        return error_response(f"Failed to log period: {str(e)}", 500)

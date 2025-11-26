@@ -24,7 +24,7 @@ def create_app(config_name='development'):
     CORS(app)
     
     # Import models
-    from app.models import User, TrackerCategory, Tracker, TrackerField, FieldOption, TrackingData
+    from app.models import User, TrackerCategory, Tracker, TrackerField, FieldOption, TrackingData, PeriodCycle
     
     # Register blueprints
     from app.routes.auth import auth_bp
