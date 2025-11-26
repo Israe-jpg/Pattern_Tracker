@@ -17,7 +17,8 @@ from app.schemas.tracker_schemas import CustomCategorySchema, FieldOptionSchema,
 from app.services.category_service import CategoryService
 from app.utils.menstruation_calculations import (
     predict_ovulation_date,
-    predict_next_period_date
+    predict_next_period_date,
+    predict_period_end_date
 )
 
 trackers_bp = Blueprint('trackers', __name__)
@@ -1442,12 +1443,16 @@ def log_period_start(tracker_id: int):
                 cycle_length = (period_date - prev_cycle.cycle_start_date).days
                 prev_cycle.cycle_length = cycle_length
                 
-                # If period_end_date is not set, set it based on average period length
+                # If period_end_date is not set, set it based on average period length using utility function
                 if not prev_cycle.period_end_date:
-                    estimated_period_end = prev_cycle.period_start_date + timedelta(days=average_period_length - 1)
-                    prev_cycle.period_end_date = min(estimated_period_end, period_date)
-                    period_length = (prev_cycle.period_end_date - prev_cycle.period_start_date).days + 1
-                    prev_cycle.period_length = period_length
+                    prev_period_start_datetime = datetime.combine(prev_cycle.period_start_date, datetime.min.time())
+                    estimated_period_end = predict_period_end_date(prev_period_start_datetime, average_period_length)
+                    if estimated_period_end:
+                        estimated_period_end_date = estimated_period_end.date()
+                        # Don't let estimated end date exceed the actual new period start date
+                        prev_cycle.period_end_date = min(estimated_period_end_date, period_date)
+                        period_length = (prev_cycle.period_end_date - prev_cycle.period_start_date).days + 1
+                        prev_cycle.period_length = period_length
         
         # Check if a cycle already exists for this date
         existing_cycle = PeriodCycle.query.filter_by(
@@ -1472,11 +1477,18 @@ def log_period_start(tracker_id: int):
         predicted_ovulation_date_obj = predicted_ovulation.date() if predicted_ovulation else None
         predicted_next_period_date_obj = predicted_next_period.date() if predicted_next_period else None
         
+        # Calculate estimated period end date using utility function
+        predicted_period_end = predict_period_end_date(period_datetime, average_period_length)
+        estimated_period_end_date = predicted_period_end.date() if predicted_period_end else None
+        estimated_period_length = average_period_length
+        
         # Create new PeriodCycle
         new_cycle = PeriodCycle(
             tracker_id=tracker_id,
             cycle_start_date=period_date,
             period_start_date=period_date,
+            period_end_date=estimated_period_end_date,  # Estimated based on average
+            period_length=estimated_period_length,  # Estimated based on average
             predicted_ovulation_date=predicted_ovulation_date_obj,
             predicted_next_period_date=predicted_next_period_date_obj
         )
