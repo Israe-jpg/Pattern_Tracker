@@ -79,6 +79,30 @@ def predict_next_period_date(last_period_start_date: datetime,
     return next_period_date
 
 
+def predict_period_end_date(period_start_date: datetime, 
+                           average_period_length: int) -> Optional[datetime]:
+    """
+    Predict when the current period will end based on average period length.
+    
+    Args:
+        period_start_date: The start date of the period
+        average_period_length: Average number of days the period typically lasts
+    
+    Returns:
+        Predicted end date of the period, or None if inputs are invalid
+    """
+    if not period_start_date or not average_period_length:
+        return None
+    
+    if isinstance(period_start_date, str):
+        period_start_date = datetime.fromisoformat(period_start_date)
+    
+    # Period end = start date + (average_period_length - 1) days
+    # (e.g., if period starts on day 1 and lasts 5 days, it ends on day 5)
+    period_end_date = period_start_date + timedelta(days=average_period_length - 1)
+    return period_end_date
+
+
 def get_fertility_window(last_period_start_date: datetime, 
                         average_cycle_length: int) -> Optional[Dict]:
     
