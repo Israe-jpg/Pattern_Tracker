@@ -4,27 +4,34 @@ specialized service for cycle operations
 
 from app.models.period_cycle import PeriodCycle
 from app.models.tracker import Tracker
-from app.models.tracking_data import TrackingData
-from app.models.tracker_category import TrackerCategory
-from app.models.tracker_field import TrackerField
-from app.models.tracker_user_field import TrackerUserField
-from app.models.field_option import FieldOption
-from app.models.tracker_user import TrackerUser
-from app.models.tracker_user_role import TrackerUserRole
-from app.models.tracker_user_permission import TrackerUserPermission
-from datetime import date
+from datetime import date, datetime, timedelta
 from typing import Dict, Any, Optional
+from app import db
+from sqlalchemy.orm.attributes import flag_modified
+from app.utils.menstruation_calculations import (
+    calculate_cycle_day,
+    determine_cycle_phase,
+    predict_ovulation_date,
+    predict_next_period_date,
+    predict_period_end_date
+)
 
 class PeriodCycleService:
     @staticmethod
     def get_tracker_settings(tracker_id: int) -> Dict[str, Any]:
         try:
+            tracker = Tracker.query.get(tracker_id)
+            if not tracker:
+                raise ValueError("Tracker not found")
             settings = tracker.settings or {}
             return {
                 'average_cycle_length': settings.get('average_cycle_length', 28),
                 'average_period_length': settings.get('average_period_length', 5),
-                'last_period_start_date': settings.get('last_period_start_date')
-                **settings
+                'last_period_start_date': settings.get('last_period_start_date'),
+                'predicted_ovulation': settings.get('predicted_ovulation'),
+                'predicted_next_period': settings.get('predicted_next_period'),
+                'predicted_period_end_date': settings.get('predicted_period_end_date'),
+                'predicted_period_length': settings.get('predicted_period_length')
             }
         except Exception as e:
             raise ValueError(f"Failed to get tracker settings: {str(e)}")
@@ -65,18 +72,22 @@ class PeriodCycleService:
         
     @staticmethod
     def calculate_cycle_predictions(
-        tracker_id: int,
         cycle_start_date: date,
         average_cycle_length: int
     ) -> Dict[str, Optional[date]]:
         try:
-            cycle_datetime = datetime.combine(cycle_start_date, datetime.min.time())
-            predicted_ovulation = predict_ovulation_date(cycle_datetime, average_cycle_length)
-            predicted_next_period = predict_next_period_date(cycle_datetime, average_cycle_length)
+            # Convert date to datetime for prediction functions
+            cycle_start_datetime = datetime.combine(cycle_start_date, datetime.min.time())
+            predicted_ovulation = predict_ovulation_date(cycle_start_datetime, average_cycle_length)
+            predicted_next_period = predict_next_period_date(cycle_start_datetime, average_cycle_length)
+            
+            # Extract date from datetime results (or return date if already a date)
+            predicted_ovulation_date_obj = predicted_ovulation.date() if predicted_ovulation else None
+            predicted_next_period_date_obj = predicted_next_period.date() if predicted_next_period else None
             
             return {
-                'predicted_ovulation': predicted_ovulation.date() if predicted_ovulation else None,
-                'predicted_next_period': predicted_next_period.date() if predicted_next_period else None
+                'predicted_ovulation': predicted_ovulation_date_obj,
+                'predicted_next_period': predicted_next_period_date_obj
             }
         except Exception as e:
             raise ValueError(f"Failed to calculate cycle predictions: {str(e)}")
@@ -113,13 +124,13 @@ class PeriodCycleService:
             )
             
             db.session.add(new_cycle)
-            db.session.commit()
+            
             return new_cycle
         except Exception as e:
             raise ValueError(f"Failed to create cycle: {str(e)}")
     
     @staticmethod
-    def finalize_cycle(cycle: PeriodCycle) -> None:
+    def finalize_cycle(cycle: PeriodCycle, tracker_id: int) -> None:
         try: 
             # Find next cycle
             next_cycle = PeriodCycle.query.filter_by(

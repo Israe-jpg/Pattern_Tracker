@@ -15,13 +15,7 @@ from app.models.field_option import FieldOption
 from app.models.period_cycle import PeriodCycle
 from app.schemas.tracker_schemas import CustomCategorySchema, FieldOptionSchema, MenstruationTrackerSetupSchema
 from app.services.category_service import CategoryService
-from app.utils.menstruation_calculations import (
-    calculate_cycle_day,
-    determine_cycle_phase,
-    predict_ovulation_date,
-    predict_next_period_date,
-    predict_period_end_date
-)
+from app.services.period_cycle_service import PeriodCycleService
 
 trackers_bp = Blueprint('trackers', __name__)
 
@@ -1392,11 +1386,6 @@ def get_available_option_types():
 @trackers_bp.route('/<int:tracker_id>/log-period', methods=['POST'])
 @jwt_required()
 def log_period_start(tracker_id: int):
-    """
-    Log the start of a new period cycle.
-    This creates a new PeriodCycle record and updates tracker predictions.
-    Can log periods for today or past dates.
-    """
     try:
         _, user_id = get_current_user()
         tracker = verify_tracker_ownership(tracker_id, user_id)
@@ -1421,116 +1410,36 @@ def log_period_start(tracker_id: int):
         else:
             period_date = date.today()
         
-
-
-        # Ensure tracker has settings
-        if not tracker.settings:
-            tracker.settings = {}
-        
-        settings = tracker.settings.copy()
-        
-        # Get average cycle length and period length from settings
-        average_cycle_length = settings.get('average_cycle_length', 28)
-        average_period_length = settings.get('average_period_length', 5)
-        
-        # Close any previous incomplete cycles
-        previous_cycles = PeriodCycle.query.filter_by(
-            tracker_id=tracker_id,
-            cycle_end_date=None
-        ).all()
-        
-        for prev_cycle in previous_cycles:
-            # Only close if the new period date is after the previous cycle start
-            if period_date > prev_cycle.cycle_start_date:
-                prev_cycle.cycle_end_date = period_date
-                # Calculate cycle length
-                cycle_length = (period_date - prev_cycle.cycle_start_date).days
-                prev_cycle.cycle_length = cycle_length
-                
-                # If period_end_date is not set, set it based on average period length using utility function
-                if not prev_cycle.period_end_date:
-                    prev_period_start_datetime = datetime.combine(prev_cycle.period_start_date, datetime.min.time())
-                    estimated_period_end = predict_period_end_date(prev_period_start_datetime, average_period_length)
-                    if estimated_period_end:
-                        estimated_period_end_date = estimated_period_end.date()
-                        # Don't let estimated end date exceed the actual new period start date
-                        prev_cycle.period_end_date = min(estimated_period_end_date, period_date)
-                        period_length = (prev_cycle.period_end_date - prev_cycle.period_start_date).days + 1
-                        prev_cycle.period_length = period_length
-        
-        # Check if a cycle already exists for this date
-        existing_cycle = PeriodCycle.query.filter_by(
+        # Check for existing cycle on this date
+        existing = PeriodCycle.query.filter_by(
             tracker_id=tracker_id,
             cycle_start_date=period_date
         ).first()
         
-        if existing_cycle:
+        if existing:
             return error_response(
-                f"A period cycle already exists for {period_date.isoformat()}. "
-                "If you want to update it, please use the update endpoint.",
+                f"A cycle already exists for {period_date.isoformat()}",
                 409
             )
         
-        # Calculate predictions for the new cycle
-        # Convert date to datetime for prediction functions
-        period_datetime = datetime.combine(period_date, datetime.min.time())
-        predicted_ovulation = predict_ovulation_date(period_datetime, average_cycle_length)
-        predicted_next_period = predict_next_period_date(period_datetime, average_cycle_length)
+
+
+        # Get settings
+        settings = PeriodCycleService.get_tracker_settings(tracker_id)
         
-        # Extract date from datetime results
-        predicted_ovulation_date_obj = predicted_ovulation.date() if predicted_ovulation else None
-        predicted_next_period_date_obj = predicted_next_period.date() if predicted_next_period else None
+        # Close any previous incomplete cycles
+        previous_cycles = PeriodCycleService.close_incomplete_cycles(tracker_id, period_date)
+
+        #Create new cycle
+        new_cycle = PeriodCycleService.create_cycle(tracker_id, period_date, settings)
         
-        # Calculate estimated period end date using utility function
-        predicted_period_end = predict_period_end_date(period_datetime, average_period_length)
-        estimated_period_end_date = predicted_period_end.date() if predicted_period_end else None
-        estimated_period_length = average_period_length
+        #Finalize cycle
+        PeriodCycleService.finalize_cycle(new_cycle, tracker_id)
         
-        # Create new PeriodCycle
-        new_cycle = PeriodCycle(
-            tracker_id=tracker_id,
-            cycle_start_date=period_date,
-            period_start_date=period_date,
-            period_end_date=estimated_period_end_date,  # Estimated based on average
-            period_length=estimated_period_length,  # Estimated based on average
-            predicted_ovulation_date=predicted_ovulation_date_obj,
-            predicted_next_period_date=predicted_next_period_date_obj
-        )
-        
-        db.session.add(new_cycle)
-        db.session.flush()  # Flush to get the new_cycle ID
-        
-        # Check if there are any cycles that started AFTER this new cycle
-        # If so, this cycle should be marked as complete
-        next_cycle = PeriodCycle.query.filter_by(
-            tracker_id=tracker_id
-        ).filter(
-            PeriodCycle.cycle_start_date > period_date
-        ).order_by(PeriodCycle.cycle_start_date.asc()).first()
-        
-        if next_cycle:
-            # This cycle should be closed because a newer period has already been logged
-            new_cycle.cycle_end_date = next_cycle.cycle_start_date - timedelta(days=1)
-            cycle_length = (next_cycle.cycle_start_date - new_cycle.cycle_start_date).days
-            new_cycle.cycle_length = cycle_length
-            
-            # Ensure period_end_date doesn't exceed cycle_end_date
-            if new_cycle.period_end_date and new_cycle.period_end_date > new_cycle.cycle_end_date:
-                new_cycle.period_end_date = new_cycle.cycle_end_date
-                period_length = (new_cycle.period_end_date - new_cycle.period_start_date).days + 1
-                new_cycle.period_length = period_length
-        
-        # Update tracker settings with new predictions
-        # Only update if this is the most recent period (no cycles after it)
-        if not next_cycle:
-            settings['last_period_start_date'] = period_date.isoformat()
-            settings['predicted_ovulation'] = predicted_ovulation_date_obj.isoformat() if predicted_ovulation_date_obj else None
-            settings['predicted_next_period'] = predicted_next_period_date_obj.isoformat() if predicted_next_period_date_obj else None
-        
-        tracker.settings = settings
-        flag_modified(tracker, 'settings')
-        
+        #Update tracker settings
+        PeriodCycleService.update_tracker_settings(tracker, new_cycle)
         db.session.commit()
+
         
         return success_response(
             "Period logged successfully",
@@ -1539,12 +1448,13 @@ def log_period_start(tracker_id: int):
                 'updated_settings': tracker.settings
             }
         )
-    
+    except ValueError as e:
+        return error_response(str(e), 400)
     except Exception as e:
         db.session.rollback()
         return error_response(f"Failed to log period: {str(e)}", 500)
-
-
+        
+        
 @trackers_bp.route('/<int:tracker_id>/update-cycle', methods=['PUT'])
 @jwt_required()
 def update_period_cycle(tracker_id: int):
