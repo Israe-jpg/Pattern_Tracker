@@ -16,6 +16,8 @@ from app.models.period_cycle import PeriodCycle
 from app.schemas.tracker_schemas import CustomCategorySchema, FieldOptionSchema, MenstruationTrackerSetupSchema
 from app.services.category_service import CategoryService
 from app.utils.menstruation_calculations import (
+    calculate_cycle_day,
+    determine_cycle_phase,
     predict_ovulation_date,
     predict_next_period_date,
     predict_period_end_date
@@ -1419,6 +1421,8 @@ def log_period_start(tracker_id: int):
         else:
             period_date = date.today()
         
+
+
         # Ensure tracker has settings
         if not tracker.settings:
             tracker.settings = {}
@@ -1494,11 +1498,34 @@ def log_period_start(tracker_id: int):
         )
         
         db.session.add(new_cycle)
+        db.session.flush()  # Flush to get the new_cycle ID
+        
+        # Check if there are any cycles that started AFTER this new cycle
+        # If so, this cycle should be marked as complete
+        next_cycle = PeriodCycle.query.filter_by(
+            tracker_id=tracker_id
+        ).filter(
+            PeriodCycle.cycle_start_date > period_date
+        ).order_by(PeriodCycle.cycle_start_date.asc()).first()
+        
+        if next_cycle:
+            # This cycle should be closed because a newer period has already been logged
+            new_cycle.cycle_end_date = next_cycle.cycle_start_date - timedelta(days=1)
+            cycle_length = (next_cycle.cycle_start_date - new_cycle.cycle_start_date).days
+            new_cycle.cycle_length = cycle_length
+            
+            # Ensure period_end_date doesn't exceed cycle_end_date
+            if new_cycle.period_end_date and new_cycle.period_end_date > new_cycle.cycle_end_date:
+                new_cycle.period_end_date = new_cycle.cycle_end_date
+                period_length = (new_cycle.period_end_date - new_cycle.period_start_date).days + 1
+                new_cycle.period_length = period_length
         
         # Update tracker settings with new predictions
-        settings['last_period_start_date'] = period_date.isoformat()
-        settings['predicted_ovulation'] = predicted_ovulation_date_obj.isoformat() if predicted_ovulation_date_obj else None
-        settings['predicted_next_period'] = predicted_next_period_date_obj.isoformat() if predicted_next_period_date_obj else None
+        # Only update if this is the most recent period (no cycles after it)
+        if not next_cycle:
+            settings['last_period_start_date'] = period_date.isoformat()
+            settings['predicted_ovulation'] = predicted_ovulation_date_obj.isoformat() if predicted_ovulation_date_obj else None
+            settings['predicted_next_period'] = predicted_next_period_date_obj.isoformat() if predicted_next_period_date_obj else None
         
         tracker.settings = settings
         flag_modified(tracker, 'settings')
@@ -1516,3 +1543,462 @@ def log_period_start(tracker_id: int):
     except Exception as e:
         db.session.rollback()
         return error_response(f"Failed to log period: {str(e)}", 500)
+
+
+@trackers_bp.route('/<int:tracker_id>/update-cycle', methods=['PUT'])
+@jwt_required()
+def update_period_cycle(tracker_id: int):
+    """ 
+    Can be called with:
+    - cycle_id: to update a specific cycle
+    - period_dates: to find/create cycle based on dates
+    """
+    try:
+        _, user_id = get_current_user()
+        tracker = verify_tracker_ownership(tracker_id, user_id)
+    except ValueError as e:
+        return error_response(str(e), 404)
+    
+    try:
+        # Verify this is a Period Tracker
+        category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
+        if not category or category.name != 'Period Tracker':
+            return error_response("This endpoint is only available for Period Tracker", 400)
+        
+        # Get update data from request
+        data = request.json or {}
+        cycle_id = data.get('cycle_id')  # Optional: if user knows which cycle
+        period_dates = data.get('period_dates', [])  # Array of dates that should be marked as period days
+        cycle_start_date_str = data.get('cycle_start_date')  # Optional: update cycle start
+        
+        if not period_dates and not cycle_id and not cycle_start_date_str:
+            return error_response("Either 'cycle_id', 'period_dates' array, or 'cycle_start_date' must be provided", 400)
+        
+        # Find or create the cycle
+        cycle = None
+        
+        if cycle_id:
+            # User specified a cycle ID
+            cycle = PeriodCycle.query.filter_by(
+                id=cycle_id,
+                tracker_id=tracker_id
+            ).first()
+            
+            if not cycle:
+                return error_response("Period cycle not found", 404)
+        
+        elif period_dates:
+            # Parse period dates to find which cycle they belong to
+            period_date_objects = []
+            for date_str in period_dates:
+                try:
+                    if isinstance(date_str, str):
+                        period_date_objects.append(datetime.fromisoformat(date_str).date())
+                    else:
+                        period_date_objects.append(date_str)
+                except (ValueError, TypeError):
+                    return error_response(f"Invalid date format in period_dates: {date_str}. Use ISO format (YYYY-MM-DD)", 400)
+            
+            if not period_date_objects:
+                return error_response("period_dates array cannot be empty", 400)
+            
+            period_date_objects.sort()
+            earliest_date = min(period_date_objects)
+            latest_date = max(period_date_objects)
+            
+            # Try to find an existing cycle that contains these dates
+            # A cycle contains a date if: cycle_start_date <= date < next_cycle_start_date (or no next cycle)
+            all_cycles = PeriodCycle.query.filter_by(
+                tracker_id=tracker_id
+            ).order_by(PeriodCycle.cycle_start_date.asc()).all()
+            
+            for existing_cycle in all_cycles:
+                # Find the next cycle after this one
+                next_cycle_start = None
+                for c in all_cycles:
+                    if c.cycle_start_date > existing_cycle.cycle_start_date:
+                        if next_cycle_start is None or c.cycle_start_date < next_cycle_start:
+                            next_cycle_start = c.cycle_start_date
+                
+                # Check if the earliest date falls within this cycle
+                if existing_cycle.cycle_start_date <= earliest_date:
+                    if next_cycle_start is None or earliest_date < next_cycle_start:
+                        cycle = existing_cycle
+                        break
+            
+            # If no cycle found, create a new one
+            if not cycle:
+                # Ensure tracker has settings
+                if not tracker.settings:
+                    tracker.settings = {}
+                
+                settings = tracker.settings.copy()
+                average_cycle_length = settings.get('average_cycle_length', 28)
+                average_period_length = settings.get('average_period_length', 5)
+                
+                # Create new cycle starting from the earliest period date
+                cycle_start_datetime = datetime.combine(earliest_date, datetime.min.time())
+                predicted_ovulation = predict_ovulation_date(cycle_start_datetime, average_cycle_length)
+                predicted_next_period = predict_next_period_date(cycle_start_datetime, average_cycle_length)
+                
+                cycle = PeriodCycle(
+                    tracker_id=tracker_id,
+                    cycle_start_date=earliest_date,
+                    period_start_date=earliest_date,
+                    period_end_date=latest_date,
+                    period_length=(latest_date - earliest_date).days + 1,
+                    predicted_ovulation_date=predicted_ovulation.date() if predicted_ovulation else None,
+                    predicted_next_period_date=predicted_next_period.date() if predicted_next_period else None
+                )
+                
+                db.session.add(cycle)
+                db.session.flush()
+        
+        elif cycle_start_date_str:
+            # Only cycle_start_date provided - try to find cycle or create new one
+            try:
+                if isinstance(cycle_start_date_str, str):
+                    new_cycle_start = datetime.fromisoformat(cycle_start_date_str).date()
+                else:
+                    new_cycle_start = cycle_start_date_str
+                
+                # Find cycle with this start date
+                cycle = PeriodCycle.query.filter_by(
+                    tracker_id=tracker_id,
+                    cycle_start_date=new_cycle_start
+                ).first()
+                
+                if not cycle:
+                    # Create new cycle
+                    if not tracker.settings:
+                        tracker.settings = {}
+                    
+                    settings = tracker.settings.copy()
+                    average_cycle_length = settings.get('average_cycle_length', 28)
+                    average_period_length = settings.get('average_period_length', 5)
+                    
+                    cycle_start_datetime = datetime.combine(new_cycle_start, datetime.min.time())
+                    predicted_ovulation = predict_ovulation_date(cycle_start_datetime, average_cycle_length)
+                    predicted_next_period = predict_next_period_date(cycle_start_datetime, average_cycle_length)
+                    predicted_period_end = predict_period_end_date(cycle_start_datetime, average_period_length)
+                    
+                    cycle = PeriodCycle(
+                        tracker_id=tracker_id,
+                        cycle_start_date=new_cycle_start,
+                        period_start_date=new_cycle_start,
+                        period_end_date=predicted_period_end.date() if predicted_period_end else None,
+                        period_length=average_period_length,
+                        predicted_ovulation_date=predicted_ovulation.date() if predicted_ovulation else None,
+                        predicted_next_period_date=predicted_next_period.date() if predicted_next_period else None
+                    )
+                    
+                    db.session.add(cycle)
+                    db.session.flush()
+            except (ValueError, TypeError):
+                return error_response("Invalid date format for cycle_start_date. Use ISO format (YYYY-MM-DD)", 400)
+        
+        if not cycle:
+            return error_response("Could not find or create cycle. Please provide period_dates or cycle_id.", 400)
+        
+        # Ensure tracker has settings
+        if not tracker.settings:
+            tracker.settings = {}
+        
+        settings = tracker.settings.copy()
+        average_period_length = settings.get('average_period_length', 5)
+        average_cycle_length = settings.get('average_cycle_length', 28)
+        
+        # Parse and update period dates if provided
+        if period_dates:
+            period_date_objects = []
+            for date_str in period_dates:
+                try:
+                    if isinstance(date_str, str):
+                        period_date_objects.append(datetime.fromisoformat(date_str).date())
+                    else:
+                        period_date_objects.append(date_str)
+                except (ValueError, TypeError):
+                    return error_response(f"Invalid date format in period_dates: {date_str}. Use ISO format (YYYY-MM-DD)", 400)
+            
+            if not period_date_objects:
+                return error_response("period_dates array cannot be empty", 400)
+            
+            # Sort dates
+            period_date_objects.sort()
+            
+            # Update period start and end dates
+            new_period_start = min(period_date_objects)
+            new_period_end = max(period_date_objects)
+            new_period_length = (new_period_end - new_period_start).days + 1
+            
+            cycle.period_start_date = new_period_start
+            cycle.period_end_date = new_period_end
+            cycle.period_length = new_period_length
+            
+            # If cycle start is before period start, update it
+            if cycle.cycle_start_date > new_period_start:
+                cycle.cycle_start_date = new_period_start
+        
+        # Update cycle start date if provided
+        if cycle_start_date_str:
+            try:
+                if isinstance(cycle_start_date_str, str):
+                    new_cycle_start = datetime.fromisoformat(cycle_start_date_str).date()
+                else:
+                    new_cycle_start = cycle_start_date_str
+                
+                cycle.cycle_start_date = new_cycle_start
+                # If cycle start changes, period start should also update if not explicitly set
+                if not period_dates:
+                    cycle.period_start_date = new_cycle_start
+            except (ValueError, TypeError):
+                return error_response("Invalid date format for cycle_start_date. Use ISO format (YYYY-MM-DD)", 400)
+        
+        # Check if there's a next cycle (cycle that started after this one)
+        next_cycle = PeriodCycle.query.filter_by(
+            tracker_id=tracker_id
+        ).filter(
+            PeriodCycle.cycle_start_date > cycle.cycle_start_date
+        ).order_by(PeriodCycle.cycle_start_date.asc()).first()
+        
+        # Check if there's a previous cycle (cycle that started before this one)
+        previous_cycle = PeriodCycle.query.filter_by(
+            tracker_id=tracker_id
+        ).filter(
+            PeriodCycle.cycle_start_date < cycle.cycle_start_date
+        ).order_by(PeriodCycle.cycle_start_date.desc()).first()
+        
+        # If there's a next cycle, this cycle should be complete
+        if next_cycle:
+            cycle.cycle_end_date = next_cycle.cycle_start_date - timedelta(days=1)
+            cycle_length = (cycle.cycle_end_date - cycle.cycle_start_date).days + 1
+            cycle.cycle_length = cycle_length
+            
+            # Ensure period_end_date doesn't exceed cycle_end_date
+            if cycle.period_end_date and cycle.period_end_date > cycle.cycle_end_date:
+                cycle.period_end_date = cycle.cycle_end_date
+                period_length = (cycle.period_end_date - cycle.period_start_date).days + 1
+                cycle.period_length = period_length
+        else:
+            # No next cycle, so this is the current cycle
+            cycle.cycle_end_date = None
+            cycle.cycle_length = None
+        
+        # Update previous cycle's end date if it exists and is incomplete
+        if previous_cycle and not previous_cycle.cycle_end_date:
+            previous_cycle.cycle_end_date = cycle.cycle_start_date - timedelta(days=1)
+            prev_cycle_length = (previous_cycle.cycle_end_date - previous_cycle.cycle_start_date).days + 1
+            previous_cycle.cycle_length = prev_cycle_length
+            
+            # Update previous cycle's period_end_date if needed
+            if not previous_cycle.period_end_date or previous_cycle.period_end_date > previous_cycle.cycle_end_date:
+                prev_period_start_datetime = datetime.combine(previous_cycle.period_start_date, datetime.min.time())
+                estimated_period_end = predict_period_end_date(prev_period_start_datetime, average_period_length)
+                if estimated_period_end:
+                    estimated_period_end_date = estimated_period_end.date()
+                    previous_cycle.period_end_date = min(estimated_period_end_date, previous_cycle.cycle_end_date)
+                    period_length = (previous_cycle.period_end_date - previous_cycle.period_start_date).days + 1
+                    previous_cycle.period_length = period_length
+        
+        # Recalculate predictions for this cycle
+        cycle_start_datetime = datetime.combine(cycle.cycle_start_date, datetime.min.time())
+        predicted_ovulation = predict_ovulation_date(cycle_start_datetime, average_cycle_length)
+        predicted_next_period = predict_next_period_date(cycle_start_datetime, average_cycle_length)
+        
+        cycle.predicted_ovulation_date = predicted_ovulation.date() if predicted_ovulation else None
+        cycle.predicted_next_period_date = predicted_next_period.date() if predicted_next_period else None
+        
+        # Update tracker settings if this is the current cycle (most recent)
+        if not next_cycle:
+            settings['last_period_start_date'] = cycle.period_start_date.isoformat()
+            settings['predicted_ovulation'] = cycle.predicted_ovulation_date.isoformat() if cycle.predicted_ovulation_date else None
+            settings['predicted_next_period'] = cycle.predicted_next_period_date.isoformat() if cycle.predicted_next_period_date else None
+            tracker.settings = settings
+            flag_modified(tracker, 'settings')
+        
+        db.session.commit()
+        
+        return success_response(
+            "Period cycle updated successfully",
+            {
+                'period_cycle': cycle.to_dict(),
+                'updated_settings': tracker.settings if not next_cycle else None
+            }
+        )
+    
+    except Exception as e:
+        db.session.rollback()
+        return error_response(f"Failed to update period cycle: {str(e)}", 500)
+
+
+@trackers_bp.route('/<int:tracker_id>/current-cycle', methods=['GET'])
+@jwt_required()
+def get_current_cycle(tracker_id: int):
+    """
+    Get the current active period cycle information without logging a new period.
+    Returns cycle details, predictions, and settings similar to log-period but read-only.
+    """
+    try:
+        _, user_id = get_current_user()
+        tracker = verify_tracker_ownership(tracker_id, user_id)
+    except ValueError as e:
+        return error_response(str(e), 404)
+    
+    try:
+        # Verify this is a Period Tracker
+        category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
+        if not category or category.name != 'Period Tracker':
+            return error_response("This endpoint is only available for Period Tracker", 400)
+        
+        # Get current active cycle
+        current_cycle = PeriodCycle.query.filter_by(
+            tracker_id=tracker_id,
+            cycle_end_date=None
+        ).order_by(PeriodCycle.cycle_start_date.desc()).first()
+        
+        # Ensure tracker has settings
+        if not tracker.settings:
+            tracker.settings = {}
+        
+        settings = tracker.settings.copy()
+        
+        # Get average cycle length and period length from settings
+        average_cycle_length = settings.get('average_cycle_length', 28)
+        average_period_length = settings.get('average_period_length', 5)
+        last_period_start = settings.get('last_period_start_date')
+        
+        # Get last completed cycle (if any)
+        last_completed_cycle = PeriodCycle.query.filter_by(
+            tracker_id=tracker_id
+        ).filter(
+            PeriodCycle.cycle_end_date.isnot(None)
+        ).order_by(PeriodCycle.cycle_end_date.desc()).first()
+        
+        # If no current cycle exists but we have settings, calculate predictions from settings
+        if not current_cycle and last_period_start:
+            try:
+                last_period_date = datetime.fromisoformat(last_period_start).date() if isinstance(last_period_start, str) else last_period_start
+                period_datetime = datetime.combine(last_period_date, datetime.min.time())
+                
+                # Calculate predictions
+                predicted_ovulation = predict_ovulation_date(period_datetime, average_cycle_length)
+                predicted_next_period = predict_next_period_date(period_datetime, average_cycle_length)
+                predicted_period_end = predict_period_end_date(period_datetime, average_period_length)
+                
+                # Calculate cycle day and phase
+                cycle_day = calculate_cycle_day(last_period_start)
+                cycle_phase = determine_cycle_phase(
+                    cycle_day,
+                    average_period_length,
+                    average_cycle_length
+                )
+                
+                response_data = {
+                    'period_cycle': None,  # No cycle record exists yet
+                    'cycle_info': {
+                        'cycle_day': cycle_day,
+                        'cycle_phase': cycle_phase,
+                        'is_menstruating': cycle_phase == 'menstruation'
+                    },
+                    'predictions': {
+                        'predicted_ovulation_date': predicted_ovulation.date().isoformat() if predicted_ovulation else None,
+                        'predicted_next_period_date': predicted_next_period.date().isoformat() if predicted_next_period else None,
+                        'predicted_period_end_date': predicted_period_end.date().isoformat() if predicted_period_end else None
+                    },
+                    'settings': settings
+                }
+                
+                # Add last completed cycle information
+                if last_completed_cycle:
+                    response_data['last_completed_cycle'] = {
+                        'cycle_length': last_completed_cycle.cycle_length,
+                        'period_length': last_completed_cycle.period_length,
+                        'cycle_start_date': last_completed_cycle.cycle_start_date.isoformat() if last_completed_cycle.cycle_start_date else None,
+                        'cycle_end_date': last_completed_cycle.cycle_end_date.isoformat() if last_completed_cycle.cycle_end_date else None,
+                        'period_start_date': last_completed_cycle.period_start_date.isoformat() if last_completed_cycle.period_start_date else None,
+                        'period_end_date': last_completed_cycle.period_end_date.isoformat() if last_completed_cycle.period_end_date else None
+                    }
+                
+                return success_response(
+                    "Current cycle information retrieved successfully",
+                    response_data
+                )
+            except Exception as e:
+                return error_response(f"Failed to calculate cycle information: {str(e)}", 500)
+        
+        # If we have a current cycle, return it with updated predictions
+        if current_cycle:
+            # Recalculate predictions based on current cycle start date
+            cycle_start_datetime = datetime.combine(current_cycle.cycle_start_date, datetime.min.time())
+            predicted_ovulation = predict_ovulation_date(cycle_start_datetime, average_cycle_length)
+            predicted_next_period = predict_next_period_date(cycle_start_datetime, average_cycle_length)
+            predicted_period_end = predict_period_end_date(cycle_start_datetime, average_period_length)
+            
+            # Calculate current cycle day and phase
+            cycle_day = calculate_cycle_day(current_cycle.cycle_start_date.isoformat())
+            cycle_phase = determine_cycle_phase(
+                cycle_day,
+                average_period_length,
+                average_cycle_length
+            )
+            
+            cycle_dict = current_cycle.to_dict()
+            
+            # Add calculated cycle info
+            cycle_dict['current_cycle_day'] = cycle_day
+            cycle_dict['current_cycle_phase'] = cycle_phase
+            cycle_dict['is_menstruating'] = cycle_phase == 'menstruation'
+            
+            # Add updated predictions (may differ from stored predictions if settings changed)
+            cycle_dict['updated_predictions'] = {
+                'predicted_ovulation_date': predicted_ovulation.date().isoformat() if predicted_ovulation else None,
+                'predicted_next_period_date': predicted_next_period.date().isoformat() if predicted_next_period else None,
+                'predicted_period_end_date': predicted_period_end.date().isoformat() if predicted_period_end else None
+            }
+            
+            response_data = {
+                'period_cycle': cycle_dict,
+                'settings': settings
+            }
+            
+            # Add last completed cycle information
+            if last_completed_cycle:
+                response_data['last_completed_cycle'] = {
+                    'cycle_length': last_completed_cycle.cycle_length,
+                    'period_length': last_completed_cycle.period_length,
+                    'cycle_start_date': last_completed_cycle.cycle_start_date.isoformat() if last_completed_cycle.cycle_start_date else None,
+                    'cycle_end_date': last_completed_cycle.cycle_end_date.isoformat() if last_completed_cycle.cycle_end_date else None,
+                    'period_start_date': last_completed_cycle.period_start_date.isoformat() if last_completed_cycle.period_start_date else None,
+                    'period_end_date': last_completed_cycle.period_end_date.isoformat() if last_completed_cycle.period_end_date else None
+                }
+            
+            return success_response(
+                "Current cycle information retrieved successfully",
+                response_data
+            )
+        
+        # No cycle and no settings
+        response_data = {
+            'period_cycle': None,
+            'settings': settings,
+            'message': 'No period cycle has been logged yet. Use POST /log-period to log your first period.'
+        }
+        
+        # Add last completed cycle information if it exists
+        if last_completed_cycle:
+            response_data['last_completed_cycle'] = {
+                'cycle_length': last_completed_cycle.cycle_length,
+                'period_length': last_completed_cycle.period_length,
+                'cycle_start_date': last_completed_cycle.cycle_start_date.isoformat() if last_completed_cycle.cycle_start_date else None,
+                'cycle_end_date': last_completed_cycle.cycle_end_date.isoformat() if last_completed_cycle.cycle_end_date else None,
+                'period_start_date': last_completed_cycle.period_start_date.isoformat() if last_completed_cycle.period_start_date else None,
+                'period_end_date': last_completed_cycle.period_end_date.isoformat() if last_completed_cycle.period_end_date else None
+            }
+        
+        return success_response(
+            "No cycle information available",
+            response_data
+        )
+    
+    except Exception as e:
+        return error_response(f"Failed to get current cycle: {str(e)}", 500)
