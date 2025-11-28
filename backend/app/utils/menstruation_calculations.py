@@ -2,7 +2,7 @@
 Menstruation cycle calculations and predictions.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from typing import Optional, Dict
 
 
@@ -60,6 +60,9 @@ def predict_ovulation_date(last_period_start_date: datetime,
     
     if isinstance(last_period_start_date, str):
         last_period_start_date = datetime.fromisoformat(last_period_start_date)
+    elif isinstance(last_period_start_date, date) and not isinstance(last_period_start_date, datetime):
+        # Convert date to datetime
+        last_period_start_date = datetime.combine(last_period_start_date, datetime.min.time())
     
     # Ovulation = 14 days before next period
     ovulation_date = last_period_start_date + timedelta(days=(average_cycle_length - 14))
@@ -74,6 +77,9 @@ def predict_next_period_date(last_period_start_date: datetime,
     
     if isinstance(last_period_start_date, str):
         last_period_start_date = datetime.fromisoformat(last_period_start_date)
+    elif isinstance(last_period_start_date, date) and not isinstance(last_period_start_date, datetime):
+        # Convert date to datetime
+        last_period_start_date = datetime.combine(last_period_start_date, datetime.min.time())
     
     next_period_date = last_period_start_date + timedelta(days=average_cycle_length)
     return next_period_date
@@ -96,6 +102,9 @@ def predict_period_end_date(period_start_date: datetime,
     
     if isinstance(period_start_date, str):
         period_start_date = datetime.fromisoformat(period_start_date)
+    elif isinstance(period_start_date, date) and not isinstance(period_start_date, datetime):
+        # Convert date to datetime
+        period_start_date = datetime.combine(period_start_date, datetime.min.time())
     
     # Period end = start date + (average_period_length - 1) days
     # (e.g., if period starts on day 1 and lasts 5 days, it ends on day 5)
