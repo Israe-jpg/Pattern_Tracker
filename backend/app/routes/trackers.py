@@ -1575,10 +1575,7 @@ def update_cycles(tracker_id: int):
 @trackers_bp.route('/<int:tracker_id>/current-cycle', methods=['GET'])
 @jwt_required()
 def get_current_cycle(tracker_id: int):
-    """
-    Get the current active period cycle information without logging a new period.
-    Returns cycle details, predictions, and settings similar to log-period but read-only.
-    """
+   
     try:
         _, user_id = get_current_user()
         tracker = verify_tracker_ownership(tracker_id, user_id)
@@ -1597,16 +1594,8 @@ def get_current_cycle(tracker_id: int):
             cycle_end_date=None
         ).order_by(PeriodCycle.cycle_start_date.desc()).first()
         
-        # Ensure tracker has settings
-        if not tracker.settings:
-            tracker.settings = {}
-        
-        settings = tracker.settings.copy()
-        
-        # Get average cycle length and period length from settings
-        average_cycle_length = settings.get('average_cycle_length', 28)
-        average_period_length = settings.get('average_period_length', 5)
-        last_period_start = settings.get('last_period_start_date')
+        # Get settings
+        settings = PeriodCycleService.get_tracker_settings(tracker)
         
         # Get last completed cycle (if any)
         last_completed_cycle = PeriodCycle.query.filter_by(
@@ -1614,132 +1603,36 @@ def get_current_cycle(tracker_id: int):
         ).filter(
             PeriodCycle.cycle_end_date.isnot(None)
         ).order_by(PeriodCycle.cycle_end_date.desc()).first()
+
+        response_data = {'settings': settings}
         
-        # If no current cycle exists but we have settings, calculate predictions from settings
-        if not current_cycle and last_period_start:
-            try:
-                last_period_date = datetime.fromisoformat(last_period_start).date() if isinstance(last_period_start, str) else last_period_start
-                period_datetime = datetime.combine(last_period_date, datetime.min.time())
-                
-                # Calculate predictions
-                predicted_ovulation = predict_ovulation_date(period_datetime, average_cycle_length)
-                predicted_next_period = predict_next_period_date(period_datetime, average_cycle_length)
-                predicted_period_end = predict_period_end_date(period_datetime, average_period_length)
-                
-                # Calculate cycle day and phase
-                cycle_day = calculate_cycle_day(last_period_start)
-                cycle_phase = determine_cycle_phase(
-                    cycle_day,
-                    average_period_length,
-                    average_cycle_length
-                )
-                
-                response_data = {
-                    'period_cycle': None,  # No cycle record exists yet
-                    'cycle_info': {
-                        'cycle_day': cycle_day,
-                        'cycle_phase': cycle_phase,
-                        'is_menstruating': cycle_phase == 'menstruation'
-                    },
-                    'predictions': {
-                        'predicted_ovulation_date': predicted_ovulation.date().isoformat() if predicted_ovulation else None,
-                        'predicted_next_period_date': predicted_next_period.date().isoformat() if predicted_next_period else None,
-                        'predicted_period_end_date': predicted_period_end.date().isoformat() if predicted_period_end else None
-                    },
-                    'settings': settings
-                }
-                
-                # Add last completed cycle information
-                if last_completed_cycle:
-                    response_data['last_completed_cycle'] = {
-                        'cycle_length': last_completed_cycle.cycle_length,
-                        'period_length': last_completed_cycle.period_length,
-                        'cycle_start_date': last_completed_cycle.cycle_start_date.isoformat() if last_completed_cycle.cycle_start_date else None,
-                        'cycle_end_date': last_completed_cycle.cycle_end_date.isoformat() if last_completed_cycle.cycle_end_date else None,
-                        'period_start_date': last_completed_cycle.period_start_date.isoformat() if last_completed_cycle.period_start_date else None,
-                        'period_end_date': last_completed_cycle.period_end_date.isoformat() if last_completed_cycle.period_end_date else None
-                    }
-                
-                return success_response(
-                    "Current cycle information retrieved successfully",
-                    response_data
-                )
-            except Exception as e:
-                return error_response(f"Failed to calculate cycle information: {str(e)}", 500)
-        
-        # If we have a current cycle, return it with updated predictions
+        # Add current cycle info if exists
         if current_cycle:
-            # Recalculate predictions based on current cycle start date
-            cycle_start_datetime = datetime.combine(current_cycle.cycle_start_date, datetime.min.time())
-            predicted_ovulation = predict_ovulation_date(cycle_start_datetime, average_cycle_length)
-            predicted_next_period = predict_next_period_date(cycle_start_datetime, average_cycle_length)
-            predicted_period_end = predict_period_end_date(cycle_start_datetime, average_period_length)
-            
-            # Calculate current cycle day and phase
-            cycle_day = calculate_cycle_day(current_cycle.cycle_start_date.isoformat())
-            cycle_phase = determine_cycle_phase(
-                cycle_day,
-                average_period_length,
-                average_cycle_length
+            response_data['period_cycle'] = PeriodCycleService.get_cycle_info_dict(
+                current_cycle, settings
             )
-            
-            cycle_dict = current_cycle.to_dict()
-            
-            # Add calculated cycle info
-            cycle_dict['current_cycle_day'] = cycle_day
-            cycle_dict['current_cycle_phase'] = cycle_phase
-            cycle_dict['is_menstruating'] = cycle_phase == 'menstruation'
-            
-            # Add updated predictions (may differ from stored predictions if settings changed)
-            cycle_dict['updated_predictions'] = {
-                'predicted_ovulation_date': predicted_ovulation.date().isoformat() if predicted_ovulation else None,
-                'predicted_next_period_date': predicted_next_period.date().isoformat() if predicted_next_period else None,
-                'predicted_period_end_date': predicted_period_end.date().isoformat() if predicted_period_end else None
-            }
-            
-            response_data = {
-                'period_cycle': cycle_dict,
-                'settings': settings
-            }
-            
-            # Add last completed cycle information
-            if last_completed_cycle:
-                response_data['last_completed_cycle'] = {
-                    'cycle_length': last_completed_cycle.cycle_length,
-                    'period_length': last_completed_cycle.period_length,
-                    'cycle_start_date': last_completed_cycle.cycle_start_date.isoformat() if last_completed_cycle.cycle_start_date else None,
-                    'cycle_end_date': last_completed_cycle.cycle_end_date.isoformat() if last_completed_cycle.cycle_end_date else None,
-                    'period_start_date': last_completed_cycle.period_start_date.isoformat() if last_completed_cycle.period_start_date else None,
-                    'period_end_date': last_completed_cycle.period_end_date.isoformat() if last_completed_cycle.period_end_date else None
-                }
-            
-            return success_response(
-                "Current cycle information retrieved successfully",
-                response_data
-            )
+        else:
+            response_data['period_cycle'] = None
+            response_data['message'] = 'No active cycle. Use POST /log-period to log your period.'
         
-        # No cycle and no settings
-        response_data = {
-            'period_cycle': None,
-            'settings': settings,
-            'message': 'No period cycle has been logged yet. Use POST /log-period to log your first period.'
-        }
-        
-        # Add last completed cycle information if it exists
+        # Add last completed cycle info
         if last_completed_cycle:
             response_data['last_completed_cycle'] = {
                 'cycle_length': last_completed_cycle.cycle_length,
                 'period_length': last_completed_cycle.period_length,
-                'cycle_start_date': last_completed_cycle.cycle_start_date.isoformat() if last_completed_cycle.cycle_start_date else None,
-                'cycle_end_date': last_completed_cycle.cycle_end_date.isoformat() if last_completed_cycle.cycle_end_date else None,
-                'period_start_date': last_completed_cycle.period_start_date.isoformat() if last_completed_cycle.period_start_date else None,
-                'period_end_date': last_completed_cycle.period_end_date.isoformat() if last_completed_cycle.period_end_date else None
+                'cycle_start_date': last_completed_cycle.cycle_start_date.isoformat(),
+                'cycle_end_date': last_completed_cycle.cycle_end_date.isoformat(),
+                'period_start_date': last_completed_cycle.period_start_date.isoformat(),
+                'period_end_date': last_completed_cycle.period_end_date.isoformat()
             }
         
         return success_response(
-            "No cycle information available",
+            "Current cycle information retrieved",
             response_data
         )
     
+    except ValueError as e:
+        return error_response(str(e), 404)
     except Exception as e:
         return error_response(f"Failed to get current cycle: {str(e)}", 500)
+
