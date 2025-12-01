@@ -1476,8 +1476,14 @@ def update_cycles(tracker_id: int):
         period_dates_str = data.get('period_dates', [])  # Array of dates that should be marked as period days
         cycle_start_date_str = data.get('cycle_start_date')  # Optional: update cycle start
         
-        if not period_dates and not cycle_id and not cycle_start_date_str:
+        if not period_dates_str and not cycle_id and not cycle_start_date_str:
             return error_response("Either 'cycle_id', 'period_dates' array, or 'cycle_start_date' must be provided", 400)
+        
+        # Ensure tracker has settings
+        if not tracker.settings:
+            tracker.settings = {}
+        
+        settings = PeriodCycleService.get_tracker_settings(tracker_id)
         
         # Find or create the cycle
         cycle = None
@@ -1501,7 +1507,7 @@ def update_cycles(tracker_id: int):
             latest = max(period_dates)
             
             # Find cycle containing earliest date
-            cycle = PeriodCycleService._find_cycle_for_date(tracker_id, earliest)
+            cycle = PeriodCycleService.find_cycle_for_date(tracker_id, earliest)
             
             # Create new if not found
             if not cycle:
@@ -1518,9 +1524,9 @@ def update_cycles(tracker_id: int):
             if cycle.cycle_start_date > earliest:
                 cycle.cycle_start_date = earliest
         
-        elif cycle_start_str:
+        elif cycle_start_date_str:
             # Find or create by cycle start date
-            cycle_start = date.fromisoformat(cycle_start_str)
+            cycle_start = date.fromisoformat(cycle_start_date_str)
             
             cycle = PeriodCycle.query.filter_by(
                 tracker_id=tracker_id,
