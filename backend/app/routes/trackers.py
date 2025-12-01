@@ -1457,12 +1457,7 @@ def log_period_start(tracker_id: int):
         
 @trackers_bp.route('/<int:tracker_id>/update-cycle', methods=['PUT'])
 @jwt_required()
-def update_period_cycle(tracker_id: int):
-    """ 
-    Can be called with:
-    - cycle_id: to update a specific cycle
-    - period_dates: to find/create cycle based on dates
-    """
+def update_cycles(tracker_id: int):
     try:
         _, user_id = get_current_user()
         tracker = verify_tracker_ownership(tracker_id, user_id)
@@ -1478,7 +1473,7 @@ def update_period_cycle(tracker_id: int):
         # Get update data from request
         data = request.json or {}
         cycle_id = data.get('cycle_id')  # Optional: if user knows which cycle
-        period_dates = data.get('period_dates', [])  # Array of dates that should be marked as period days
+        period_dates_str = data.get('period_dates', [])  # Array of dates that should be marked as period days
         cycle_start_date_str = data.get('cycle_start_date')  # Optional: update cycle start
         
         if not period_dates and not cycle_id and not cycle_start_date_str:
@@ -1497,248 +1492,78 @@ def update_period_cycle(tracker_id: int):
             if not cycle:
                 return error_response("Period cycle not found", 404)
         
-        elif period_dates:
-            # Parse period dates to find which cycle they belong to
-            period_date_objects = []
-            for date_str in period_dates:
-                try:
-                    if isinstance(date_str, str):
-                        period_date_objects.append(datetime.fromisoformat(date_str).date())
-                    else:
-                        period_date_objects.append(date_str)
-                except (ValueError, TypeError):
-                    return error_response(f"Invalid date format in period_dates: {date_str}. Use ISO format (YYYY-MM-DD)", 400)
+        elif period_dates_str:
+            # Parse period dates
+            period_dates = [date.fromisoformat(d) for d in period_dates_str]
+            period_dates.sort()
             
-            if not period_date_objects:
-                return error_response("period_dates array cannot be empty", 400)
+            earliest = min(period_dates)
+            latest = max(period_dates)
             
-            period_date_objects.sort()
-            earliest_date = min(period_date_objects)
-            latest_date = max(period_date_objects)
+            # Find cycle containing earliest date
+            cycle = PeriodCycleService._find_cycle_for_date(tracker_id, earliest)
             
-            # Try to find an existing cycle that contains these dates
-            # A cycle contains a date if: cycle_start_date <= date < next_cycle_start_date (or no next cycle)
-            all_cycles = PeriodCycle.query.filter_by(
-                tracker_id=tracker_id
-            ).order_by(PeriodCycle.cycle_start_date.asc()).all()
-            
-            for existing_cycle in all_cycles:
-                # Find the next cycle after this one
-                next_cycle_start = None
-                for c in all_cycles:
-                    if c.cycle_start_date > existing_cycle.cycle_start_date:
-                        if next_cycle_start is None or c.cycle_start_date < next_cycle_start:
-                            next_cycle_start = c.cycle_start_date
-                
-                # Check if the earliest date falls within this cycle
-                if existing_cycle.cycle_start_date <= earliest_date:
-                    if next_cycle_start is None or earliest_date < next_cycle_start:
-                        cycle = existing_cycle
-                        break
-            
-            # If no cycle found, create a new one
+            # Create new if not found
             if not cycle:
-                # Ensure tracker has settings
-                if not tracker.settings:
-                    tracker.settings = {}
-                
-                settings = tracker.settings.copy()
-                average_cycle_length = settings.get('average_cycle_length', 28)
-                average_period_length = settings.get('average_period_length', 5)
-                
-                # Create new cycle starting from the earliest period date
-                cycle_start_datetime = datetime.combine(earliest_date, datetime.min.time())
-                predicted_ovulation = predict_ovulation_date(cycle_start_datetime, average_cycle_length)
-                predicted_next_period = predict_next_period_date(cycle_start_datetime, average_cycle_length)
-                
-                cycle = PeriodCycle(
-                    tracker_id=tracker_id,
-                    cycle_start_date=earliest_date,
-                    period_start_date=earliest_date,
-                    period_end_date=latest_date,
-                    period_length=(latest_date - earliest_date).days + 1,
-                    predicted_ovulation_date=predicted_ovulation.date() if predicted_ovulation else None,
-                    predicted_next_period_date=predicted_next_period.date() if predicted_next_period else None
+                cycle = PeriodCycleService.create_cycle(
+                    tracker_id, earliest, settings, detection_method='manual'
                 )
-                
-                db.session.add(cycle)
-                db.session.flush()
-        
-        elif cycle_start_date_str:
-            # Only cycle_start_date provided - try to find cycle or create new one
-            try:
-                if isinstance(cycle_start_date_str, str):
-                    new_cycle_start = datetime.fromisoformat(cycle_start_date_str).date()
-                else:
-                    new_cycle_start = cycle_start_date_str
-                
-                # Find cycle with this start date
-                cycle = PeriodCycle.query.filter_by(
-                    tracker_id=tracker_id,
-                    cycle_start_date=new_cycle_start
-                ).first()
-                
-                if not cycle:
-                    # Create new cycle
-                    if not tracker.settings:
-                        tracker.settings = {}
-                    
-                    settings = tracker.settings.copy()
-                    average_cycle_length = settings.get('average_cycle_length', 28)
-                    average_period_length = settings.get('average_period_length', 5)
-                    
-                    cycle_start_datetime = datetime.combine(new_cycle_start, datetime.min.time())
-                    predicted_ovulation = predict_ovulation_date(cycle_start_datetime, average_cycle_length)
-                    predicted_next_period = predict_next_period_date(cycle_start_datetime, average_cycle_length)
-                    predicted_period_end = predict_period_end_date(cycle_start_datetime, average_period_length)
-                    
-                    cycle = PeriodCycle(
-                        tracker_id=tracker_id,
-                        cycle_start_date=new_cycle_start,
-                        period_start_date=new_cycle_start,
-                        period_end_date=predicted_period_end.date() if predicted_period_end else None,
-                        period_length=average_period_length,
-                        predicted_ovulation_date=predicted_ovulation.date() if predicted_ovulation else None,
-                        predicted_next_period_date=predicted_next_period.date() if predicted_next_period else None
-                    )
-                    
-                    db.session.add(cycle)
-                    db.session.flush()
-            except (ValueError, TypeError):
-                return error_response("Invalid date format for cycle_start_date. Use ISO format (YYYY-MM-DD)", 400)
-        
-        if not cycle:
-            return error_response("Could not find or create cycle. Please provide period_dates or cycle_id.", 400)
-        
-        # Ensure tracker has settings
-        if not tracker.settings:
-            tracker.settings = {}
-        
-        settings = tracker.settings.copy()
-        average_period_length = settings.get('average_period_length', 5)
-        average_cycle_length = settings.get('average_cycle_length', 28)
-        
-        # Parse and update period dates if provided
-        if period_dates:
-            period_date_objects = []
-            for date_str in period_dates:
-                try:
-                    if isinstance(date_str, str):
-                        period_date_objects.append(datetime.fromisoformat(date_str).date())
-                    else:
-                        period_date_objects.append(date_str)
-                except (ValueError, TypeError):
-                    return error_response(f"Invalid date format in period_dates: {date_str}. Use ISO format (YYYY-MM-DD)", 400)
             
-            if not period_date_objects:
-                return error_response("period_dates array cannot be empty", 400)
+            # Update period dates
+            cycle.period_start_date = earliest
+            cycle.period_end_date = latest
+            cycle.period_length = (latest - earliest).days + 1
             
-            # Sort dates
-            period_date_objects.sort()
-            
-            # Update period start and end dates
-            new_period_start = min(period_date_objects)
-            new_period_end = max(period_date_objects)
-            new_period_length = (new_period_end - new_period_start).days + 1
-            
-            cycle.period_start_date = new_period_start
-            cycle.period_end_date = new_period_end
-            cycle.period_length = new_period_length
-            
-            # If cycle start is before period start, update it
-            if cycle.cycle_start_date > new_period_start:
-                cycle.cycle_start_date = new_period_start
+            # Update cycle start if needed
+            if cycle.cycle_start_date > earliest:
+                cycle.cycle_start_date = earliest
         
-        # Update cycle start date if provided
-        if cycle_start_date_str:
-            try:
-                if isinstance(cycle_start_date_str, str):
-                    new_cycle_start = datetime.fromisoformat(cycle_start_date_str).date()
-                else:
-                    new_cycle_start = cycle_start_date_str
-                
-                cycle.cycle_start_date = new_cycle_start
-                # If cycle start changes, period start should also update if not explicitly set
-                if not period_dates:
-                    cycle.period_start_date = new_cycle_start
-            except (ValueError, TypeError):
-                return error_response("Invalid date format for cycle_start_date. Use ISO format (YYYY-MM-DD)", 400)
-        
-        # Check if there's a next cycle (cycle that started after this one)
-        next_cycle = PeriodCycle.query.filter_by(
-            tracker_id=tracker_id
-        ).filter(
-            PeriodCycle.cycle_start_date > cycle.cycle_start_date
-        ).order_by(PeriodCycle.cycle_start_date.asc()).first()
-        
-        # Check if there's a previous cycle (cycle that started before this one)
-        previous_cycle = PeriodCycle.query.filter_by(
-            tracker_id=tracker_id
-        ).filter(
-            PeriodCycle.cycle_start_date < cycle.cycle_start_date
-        ).order_by(PeriodCycle.cycle_start_date.desc()).first()
-        
-        # If there's a next cycle, this cycle should be complete
-        if next_cycle:
-            cycle.cycle_end_date = next_cycle.cycle_start_date - timedelta(days=1)
-            cycle_length = (cycle.cycle_end_date - cycle.cycle_start_date).days + 1
-            cycle.cycle_length = cycle_length
+        elif cycle_start_str:
+            # Find or create by cycle start date
+            cycle_start = date.fromisoformat(cycle_start_str)
             
-            # Ensure period_end_date doesn't exceed cycle_end_date
-            if cycle.period_end_date and cycle.period_end_date > cycle.cycle_end_date:
-                cycle.period_end_date = cycle.cycle_end_date
-                period_length = (cycle.period_end_date - cycle.period_start_date).days + 1
-                cycle.period_length = period_length
+            cycle = PeriodCycle.query.filter_by(
+                tracker_id=tracker_id,
+                cycle_start_date=cycle_start
+            ).first()
+            
+            if not cycle:
+                cycle = PeriodCycleService.create_cycle(
+                    tracker_id, cycle_start, settings, detection_method='manual'
+                )
+        
         else:
-            # No next cycle, so this is the current cycle
-            cycle.cycle_end_date = None
-            cycle.cycle_length = None
+            return error_response(
+                "Must provide cycle_id, period_dates, or cycle_start_date",
+                400
+            )
         
-        # Update previous cycle's end date if it exists and is incomplete
-        if previous_cycle and not previous_cycle.cycle_end_date:
-            previous_cycle.cycle_end_date = cycle.cycle_start_date - timedelta(days=1)
-            prev_cycle_length = (previous_cycle.cycle_end_date - previous_cycle.cycle_start_date).days + 1
-            previous_cycle.cycle_length = prev_cycle_length
-            
-            # Update previous cycle's period_end_date if needed
-            if not previous_cycle.period_end_date or previous_cycle.period_end_date > previous_cycle.cycle_end_date:
-                prev_period_start_datetime = datetime.combine(previous_cycle.period_start_date, datetime.min.time())
-                estimated_period_end = predict_period_end_date(prev_period_start_datetime, average_period_length)
-                if estimated_period_end:
-                    estimated_period_end_date = estimated_period_end.date()
-                    previous_cycle.period_end_date = min(estimated_period_end_date, previous_cycle.cycle_end_date)
-                    period_length = (previous_cycle.period_end_date - previous_cycle.period_start_date).days + 1
-                    previous_cycle.period_length = period_length
+        # Recalculate predictions
+        predictions = PeriodCycleService.calculate_cycle_predictions(
+            cycle.cycle_start_date,
+            settings['average_cycle_length']
+        )
+        cycle.predicted_ovulation_date = predictions['predicted_ovulation']
+        cycle.predicted_next_period_date = predictions['predicted_next_period']
         
-        # Recalculate predictions for this cycle
-        cycle_start_datetime = datetime.combine(cycle.cycle_start_date, datetime.min.time())
-        predicted_ovulation = predict_ovulation_date(cycle_start_datetime, average_cycle_length)
-        predicted_next_period = predict_next_period_date(cycle_start_datetime, average_cycle_length)
+        # Finalize cycle (handle relationships)
+        PeriodCycleService.finalize_cycle(cycle, tracker_id)
         
-        cycle.predicted_ovulation_date = predicted_ovulation.date() if predicted_ovulation else None
-        cycle.predicted_next_period_date = predicted_next_period.date() if predicted_next_period else None
-        
-        # Update tracker settings if this is the current cycle (most recent)
-        if not next_cycle:
-            settings['last_period_start_date'] = cycle.period_start_date.isoformat()
-            settings['predicted_ovulation'] = cycle.predicted_ovulation_date.isoformat() if cycle.predicted_ovulation_date else None
-            settings['predicted_next_period'] = cycle.predicted_next_period_date.isoformat() if cycle.predicted_next_period_date else None
-            tracker.settings = settings
-            flag_modified(tracker, 'settings')
+        # Update settings if most recent
+        PeriodCycleService.update_tracker_settings(tracker, cycle)
         
         db.session.commit()
         
         return success_response(
-            "Period cycle updated successfully",
-            {
-                'period_cycle': cycle.to_dict(),
-                'updated_settings': tracker.settings if not next_cycle else None
-            }
+            "Cycle updated successfully",
+            {'period_cycle': cycle.to_dict()}
         )
     
+    except ValueError as e:
+        return error_response(str(e), 400)
     except Exception as e:
         db.session.rollback()
-        return error_response(f"Failed to update period cycle: {str(e)}", 500)
+        return error_response(f"Failed to update cycle: {str(e)}", 500)
 
 
 @trackers_bp.route('/<int:tracker_id>/current-cycle', methods=['GET'])
