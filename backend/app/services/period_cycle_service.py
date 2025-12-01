@@ -374,10 +374,10 @@ class PeriodCycleService:
                 cycles = PeriodCycle.query.filter_by(tracker_id=tracker_id).order_by(PeriodCycle.cycle_start_date.desc()).limit(limit).all()
             elif start_date and end_date:
                 cycles = PeriodCycle.query.filter(
-        PeriodCycle.tracker_id == tracker_id,
-        PeriodCycle.cycle_start_date >= start_date,
-        PeriodCycle.cycle_start_date <= end_date
-    ).order_by(PeriodCycle.cycle_start_date.desc()).all()
+                    PeriodCycle.tracker_id == tracker_id,
+                    PeriodCycle.cycle_start_date >= start_date,
+                    PeriodCycle.cycle_start_date <= end_date
+                ).order_by(PeriodCycle.cycle_start_date.desc()).all()
             elif start_date and not end_date:
                 cycles = PeriodCycle.query.filter(
                     PeriodCycle.tracker_id == tracker_id,
@@ -394,3 +394,95 @@ class PeriodCycleService:
             return cycles
         except Exception as e:
             raise ValueError(f"Failed to get cycle history: {str(e)}")
+
+
+    @staticmethod
+    def get_cycle_phases_dates(tracker_id: int, cycle_id: int) -> Dict[str, Any]:
+        try:
+            cycle = PeriodCycle.query.filter_by(tracker_id=tracker_id, id=cycle_id).first()
+            if not cycle:
+                raise ValueError("Cycle not found")
+            
+            # Get cycle boundaries with fallbacks
+            cycle_start = cycle.cycle_start_date
+            cycle_end = cycle.cycle_end_date or cycle.predicted_next_period_date
+            
+            # Get period dates with fallbacks
+            period_start = cycle.period_start_date
+            period_end = cycle.period_end_date
+            if not period_end and cycle.period_length:
+                period_end = period_start + timedelta(days=cycle.period_length - 1)
+            elif not period_end:
+                # Fallback: estimate 5 days if no period_end or period_length
+                period_end = period_start + timedelta(days=4)
+            
+            # Get ovulation date with fallback
+            ovulation_date = cycle.predicted_ovulation_date
+            if not ovulation_date and cycle_end:
+                # Estimate ovulation: typically 14 days before next period
+                ovulation_date = cycle_end - timedelta(days=14)
+            elif not ovulation_date:
+                avg_cycle_length = settings['average_cycle_length']
+                ovulation_date = cycle_start + timedelta(days=avg_cycle_length - 14)
+            
+            # 1. Menstrual phase: period_start to period_end
+            menstrual_phase = []
+            if period_start and period_end:
+                current = period_start
+                while current <= period_end:
+                    menstrual_phase.append(current.isoformat())
+                    current += timedelta(days=1)
+            
+            # 2. Follicular phase: period_end + 1 day to ovulation_date - 1 day
+            follicular_phase = []
+            if period_end and ovulation_date:
+                follicular_start = period_end + timedelta(days=1)
+                follicular_end = ovulation_date - timedelta(days=1)
+                if follicular_start <= follicular_end:
+                    current = follicular_start
+                    while current <= follicular_end:
+                        follicular_phase.append(current.isoformat())
+                        current += timedelta(days=1)
+            
+            # 3. Ovulation phase: 1 day before to 1 day after ovulation (3 days total)
+            ovulation_phase = []
+            if ovulation_date:
+                ovulation_start = ovulation_date - timedelta(days=1)
+                ovulation_end = ovulation_date + timedelta(days=1)
+                current = ovulation_start
+                while current <= ovulation_end:
+                    ovulation_phase.append(current.isoformat())
+                    current += timedelta(days=1)
+            
+            # 4. Luteal phase: ovulation_date + 2 days to cycle_end - 1 day
+            luteal_phase = []
+            if ovulation_date and cycle_end:
+                luteal_start = ovulation_date + timedelta(days=2)
+                luteal_end = cycle_end - timedelta(days=1)
+                if luteal_start <= luteal_end:
+                    current = luteal_start
+                    while current <= luteal_end:
+                        luteal_phase.append(current.isoformat())
+                        current += timedelta(days=1)
+            
+            return {
+                'menstrual_phase': menstrual_phase,
+                'follicular_phase': follicular_phase,
+                'ovulation_phase': ovulation_phase,
+                'luteal_phase': luteal_phase,
+                'cycle_info': {
+                    'cycle_start': cycle_start.isoformat() if cycle_start else None,
+                    'cycle_end': cycle_end.isoformat() if cycle_end else None,
+                    'period_start': period_start.isoformat() if period_start else None,
+                    'period_end': period_end.isoformat() if period_end else None,
+                    'ovulation_date': ovulation_date.isoformat() if ovulation_date else None
+                },
+                'cycle_predictions': {
+                    'predicted_cycle_length': settings['average_cycle_length'],
+                    'predicted_period_length': settings['average_period_length'],
+                    'predicted_ovulation_date': cycle.predicted_ovulation_date.isoformat() if cycle.predicted_ovulation_date else None,
+                    'predicted_next_period_date': cycle.predicted_next_period_date.isoformat() if cycle.predicted_next_period_date else None
+                }
+            }
+        except Exception as e:
+            raise ValueError(f"Failed to get cycle phases dates: {str(e)}")
