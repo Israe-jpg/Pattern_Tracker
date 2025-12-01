@@ -1651,8 +1651,9 @@ def recalculate_cycles(tracker_id: int):
         _, user_id = get_current_user()
         tracker = verify_tracker_ownership(tracker_id, user_id)
         
-        if tracker.category.name != 'Period Tracker':
-            return error_response("This endpoint is only for Period Trackers", 400)
+        category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
+        if not category or category.name != 'Period Tracker':
+            return error_response("This endpoint is only available for Period Tracker", 400)
         
         result = PeriodCycleService.recalculate_all_cycles(tracker_id)
         

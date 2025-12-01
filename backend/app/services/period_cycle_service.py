@@ -256,7 +256,7 @@ class PeriodCycleService:
             if not tracker:
                 raise ValueError("Tracker not found")
             
-            settings = PeriodCycleService.get_tracker_settings(tracker)
+            settings = PeriodCycleService.get_tracker_settings(tracker_id)
             
             # Get all cycles ordered by start date
             cycles = PeriodCycle.query.filter_by(
