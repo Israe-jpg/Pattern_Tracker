@@ -1636,3 +1636,35 @@ def get_current_cycle(tracker_id: int):
     except Exception as e:
         return error_response(f"Failed to get current cycle: {str(e)}", 500)
 
+@trackers_bp.route('/<int:tracker_id>/recalculate-cycles', methods=['POST'])
+@jwt_required()
+def recalculate_cycles(tracker_id: int):
+    """
+    Recalculate all cycle data for this tracker.
+    
+    Useful for:
+    - Fixing data after development bugs
+    - Recalculating after settings changes
+    - Database maintenance
+    """
+    try:
+        _, user_id = get_current_user()
+        tracker = verify_tracker_ownership(tracker_id, user_id)
+        
+        if tracker.category.name != 'Period Tracker':
+            return error_response("This endpoint is only for Period Trackers", 400)
+        
+        result = PeriodCycleService.recalculate_all_cycles(tracker_id)
+        
+        return success_response(
+            "Cycles recalculated successfully",
+            result
+        )
+    
+    except ValueError as e:
+        return error_response(str(e), 404)
+    except Exception as e:
+        db.session.rollback()
+        return error_response(f"Failed to recalculate cycles: {str(e)}", 500)
+
+
