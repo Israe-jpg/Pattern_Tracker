@@ -3,9 +3,10 @@
 Specialized analytics for Period Tracker.
 """
 
-from typing import Dict, List, Any, Optional
-from datetime import date, timedelta
+from typing import Dict, List, Any, Optional, Tuple
+from datetime import date, timedelta, datetime
 from collections import defaultdict
+import calendar
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
@@ -16,6 +17,8 @@ from app.services.analytics_service import (
     FieldTypeDetector,
     ChartGenerator
 )
+from app.models.tracker import Tracker
+from app.models.tracker_category import TrackerCategory
 from app.utils.menstruation_calculations import (
     calculate_cycle_day,
     determine_cycle_phase,
@@ -25,7 +28,7 @@ from app.utils.menstruation_calculations import (
     is_period_expected_soon,
     is_period_late
 )
-
+from app.services.period_cycle_service import PeriodCycleService
 
 class PeriodAnalyticsService:
     """ 
@@ -211,26 +214,95 @@ class PeriodAnalyticsService:
     @staticmethod
     def generate_cycle_calendar(
         tracker_id: int,
-        start_date: date,
-        end_date: date
+        time_period: str
     ) -> bytes:
-        # Implementation for calendar visualization
-        # This would create a matplotlib calendar grid
-        pass
+        try:
+            tracker = Tracker.query.get(tracker_id)
+            category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
+            if not category or category.name != 'Period Tracker':
+                raise ValueError("This endpoint is only available for Period Tracker")
+            
+            if time_period == 'month':
+                # Generate calendar month view
+                calendar_data = PeriodAnalyticsService.get_calendar_month_view()
+                
+            elif time_period == 'all':
+                # Generate calendar global view
+                calendar_data = PeriodAnalyticsService.generate_calendar_global_view(tracker_id)
+            else:
+                raise ValueError("Invalid time_period")
+            return calendar_data
+        except ValueError as e:
+            raise ValueError(f"Failed to generate cycle calendar: {str(e)}")
     
     @staticmethod
-    def generate_symptom_phase_chart(
-        tracker_id: int,
-        symptom_field: str,
-        months: int = 3
-    ) -> bytes:
-        analysis = PeriodAnalyticsService.analyze_symptoms_by_phase(
-            tracker_id, symptom_field, months
-        )
+    def get_calendar_month_view(target_date: Optional[date] = None) -> Dict[str, Any]:
         
-        # Create phase-grouped visualization
-        # Implementation depends on field type
-        pass
+        target_date = target_date or date.today()
+        today = date.today()
+        
+        # Get month boundaries
+        month_start = date(target_date.year, target_date.month, 1)
+        _, last_day = calendar.monthrange(target_date.year, target_date.month)
+        month_end = date(target_date.year, target_date.month, last_day)
+        
+        # Calculate days from previous month (fill first week, min 3 days)
+        month_start_weekday = month_start.weekday()  # 0=Monday, 6=Sunday
+        days_from_prev_month = max(month_start_weekday, 3)
+        calendar_start = month_start - timedelta(days=days_from_prev_month)
+        
+        # Calculate days from next month to complete 6 weeks (42 days total)
+        days_in_month = (month_end - month_start).days + 1
+        days_from_next_month = max(2, min(4, 42 - days_from_prev_month - days_in_month))
+        calendar_end = month_end + timedelta(days=days_from_next_month)
+        
+        # Generate all days in calendar view
+        days = []
+        current = calendar_start
+        while current <= calendar_end:
+            is_current_month = month_start <= current <= month_end
+            days.append({
+                'date': current.isoformat(),
+                'day': current.day,
+                'weekday': current.strftime('%A'),
+                'weekday_short': current.strftime('%a'),
+                'is_today': current == today,
+                'is_current_month': is_current_month,
+                'is_previous_month': current < month_start,
+                'is_next_month': current > month_end,
+                'week_number': current.isocalendar()[1]
+            })
+            current += timedelta(days=1)
+        
+        total_days = len(days)
+        return {
+            'month_start': month_start.isoformat(),
+            'month_end': month_end.isoformat(),
+            'calendar_start': calendar_start.isoformat(),
+            'calendar_end': calendar_end.isoformat(),
+            'days': days,
+            'today': today.isoformat(),
+            'target_month': target_date.strftime('%B %Y'),
+            'total_days': total_days,
+            'weeks': total_days // 7
+        }
+    
+    @staticmethod
+    def generate_calendar_global_view(tracker_id: int) -> Dict[str, Any]:
+        try:
+            tracker = Tracker.query.get(tracker_id)
+            category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
+            if not category or category.name != 'Period Tracker':
+                raise ValueError("This endpoint is only available for Period Tracker")
+            #get all cycles for this tracker
+            cycles = PeriodCycleService.get_cycle_history(tracker_id)
+            #get cycle phases dates for each cycle
+            cycle_phases_dates = []
+            for cycle in cycles:
+                cycle_phases_dates.append(PeriodCycleService.get_cycle_phases_dates(tracker_id, cycle.id))
+            return cycle_phases_dates
+        except ValueError as e:
+            raise ValueError(f"Failed to generate calendar global view: {str(e)}")
     
     # Helper methods
     
@@ -245,6 +317,8 @@ class PeriodAnalyticsService:
                 raise ValueError("This endpoint is only for Period Trackers")
             period_starts = []
             entries = TrackingData.query.filter_by(tracker_id=tracker_id ).order_by(TrackingData.entry_date.asc()).all()
+        except Exception as e:
+            raise ValueError(f"Failed to get period start dates: {str(e)}")
             
     
     @staticmethod
