@@ -1669,3 +1669,87 @@ def recalculate_cycles(tracker_id: int):
         return error_response(f"Failed to recalculate cycles: {str(e)}", 500)
 
 
+@trackers_bp.route('/<int:tracker_id>/cycles-history', methods=['GET'])
+@jwt_required()
+def get_cycle_history(tracker_id: int):
+    """
+    Get historical period cycles with flexible filters.
+    
+    Query params:
+    - limit: Max number of cycles (e.g., last 3, last 6)
+    - months: Last N months of cycles
+    - start_date: Filter cycles after this date (ISO format)
+    - end_date: Filter cycles before this date (ISO format)
+    - include_current: Include active cycle (default: true)
+    
+    Examples:
+    - /cycles/history?limit=6          → Last 6 cycles
+    - /cycles/history?months=3         → Last 3 months
+    - /cycles/history?start_date=2024-01-01&end_date=2024-12-31
+    """
+    try:
+        _, user_id = get_current_user()
+        tracker = verify_tracker_ownership(tracker_id, user_id)
+        
+        category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
+        if not category or category.name != 'Period Tracker':
+            return error_response("This endpoint is only for Period Trackers", 400)
+        
+        # Parse query parameters
+        limit = request.args.get('limit', type=int)
+        months = request.args.get('months', type=int)
+        start_date_str = request.args.get('start_date')
+        end_date_str = request.args.get('end_date')
+        include_current = request.args.get('include_current', 'true').lower() == 'true'
+        
+        # Convert dates
+        start_date = None
+        end_date = None
+        
+        if start_date_str:
+            start_date = date.fromisoformat(start_date_str)
+        elif months:
+            start_date = date.today() - timedelta(days=months * 30)
+        
+        if end_date_str:
+            end_date = date.fromisoformat(end_date_str)
+        
+        # Get cycles using service
+        cycles = PeriodCycleService.get_cycle_history(
+            tracker_id,
+            limit=limit,
+            start_date=start_date,
+            end_date=end_date
+        )
+        
+        # Filter out current cycle if requested
+        if not include_current:
+            cycles = [c for c in cycles if c.is_complete]
+        
+        # Build response
+        cycles_data = []
+        for cycle in cycles:
+            cycle_dict = cycle.to_dict()
+            cycle_dict['is_current'] = cycle.is_current
+            cycle_dict['is_complete'] = cycle.is_complete
+            cycles_data.append(cycle_dict)
+        
+        return success_response(
+            "Cycle history retrieved successfully",
+            {
+                'cycles': cycles_data,
+                'total_count': len(cycles_data),
+                'filters_applied': {
+                    'limit': limit,
+                    'months': months,
+                    'start_date': start_date.isoformat() if start_date else None,
+                    'end_date': end_date.isoformat() if end_date else None,
+                    'include_current': include_current
+                }
+            }
+        )
+    
+    except ValueError as e:
+        return error_response(str(e), 400)
+    except Exception as e:
+        return error_response(f"Failed to retrieve cycle history: {str(e)}", 500)

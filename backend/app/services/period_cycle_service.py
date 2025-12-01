@@ -4,6 +4,7 @@ specialized service for cycle operations
 
 from app.models.period_cycle import PeriodCycle
 from app.models.tracker import Tracker
+from app.models.tracker_category import TrackerCategory
 from datetime import date, datetime, timedelta
 from typing import Dict, Any, Optional
 from app import db
@@ -358,3 +359,38 @@ class PeriodCycleService:
             return None
         except Exception as e:
             raise ValueError(f"Failed to find cycle for date: {str(e)}")
+
+    @staticmethod
+    def get_cycle_history(tracker_id: int, limit: int = 100, start_date: date = None, end_date: date = None) -> Dict[str, Any]:
+        try:
+            tracker = Tracker.query.get(tracker_id)
+            if not tracker:
+                raise ValueError("Tracker not found")
+            category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
+            if not category or category.name != 'Period Tracker':
+                raise ValueError("This endpoint is only available for Period Tracker")
+            
+            if limit:
+                cycles = PeriodCycle.query.filter_by(tracker_id=tracker_id).order_by(PeriodCycle.cycle_start_date.desc()).limit(limit).all()
+            elif start_date and end_date:
+                cycles = PeriodCycle.query.filter(
+        PeriodCycle.tracker_id == tracker_id,
+        PeriodCycle.cycle_start_date >= start_date,
+        PeriodCycle.cycle_start_date <= end_date
+    ).order_by(PeriodCycle.cycle_start_date.desc()).all()
+            elif start_date and not end_date:
+                cycles = PeriodCycle.query.filter(
+                    PeriodCycle.tracker_id == tracker_id,
+                    PeriodCycle.cycle_start_date >= start_date
+                ).order_by(PeriodCycle.cycle_start_date.desc()).all()
+            elif end_date and not start_date:
+                cycles = PeriodCycle.query.filter(
+                    PeriodCycle.tracker_id == tracker_id,
+                    PeriodCycle.cycle_start_date <= end_date
+                ).order_by(PeriodCycle.cycle_start_date.desc()).all()
+            else:
+                cycles = PeriodCycle.query.filter_by(tracker_id=tracker_id).order_by(PeriodCycle.cycle_start_date.desc()).all()
+            
+            return cycles
+        except Exception as e:
+            raise ValueError(f"Failed to get cycle history: {str(e)}")
