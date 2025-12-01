@@ -422,7 +422,7 @@ class PeriodCycleService:
                 # Estimate ovulation: typically 14 days before next period
                 ovulation_date = cycle_end - timedelta(days=14)
             elif not ovulation_date:
-                avg_cycle_length = settings['average_cycle_length']
+                avg_cycle_length = Tracker.query.get(tracker_id).settings['average_cycle_length']
                 ovulation_date = cycle_start + timedelta(days=avg_cycle_length - 14)
             
             # 1. Menstrual phase: period_start to period_end
@@ -478,8 +478,8 @@ class PeriodCycleService:
                     'ovulation_date': ovulation_date.isoformat() if ovulation_date else None
                 },
                 'cycle_predictions': {
-                    'predicted_cycle_length': settings['average_cycle_length'],
-                    'predicted_period_length': settings['average_period_length'],
+                    'predicted_cycle_length': Tracker.query.get(tracker_id).settings['average_cycle_length'],
+                    'predicted_period_length': Tracker.query.get(tracker_id).settings['average_period_length'],
                     'predicted_ovulation_date': cycle.predicted_ovulation_date.isoformat() if cycle.predicted_ovulation_date else None,
                     'predicted_next_period_date': cycle.predicted_next_period_date.isoformat() if cycle.predicted_next_period_date else None
                 }
