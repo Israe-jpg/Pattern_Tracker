@@ -1595,7 +1595,7 @@ def get_current_cycle(tracker_id: int):
         ).order_by(PeriodCycle.cycle_start_date.desc()).first()
         
         # Get settings
-        settings = PeriodCycleService.get_tracker_settings(tracker)
+        settings = PeriodCycleService.get_tracker_settings(tracker_id)
         
         # Get last completed cycle (if any)
         last_completed_cycle = PeriodCycle.query.filter_by(
