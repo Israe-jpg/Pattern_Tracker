@@ -16,7 +16,7 @@ from app.models.tracking_data import TrackingData
 from app.schemas.tracking_data_schema import TrackingDataSchema
 from app.services.tracking_service import TrackingService
 from app.services.analytics_service import TrendLineAnalyzer, ChartGenerator, CategoricalAnalyzer,UnifiedAnalyzer, TimeEvolutionAnalyzer
-
+from app.services.period_analytics_service import PeriodAnalyticsService
 
 from app.services.analytics_data_sufficiency_system import DataSufficiencyChecker, InsightType, ConfidenceLevel, AnalyticsDisplayStrategy
 
@@ -1148,3 +1148,32 @@ def get_time_evolution_chart(tracker_id: int):
         return error_response(str(e), 400)
     except Exception as e:
         return error_response(f"Failed to get unified chart: {str(e)}", 500)
+
+#-----------------------------------------------------
+#CYCLE ANALYSIS ROUTES
+
+@data_tracking_bp.route('/<int:tracker_id>/get-cycle-calendar', methods=['GET'])
+@jwt_required()
+def get_cycle_calendar(tracker_id: int):
+    try:
+        _, user_id = get_current_user()
+        tracker = verify_tracker_ownership(tracker_id, user_id)
+    except ValueError as e:
+        return error_response(str(e), 404)
+    try:
+        # Get parameters
+        time_period = request.args.get('time_period')
+        if not time_period:
+            return error_response("time_period query parameter is required", 400)
+        valid_periods = ['month', 'all']
+        if time_period not in valid_periods:
+            return error_response(f"Invalid time_period. Valid: {', '.join(valid_periods)}", 400)
+        
+        # Get cycle calendar
+        calendar = PeriodAnalyticsService.generate_cycle_calendar(tracker_id, time_period)
+        return success_response("Cycle calendar generated successfully", calendar)
+    except ValueError as e:
+        return error_response(str(e), 400)
+    except Exception as e:
+        return error_response(f"Failed to get cycle calendar: {str(e)}", 500)
+
