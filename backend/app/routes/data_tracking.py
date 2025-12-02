@@ -1153,6 +1153,63 @@ def get_time_evolution_chart(tracker_id: int):
 #-----------------------------------------------------
 #CYCLE ANALYSIS ROUTES
 
+@data_tracking_bp.route('/<int:tracker_id>/symptoms-by-phase', methods=['GET'])
+@jwt_required()
+def get_symptoms_by_phase(tracker_id: int):
+    """
+    Analyze how a specific symptom varies across menstrual cycle phases.
+    
+    Query params:
+    - symptom_field: Name of the symptom/field to analyze (required)
+    - months: Number of months to analyze (default: 3)
+    
+    Returns insights showing how the symptom changes across:
+    - Menstrual phase
+    - Follicular phase
+    - Ovulation phase
+    - Luteal phase
+    
+    Example:
+    GET /api/data-tracking/33/symptoms-by-phase?symptom_field=pain_level&months=6
+    """
+    try:
+        _, user_id = get_current_user()
+        tracker = verify_tracker_ownership(tracker_id, user_id)
+        
+        category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
+        if not category or category.name != 'Period Tracker':
+            return error_response("This endpoint is only for Period Trackers", 400)
+        
+        # Get query parameters
+        symptom_field = request.args.get('symptom_field')
+        if not symptom_field:
+            return error_response("symptom_field query parameter is required", 400)
+        
+        months = request.args.get('months', type=int, default=3)
+        if months < 1 or months > 24:
+            return error_response("months must be between 1 and 24", 400)
+        
+        option = request.args.get('option')  # Optional: for nested fields (e.g., 'amount' for 'discharge.amount')
+        
+        # Get phase-based analysis
+        analysis = PeriodAnalyticsService.analyze_symptoms_by_phase(
+            tracker_id,
+            symptom_field,
+            months=months,
+            option=option
+        )
+        
+        return success_response(
+            f"Symptom phase analysis for '{symptom_field}' retrieved successfully",
+            analysis
+        )
+    
+    except ValueError as e:
+        return error_response(str(e), 400)
+    except Exception as e:
+        return error_response(f"Failed to analyze symptoms by phase: {str(e)}", 500)
+
+
 # ============================================================================
 # CALENDAR ENDPOINTS 
 # ============================================================================
@@ -1241,3 +1298,11 @@ def get_calendar_overview(tracker_id: int):
         return error_response(str(e), 400)
     except Exception as e:
         return error_response(f"Failed to get calendar overview: {str(e)}", 500)
+
+
+
+
+
+
+
+
