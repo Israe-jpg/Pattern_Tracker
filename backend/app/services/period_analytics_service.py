@@ -11,15 +11,19 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 
-from app.services.analytics_service import (
-    NumericExtractor,  
-    CategoricalAnalyzer,
-    FieldTypeDetector,
-    ChartGenerator
+
+from app.services.analytics_base import (
+    AnalyticsDataExtractor,
+    AnalyticsGrouper,
+    AnalyticsStatsCalculator,
+    NumericExtractor,
+    FieldTypeDetector
 )
+from app.models.field_option import FieldOption
 from app.models.tracker import Tracker
 from app.models.tracker_category import TrackerCategory
 from app.models.period_cycle import PeriodCycle
+from app.models.tracking_data import TrackingData
 from app.utils.menstruation_calculations import (
     calculate_cycle_day,
     determine_cycle_phase,
@@ -105,61 +109,98 @@ class PeriodAnalyticsService:
     def analyze_symptoms_by_phase(
         tracker_id: int,
         symptom_field: str,
-        months: int = 3
+        months: int = 3,
+        option: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Returns frequency/severity by phase.
+        Analyze how symptoms vary across menstrual cycle phases.
+        
+        Uses shared base layer for extraction, grouping, and stats.
+        Period-specific logic: cycle phase detection and insights.
+        
+        Args:
+            tracker_id: The tracker ID
+            symptom_field: Name of the symptom field (e.g., 'pain_level', 'discharge.amount')
+            months: Number of months to analyze
+            option: Optional specific option to extract (e.g., 'amount', 'quality')
+        
+        Returns:
+            Dictionary with phase analysis and insights
         """
-        # Get tracking entries with cycle phase info
-        entries_with_phases = PeriodAnalyticsService._get_entries_with_phases(
+        # === PERIOD-SPECIFIC: Get entries that belong to cycles ===
+        entries = PeriodAnalyticsService._get_entries_with_cycles(
             tracker_id, symptom_field, months
         )
         
-        if not entries_with_phases:
+        if not entries:
             return {
                 'message': 'No symptom data found',
-                'field': symptom_field
+                'field': symptom_field,
+                'option': option
             }
         
-        # Group by phase
-        phase_data = defaultdict(list)
-        for entry in entries_with_phases:
-            phase = entry['cycle_phase']
-            symptom_value = entry['symptom_value']
-            phase_data[phase].append(symptom_value)
+        # === USE SHARED BASE LAYER: Extract field values ===
+        extracted_data = AnalyticsDataExtractor.extract_field_values(
+            entries, symptom_field, option, tracker_id
+        )
         
-        # Analyze by phase
+        if not extracted_data:
+            return {
+                'message': 'No valid data found',
+                'field': symptom_field,
+                'option': option
+            }
+        
+        # Detect field type (shared utility)
+        field_type, _ = FieldTypeDetector.detect_field_type(
+            symptom_field, tracker_id, option
+        )
+        
+        # === PERIOD-SPECIFIC: Add cycle phase to each data point ===
+        data_with_phases = PeriodAnalyticsService._annotate_with_phases(
+            extracted_data, tracker_id
+        )
+        
+        # === USE SHARED BASE LAYER: Group by phase ===
+        phase_groups = AnalyticsGrouper.group_by_criterion(
+            data_with_phases,
+            lambda d: d.get('cycle_phase', 'unknown')
+        )
+        
+        # === USE SHARED BASE LAYER: Calculate statistics ===
         phase_analysis = {}
         for phase in ['menstruation', 'follicular', 'ovulation', 'luteal']:
-            if phase in phase_data:
-                # Use appropriate analyzer based on field type
-                field_type, _ = FieldTypeDetector.detect_field_type(
-                    symptom_field, tracker_id
-                )
-                
+            if phase in phase_groups and phase_groups[phase]:
                 if field_type == 'numeric':
-                    phase_analysis[phase] = {
-                        'count': len(phase_data[phase]),
-                        'mean': round(np.mean(phase_data[phase]), 2),
-                        'min': round(min(phase_data[phase]), 2),
-                        'max': round(max(phase_data[phase]), 2)
-                    }
+                    stats = AnalyticsStatsCalculator.calculate_numeric_stats(
+                        phase_groups[phase]
+                    )
+                    # Keep only essential stats for backward compatibility
+                    if stats:
+                        phase_analysis[phase] = {
+                            'count': stats['count'],
+                            'mean': stats['mean'],
+                            'min': stats['min'],
+                            'max': stats['max']
+                        }
                 else:
-                    # Categorical - count frequencies
-                    freq = {}
-                    for val in phase_data[phase]:
-                        freq[val] = freq.get(val, 0) + 1
-                    phase_analysis[phase] = {
-                        'count': len(phase_data[phase]),
-                        'frequency': freq
-                    }
+                    stats = AnalyticsStatsCalculator.calculate_categorical_stats(
+                        phase_groups[phase]
+                    )
+                    if stats:
+                        phase_analysis[phase] = {
+                            'count': stats['count'],
+                            'frequency': stats['frequency']
+                        }
         
+        # === PERIOD-SPECIFIC: Generate phase insights ===
         return {
             'symptom_field': symptom_field,
+            'option': option,
             'months_analyzed': months,
-            'total_entries': len(entries_with_phases),
+            'total_entries': len(extracted_data),
             'phase_analysis': phase_analysis,
-            'insights': PeriodAnalyticsService._generate_phase_insights(
+            'insights': PeriodAnalyticsService.generate_phase_insights(
                 phase_analysis, symptom_field
             )
         }
@@ -573,21 +614,377 @@ class PeriodAnalyticsService:
         return " ".join(notes)
     
     @staticmethod
+    def _get_entries_with_cycles(
+        tracker_id: int,
+        field_name: str,
+        months: int
+    ) -> List[TrackingData]:
+        """
+        Period-specific: Get tracking entries that belong to cycles.
+        
+        This method filters entries to only those that have associated cycles.
+        Field extraction is handled by shared AnalyticsDataExtractor.
+        
+        Args:
+            tracker_id: The tracker ID
+            field_name: Name of the field to check for
+            months: Number of months to look back
+        
+        Returns:
+            List of TrackingData entries that belong to cycles
+        """
+        cutoff_date = date.today() - timedelta(days=months * 30)
+        
+        # Get all tracking entries within date range
+        entries = TrackingData.query.filter_by(
+            tracker_id=tracker_id
+        ).filter(
+            TrackingData.entry_date >= cutoff_date
+        ).order_by(TrackingData.entry_date.asc()).all()
+        
+        # Filter to entries that:
+        # 1. Have the field (handled by shared extractor, but we pre-filter here for efficiency)
+        # 2. Belong to a cycle
+        entries_with_cycles = []
+        for entry in entries:
+            if not entry.data:
+                continue
+            
+            # Check if field exists (handle nested fields)
+            has_field = False
+            if field_name in entry.data:
+                has_field = True
+            elif '.' in field_name:
+                base_field, sub_field = field_name.split('.', 1)
+                if base_field in entry.data:
+                    base_data = entry.data[base_field]
+                    if isinstance(base_data, dict) and sub_field in base_data:
+                        has_field = True
+            
+            if not has_field:
+                continue
+            
+            # Check if entry belongs to a cycle
+            cycle = PeriodCycleService.find_cycle_for_date(tracker_id, entry.entry_date)
+            if cycle:
+                entries_with_cycles.append(entry)
+        
+        return entries_with_cycles
+    
+    @staticmethod
+    def _annotate_with_phases(
+        data: List[Dict[str, Any]],
+        tracker_id: int
+    ) -> List[Dict[str, Any]]:
+        """
+        Period-specific: Add cycle phase information to extracted data.
+        
+        Takes data from AnalyticsDataExtractor and adds:
+        - cycle_phase: The phase this entry belongs to
+        - cycle_day: Day number in the cycle
+        - cycle_id: ID of the cycle
+        
+        Args:
+            data: List of extracted data dicts from AnalyticsDataExtractor
+            tracker_id: The tracker ID
+        
+        Returns:
+            Same data structure with phase annotations added
+        """
+        settings = PeriodCycleService.get_tracker_settings(tracker_id)
+        
+        annotated = []
+        for item in data:
+            entry_date = item['entry_date']
+            
+            # Find cycle for this date
+            cycle = PeriodCycleService.find_cycle_for_date(tracker_id, entry_date)
+            
+            if cycle:
+                # Calculate cycle day and phase
+                days_since_start = (entry_date - cycle.cycle_start_date).days + 1
+                
+                phase = determine_cycle_phase(
+                    days_since_start,
+                    settings['average_period_length'],
+                    settings['average_cycle_length']
+                )
+                
+                # Add phase information to the item
+                item['cycle_phase'] = phase
+                item['cycle_day'] = days_since_start
+                item['cycle_id'] = cycle.id
+                
+                annotated.append(item)
+        
+        return annotated
+    
+    @staticmethod
     def generate_phase_insights(
         phase_analysis: Dict,
         symptom_field: str
+    ) -> Dict[str, Any]:
+
+        if not phase_analysis:
+            return {
+                'insights': {},
+                'summary': f"No data available for {symptom_field} across cycle phases.",
+                'recommendations': ["Log more entries during different cycle phases to see patterns."]
+            }
+        
+        # Determine if numeric or categorical
+        first_phase = list(phase_analysis.keys())[0]
+        is_numeric = 'mean' in phase_analysis[first_phase]
+        
+        phase_names = {
+            'menstruation': 'Menstrual',
+            'follicular': 'Follicular',
+            'ovulation': 'Ovulation',
+            'luteal': 'Luteal'
+        }
+        
+        insights = {}
+        phase_comparisons = {}
+        
+        if is_numeric:
+            # ===== NUMERIC ANALYSIS =====
+            phase_means = {}
+            phase_counts = {}
+            
+            for phase, data in phase_analysis.items():
+                phase_means[phase] = data['mean']
+                phase_counts[phase] = data['count']
+                
+                # Generate phase-specific insights
+                phase_label = phase_names.get(phase, phase.capitalize())
+                insights[phase] = {
+                    'summary': f"During {phase_label} phase: average {symptom_field} is {data['mean']}",
+                    'statistics': {
+                        'average': data['mean'],
+                        'range': f"{data['min']} - {data['max']}",
+                        'span': round(data['max'] - data['min'], 2),
+                        'data_points': data['count']
+                    },
+                    'interpretation': PeriodAnalyticsService._interpret_numeric_phase(
+                        phase, data, symptom_field
+                    )
+                }
+            
+            # Cross-phase comparisons
+            if len(phase_means) > 1:
+                highest_phase = max(phase_means, key=phase_means.get)
+                lowest_phase = min(phase_means, key=phase_means.get)
+                
+                highest_value = phase_means[highest_phase]
+                lowest_value = phase_means[lowest_phase]
+                difference = round(highest_value - lowest_value, 2)
+                percent_diff = round((difference / lowest_value * 100), 1) if lowest_value > 0 else 0
+                
+                phase_comparisons = {
+                    'highest_phase': {
+                        'phase': phase_names.get(highest_phase, highest_phase),
+                        'value': highest_value,
+                        'insight': f"{symptom_field} is highest during {phase_names.get(highest_phase, highest_phase)} phase"
+                    },
+                    'lowest_phase': {
+                        'phase': phase_names.get(lowest_phase, lowest_phase),
+                        'value': lowest_value,
+                        'insight': f"{symptom_field} is lowest during {phase_names.get(lowest_phase, lowest_phase)} phase"
+                    },
+                    'variation': {
+                        'difference': difference,
+                        'percent_change': percent_diff,
+                        'insight': f"{symptom_field} varies by {difference} ({percent_diff}%) across phases"
+                    }
+                }
+            
+            # Generate overall summary
+            all_values = [data['mean'] for data in phase_analysis.values()]
+            overall_mean = round(np.mean(all_values), 2)
+            overall_min = min([data['min'] for data in phase_analysis.values()])
+            overall_max = max([data['max'] for data in phase_analysis.values()])
+            total_data_points = sum([data['count'] for data in phase_analysis.values()])
+            
+            summary = (
+                f"Your {symptom_field} shows variation across cycle phases. "
+                f"Overall average: {overall_mean} (range: {overall_min} - {overall_max}). "
+                f"Based on {total_data_points} data points across {len(phase_analysis)} phases."
+            )
+            
+        else:
+            # ===== CATEGORICAL ANALYSIS =====
+            phase_frequencies = {}
+            
+            for phase, data in phase_analysis.items():
+                phase_label = phase_names.get(phase, phase.capitalize())
+                frequencies = data.get('frequency', {})
+                
+                if frequencies:
+                    most_common = max(frequencies, key=frequencies.get)
+                    most_common_count = frequencies[most_common]
+                    total_count = data['count']
+                    percentage = round((most_common_count / total_count) * 100, 1)
+                    
+                    insights[phase] = {
+                        'summary': f"During {phase_label} phase: most common {symptom_field} is '{most_common}'",
+                        'statistics': {
+                            'most_common': most_common,
+                            'frequency': f"{most_common_count}/{total_count} ({percentage}%)",
+                            'distribution': frequencies,
+                            'data_points': total_count
+                        },
+                        'interpretation': PeriodAnalyticsService._interpret_categorical_phase(
+                            phase, frequencies, symptom_field
+                        )
+                    }
+                    
+                    phase_frequencies[phase] = {
+                        'most_common': most_common,
+                        'percentage': percentage
+                    }
+            
+            # Cross-phase comparisons for categorical
+            if len(phase_frequencies) > 1:
+                # Find if same value is most common across phases
+                all_most_common = [pf['most_common'] for pf in phase_frequencies.values()]
+                if len(set(all_most_common)) == 1:
+                    phase_comparisons = {
+                        'pattern': f"'{all_most_common[0]}' is the most common {symptom_field} across all phases",
+                        'consistency': 'high'
+                    }
+                else:
+                    phase_comparisons = {
+                        'pattern': f"{symptom_field} patterns vary by phase",
+                        'consistency': 'moderate',
+                        'variations': {
+                            phase_names.get(phase, phase): data['most_common']
+                            for phase, data in phase_frequencies.items()
+                        }
+                    }
+            
+            total_data_points = sum([data['count'] for data in phase_analysis.values()])
+            summary = (
+                f"Your {symptom_field} patterns across {len(phase_analysis)} cycle phases. "
+                f"Based on {total_data_points} logged entries."
+            )
+        
+        # Generate recommendations
+        recommendations = PeriodAnalyticsService._generate_phase_recommendations(
+            phase_analysis, symptom_field, is_numeric
+        )
+        
+        return {
+            'insights': insights,
+            'comparisons': phase_comparisons,
+            'summary': summary,
+            'recommendations': recommendations,
+            'data_quality': {
+                'phases_analyzed': len(phase_analysis),
+                'total_data_points': sum([data['count'] for data in phase_analysis.values()]),
+                'completeness': 'good' if len(phase_analysis) >= 3 else 'partial'
+            }
+        }
+    
+    @staticmethod
+    def _interpret_numeric_phase(phase: str, data: Dict, symptom_field: str) -> str:
+        """Generate interpretation for numeric phase data."""
+        phase_labels = {
+            'menstruation': 'menstrual',
+            'follicular': 'follicular',
+            'ovulation': 'ovulation',
+            'luteal': 'luteal'
+        }
+        
+        phase_label = phase_labels.get(phase, phase)
+        mean = data['mean']
+        span = data['max'] - data['min']
+        
+        if span < mean * 0.2:  # Low variation
+            consistency = "relatively consistent"
+        elif span < mean * 0.5:  # Moderate variation
+            consistency = "somewhat variable"
+        else:  # High variation
+            consistency = "highly variable"
+        
+        return (
+            f"During {phase_label} phase, your {symptom_field} averages {mean} "
+            f"with {consistency} values (range: {data['min']} - {data['max']})."
+        )
+    
+    @staticmethod
+    def _interpret_categorical_phase(phase: str, frequencies: Dict, symptom_field: str) -> str:
+        """Generate interpretation for categorical phase data."""
+        phase_labels = {
+            'menstruation': 'menstrual',
+            'follicular': 'follicular',
+            'ovulation': 'ovulation',
+            'luteal': 'luteal'
+        }
+        
+        phase_label = phase_labels.get(phase, phase)
+        most_common = max(frequencies, key=frequencies.get)
+        total = sum(frequencies.values())
+        percentage = round((frequencies[most_common] / total) * 100, 1)
+        
+        if percentage >= 70:
+            dominance = "predominantly"
+        elif percentage >= 50:
+            dominance = "mostly"
+        else:
+            dominance = "often"
+        
+        return (
+            f"During {phase_label} phase, you {dominance} experience '{most_common}' "
+            f"for {symptom_field} ({percentage}% of the time)."
+        )
+    
+    @staticmethod
+    def _generate_phase_recommendations(
+        phase_analysis: Dict,
+        symptom_field: str,
+        is_numeric: bool
     ) -> List[str]:
-        """Generate insights about symptom patterns."""
-        insights = []
+        """Generate actionable recommendations based on phase analysis."""
+        recommendations = []
         
-        # Example: identify which phase has worst symptoms
-        # This is domain-specific analysis
+        # Check data completeness
+        total_points = sum([data['count'] for data in phase_analysis.values()])
+        phases_with_data = len(phase_analysis)
         
-        return insights
+        if phases_with_data < 4:
+            recommendations.append(
+                f"Log {symptom_field} during all cycle phases (menstrual, follicular, ovulation, luteal) "
+                "to get a complete picture of how it changes throughout your cycle."
+            )
+        
+        if total_points < 10:
+            recommendations.append(
+                f"Continue tracking {symptom_field} over multiple cycles to identify reliable patterns."
+            )
+        
+        if is_numeric and phases_with_data >= 2:
+            # Check for significant variation
+            means = [data['mean'] for data in phase_analysis.values()]
+            if len(means) >= 2:
+                max_mean = max(means)
+                min_mean = min(means)
+                variation = (max_mean - min_mean) / min_mean * 100 if min_mean > 0 else 0
+                
+                if variation > 20:
+                    recommendations.append(
+                        f"Your {symptom_field} varies significantly across phases ({variation:.1f}% difference). "
+                        "Consider planning activities around phases when symptoms are more manageable."
+                    )
+        
+        if not recommendations:
+            recommendations.append(
+                f"Keep tracking {symptom_field} to maintain accurate phase-based insights."
+            )
+        
+        return recommendations
     
     @staticmethod
     def generate_accuracy_recommendation(avg_error: float, count: int) -> str:
-        """Generate recommendation based on prediction accuracy."""
         if count < 3:
             return "Log more cycles to improve prediction accuracy."
         
