@@ -6,7 +6,7 @@ from app.models.period_cycle import PeriodCycle
 from app.models.tracker import Tracker
 from app.models.tracker_category import TrackerCategory
 from datetime import date, datetime, timedelta
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from app import db
 from sqlalchemy.orm.attributes import flag_modified
 from app.utils.menstruation_calculations import (
@@ -361,7 +361,7 @@ class PeriodCycleService:
             raise ValueError(f"Failed to find cycle for date: {str(e)}")
 
     @staticmethod
-    def get_cycle_history(tracker_id: int, limit: int = 100, start_date: date = None, end_date: date = None) -> Dict[str, Any]:
+    def get_cycle_history(tracker_id: int, limit: int = 100, start_date: date = None, end_date: date = None) -> List[PeriodCycle]:
         try:
             tracker = Tracker.query.get(tracker_id)
             if not tracker:
@@ -395,6 +395,16 @@ class PeriodCycleService:
         except Exception as e:
             raise ValueError(f"Failed to get cycle history: {str(e)}")
 
+    @staticmethod
+    def get_current_cycle(tracker_id: int) -> Optional[PeriodCycle]:
+        try:
+            current_cycle = PeriodCycle.query.filter_by(
+                tracker_id=tracker_id,
+                cycle_end_date=None
+            ).order_by(PeriodCycle.cycle_start_date.desc()).first()
+            return current_cycle
+        except Exception as e:
+            raise ValueError(f"Failed to get current cycle: {str(e)}")
 
     @staticmethod
     def get_cycle_phases_dates(tracker_id: int, cycle_id: int) -> Dict[str, Any]:

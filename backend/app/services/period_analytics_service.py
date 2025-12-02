@@ -19,6 +19,7 @@ from app.services.analytics_service import (
 )
 from app.models.tracker import Tracker
 from app.models.tracker_category import TrackerCategory
+from app.models.period_cycle import PeriodCycle
 from app.utils.menstruation_calculations import (
     calculate_cycle_day,
     determine_cycle_phase,
@@ -211,135 +212,349 @@ class PeriodAnalyticsService:
             )
         }
     
-    @staticmethod
-    def generate_cycle_calendar(
-        tracker_id: int,
-        time_period: str
-    ) -> bytes:
-        try:
-            tracker = Tracker.query.get(tracker_id)
-            category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
-            if not category or category.name != 'Period Tracker':
-                raise ValueError("This endpoint is only available for Period Tracker")
-            
-            if time_period == 'month':
-                # Generate calendar month view
-                calendar_data = PeriodAnalyticsService.get_calendar_month_view()
-                
-            elif time_period == 'all':
-                # Generate calendar global view
-                calendar_data = PeriodAnalyticsService.generate_calendar_global_view(tracker_id)
-            else:
-                raise ValueError("Invalid time_period")
-            return calendar_data
-        except ValueError as e:
-            raise ValueError(f"Failed to generate cycle calendar: {str(e)}")
+    # ============================================================================
+    # SERVICE METHODS - Enhanced Calendar Data Generation
+    # ============================================================================
     
     @staticmethod
-    def get_calendar_month_view(target_date: Optional[date] = None) -> Dict[str, Any]:
+    def get_calendar_data(
+        tracker_id: int,
+        target_date: date,
+        include_predictions: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Get comprehensive calendar data for a specific month.
         
-        target_date = target_date or date.today()
-        today = date.today()
-        
+        Returns:
+        - Calendar grid structure (weeks and days)
+        - Phase information for each day
+        - Cycle boundaries
+        - Predictions
+        """
         # Get month boundaries
-        month_start = date(target_date.year, target_date.month, 1)
-        _, last_day = calendar.monthrange(target_date.year, target_date.month)
-        month_end = date(target_date.year, target_date.month, last_day)
+        year, month = target_date.year, target_date.month
+        month_start = date(year, month, 1)
+        _, last_day = calendar.monthrange(year, month)
+        month_end = date(year, month, last_day)
         
-        # Calculate days from previous month (fill first week, min 3 days)
-        month_start_weekday = month_start.weekday()  # 0=Monday, 6=Sunday
-        days_from_prev_month = max(month_start_weekday, 3)
-        calendar_start = month_start - timedelta(days=days_from_prev_month)
+        # Get calendar grid (include surrounding days to fill weeks)
+        calendar_grid = PeriodAnalyticsService._build_calendar_grid(
+            month_start, month_end
+        )
         
-        # Calculate days from next month to complete 6 weeks (42 days total)
-        days_in_month = (month_end - month_start).days + 1
-        days_from_next_month = max(2, min(4, 42 - days_from_prev_month - days_in_month))
-        calendar_end = month_end + timedelta(days=days_from_next_month)
+        # Get all cycles that overlap with this month (including buffer days)
+        cycles = PeriodAnalyticsService._get_cycles_for_month(
+            tracker_id,
+            date.fromisoformat(calendar_grid['calendar_start']),
+            date.fromisoformat(calendar_grid['calendar_end'])
+        )
         
-        # Generate all days in calendar view
-        days = []
-        current = calendar_start
-        while current <= calendar_end:
-            is_current_month = month_start <= current <= month_end
-            days.append({
-                'date': current.isoformat(),
-                'day': current.day,
-                'weekday': current.strftime('%A'),
-                'weekday_short': current.strftime('%a'),
-                'is_today': current == today,
-                'is_current_month': is_current_month,
-                'is_previous_month': current < month_start,
-                'is_next_month': current > month_end,
-                'week_number': current.isocalendar()[1]
-            })
-            current += timedelta(days=1)
+        # Annotate each day with cycle information
+        annotated_days = PeriodAnalyticsService._annotate_calendar_days(
+            calendar_grid['days'],
+            cycles,
+            include_predictions
+        )
         
-        total_days = len(days)
+        # Get current cycle info
+        current_cycle = PeriodCycleService.get_current_cycle(tracker_id)
+        settings = PeriodCycleService.get_tracker_settings(tracker_id)
+        
         return {
-            'month_start': month_start.isoformat(),
-            'month_end': month_end.isoformat(),
-            'calendar_start': calendar_start.isoformat(),
-            'calendar_end': calendar_end.isoformat(),
-            'days': days,
-            'today': today.isoformat(),
-            'target_month': target_date.strftime('%B %Y'),
-            'total_days': total_days,
-            'weeks': total_days // 7
+            'month': {
+                'year': year,
+                'month': month,
+                'month_name': target_date.strftime('%B'),
+                'month_name_short': target_date.strftime('%b')
+            },
+            'calendar_grid': calendar_grid,
+            'days': annotated_days,
+            'cycles_in_view': [
+                {
+                    'cycle_id': c.id,
+                    'cycle_start': c.cycle_start_date.isoformat(),
+                    'cycle_end': c.cycle_end_date.isoformat() if c.cycle_end_date else None,
+                    'is_current': c.is_current
+                }
+                for c in cycles
+            ],
+            'current_cycle_info': {
+                'cycle_day': calculate_cycle_day(
+                    current_cycle.cycle_start_date.isoformat()
+                ) if current_cycle else None,
+                'cycle_phase': determine_cycle_phase(
+                    calculate_cycle_day(current_cycle.cycle_start_date.isoformat()),
+                    settings['average_period_length'],
+                    settings['average_cycle_length']
+                ) if current_cycle else None
+            } if current_cycle else None,
+            'legend': {
+                'menstrual': {'label': 'Period', 'color': '#EF4444'},
+                'follicular': {'label': 'Follicular', 'color': '#3B82F6'},
+                'ovulation': {'label': 'Ovulation', 'color': '#10B981'},
+                'luteal': {'label': 'Luteal', 'color': '#F59E0B'},
+                'predicted': {'label': 'Predicted', 'opacity': 0.5}
+            }
         }
     
     @staticmethod
-    def generate_calendar_global_view(tracker_id: int) -> Dict[str, Any]:
-        try:
-            tracker = Tracker.query.get(tracker_id)
-            category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
-            if not category or category.name != 'Period Tracker':
-                raise ValueError("This endpoint is only available for Period Tracker")
-            #get all cycles for this tracker
-            cycles = PeriodCycleService.get_cycle_history(tracker_id)
-            #get cycle phases dates for each cycle
-            cycle_phases_dates = []
-            for cycle in cycles:
-                cycle_phases_dates.append(PeriodCycleService.get_cycle_phases_dates(tracker_id, cycle.id))
-            return cycle_phases_dates
-        except ValueError as e:
-            raise ValueError(f"Failed to generate calendar global view: {str(e)}")
+    def _build_calendar_grid(month_start: date, month_end: date) -> Dict[str, Any]:
+        # Include days from previous month to start on Monday
+        start_weekday = month_start.weekday()  # 0=Monday
+        calendar_start = month_start - timedelta(days=start_weekday)
+        
+        # Include days from next month to complete last week
+        end_weekday = month_end.weekday()
+        days_to_add = 6 - end_weekday  # Complete to Sunday
+        calendar_end = month_end + timedelta(days=days_to_add)
+        
+        # Generate all days
+        days = []
+        current = calendar_start
+        while current <= calendar_end:
+            days.append({
+                'date': current.isoformat(),
+                'day': current.day,
+                'weekday': current.weekday(),  # 0=Monday
+                'is_today': current == date.today(),
+                'is_current_month': month_start <= current <= month_end,
+                'week_of_month': ((current - month_start).days // 7) + 1
+            })
+            current += timedelta(days=1)
+        
+        # Group into weeks
+        weeks = []
+        for i in range(0, len(days), 7):
+            weeks.append(days[i:i+7])
+        
+        return {
+            'calendar_start': calendar_start.isoformat(),
+            'calendar_end': calendar_end.isoformat(),
+            'days': days,
+            'weeks': weeks,
+            'total_weeks': len(weeks)
+        }
     
+    @staticmethod
+    def _get_cycles_for_month(
+        tracker_id: int,
+        start_date: date,
+        end_date: date
+    ) -> List[PeriodCycle]:
+        """Get all cycles that overlap with date range."""
+        cycles = PeriodCycle.query.filter_by(
+            tracker_id=tracker_id
+        ).filter(
+            PeriodCycle.cycle_start_date <= end_date
+        ).order_by(PeriodCycle.cycle_start_date.asc()).all()
+        
+        overlapping = []
+        for cycle in cycles:
+            cycle_end = cycle.cycle_end_date or cycle.predicted_next_period_date
+            
+            if cycle_end:
+                if cycle_end >= start_date:
+                    overlapping.append(cycle)
+            else:
+                overlapping.append(cycle)
+        
+        return overlapping
+    
+    @staticmethod
+    def _annotate_calendar_days(
+        days: List[Dict],
+        cycles: List[PeriodCycle],
+        include_predictions: bool
+    ) -> List[Dict]:
+
+        annotated = []
+        
+        for day_info in days:
+            day_date = date.fromisoformat(day_info['date'])
+            
+            # Find which cycle this day belongs to
+            cycle_info = PeriodAnalyticsService._find_cycle_for_day(
+                day_date, cycles
+            )
+            
+            day_info['cycle'] = cycle_info
+            
+            if cycle_info:
+                # Determine phase for this day
+                phase_info = PeriodAnalyticsService._determine_day_phase(
+                    day_date,
+                    cycle_info,
+                    include_predictions
+                )
+                day_info['phase'] = phase_info
+            else:
+                day_info['phase'] = None
+            
+            annotated.append(day_info)
+        
+        return annotated
+    
+    @staticmethod
+    def _find_cycle_for_day(day_date: date, cycles: List[PeriodCycle]) -> Optional[Dict]:
+        for cycle in cycles:
+            cycle_end = cycle.cycle_end_date or cycle.predicted_next_period_date
+            
+            if cycle.cycle_start_date <= day_date:
+                if not cycle_end or day_date < cycle_end:
+                    return {
+                        'cycle_id': cycle.id,
+                        'cycle_start_date': cycle.cycle_start_date.isoformat(),
+                        'cycle_end_date': cycle.cycle_end_date.isoformat() if cycle.cycle_end_date else None,
+                        'period_start_date': cycle.period_start_date.isoformat(),
+                        'period_end_date': cycle.period_end_date.isoformat() if cycle.period_end_date else None,
+                        'is_current': cycle.is_current,
+                        'is_complete': cycle.is_complete
+                    }
+        
+        return None
+    
+    @staticmethod
+    def _determine_day_phase(
+        day_date: date,
+        cycle_info: Dict,
+        include_predictions: bool
+    ) -> Optional[Dict]:
+        
+        # Get cycle object if needed, or use cycle_info dict
+        period_start_date = date.fromisoformat(cycle_info['period_start_date'])
+        period_end_date = date.fromisoformat(cycle_info['period_end_date']) if cycle_info['period_end_date'] else None
+        is_complete = cycle_info['is_complete']
+        
+        # Period phase (confirmed)
+        if period_start_date <= day_date:
+            if period_end_date and day_date <= period_end_date:
+                return {
+                    'phase': 'menstrual',
+                    'label': 'Period',
+                    'is_predicted': False
+                }
+        
+        # If we don't have period end, estimate it
+        estimated_period_end = period_end_date
+        if not estimated_period_end:
+            # Need to get settings to estimate period end
+            # We'll need the cycle object for tracker_id, so let's get it from cycle_id
+            cycle = PeriodCycle.query.get(cycle_info['cycle_id'])
+            if cycle:
+                settings = PeriodCycleService.get_tracker_settings(cycle.tracker_id)
+                estimated_period_end = period_start_date + timedelta(
+                    days=settings['average_period_length'] - 1
+                )
+            else:
+                estimated_period_end = period_start_date + timedelta(days=4)  # Default 5 days
+        
+        # After period ends
+        if day_date > estimated_period_end:
+            # Get cycle for ovulation date
+            cycle = PeriodCycle.query.get(cycle_info['cycle_id'])
+            if cycle and cycle.predicted_ovulation_date:
+                days_from_ovulation = abs((day_date - cycle.predicted_ovulation_date).days)
+                
+                if days_from_ovulation <= 1:
+                    return {
+                        'phase': 'ovulation',
+                        'label': 'Ovulation',
+                        'is_predicted': not is_complete
+                    }
+                elif day_date < cycle.predicted_ovulation_date:
+                    return {
+                        'phase': 'follicular',
+                        'label': 'Follicular',
+                        'is_predicted': not is_complete
+                    }
+                else:
+                    return {
+                        'phase': 'luteal',
+                        'label': 'Luteal',
+                        'is_predicted': not is_complete
+                    }
+        
+        return None
+    
+    @staticmethod
+    def get_calendar_overview(
+        tracker_id: int,
+        months: int = 12
+    ) -> Dict[str, Any]:
+        """
+        Get simplified overview of cycles for timeline view.
+        
+        Returns minimal data for showing multiple months at once.
+        """
+        cutoff_date = date.today() - timedelta(days=months * 30)
+        
+        cycles = PeriodCycleService.get_cycle_history(
+            tracker_id,
+            start_date=cutoff_date
+        )
+        
+        # Build simplified timeline
+        timeline = []
+        for cycle in cycles:
+            timeline.append({
+                'cycle_id': cycle.id,
+                'period_start': cycle.period_start_date.isoformat(),
+                'period_end': cycle.period_end_date.isoformat() if cycle.period_end_date else None,
+                'cycle_length': cycle.cycle_length,
+                'period_length': cycle.period_length,
+                'predicted_ovulation': cycle.predicted_ovulation_date.isoformat() 
+                    if cycle.predicted_ovulation_date else None,
+                'is_current': cycle.is_current
+            })
+        
+        return {
+            'timeline': timeline,
+            'total_cycles': len(timeline),
+            'date_range': {
+                'start': cutoff_date.isoformat(),
+                'end': date.today().isoformat()
+            }
+        }
+
     # Helper methods
     
     @staticmethod
-    def _get_period_start_dates(tracker_id: int, months: int) -> List[date]:
-        """Extract period start dates from tracking data."""
+    def get_period_start_dates(tracker_id: int, months: int) -> List[date]:
         try:
             tracker = Tracker.query.get(tracker_id)
             if not tracker:
                 raise ValueError(f"Tracker {tracker_id} not found")
-            if tracker.category.name != 'Period Tracker':
-                raise ValueError("This endpoint is only for Period Trackers")
-            period_starts = []
-            entries = TrackingData.query.filter_by(tracker_id=tracker_id ).order_by(TrackingData.entry_date.asc()).all()
+            cycles = PeriodCycles.query.filter_by(tracker_id=tracker_id).order_by(PeriodCycles.cycle_start_date.desc()).filter(PeriodCycles.cycle_start_date >= date.today() - timedelta(days=months*30)).all()
+            return [cycle.cycle_start_date for cycle in cycles]
         except Exception as e:
             raise ValueError(f"Failed to get period start dates: {str(e)}")
-            
     
     @staticmethod
-    def _get_entries_with_phases(
-        tracker_id: int,
-        field_name: str,
-        months: int
-    ) -> List[Dict[str, Any]]:
-        """Get entries annotated with cycle phase."""
-        # Fetch entries and calculate cycle phase for each
-        pass
-    
+    def get_prediction_history(tracker_id: int, months: int) -> List[Dict]:
+        try:
+            tracker = Tracker.query.get(tracker_id)
+            if not tracker:
+                raise ValueError(f"Tracker {tracker_id} not found")
+            cycles = PeriodCycles.query.filter_by(tracker_id=tracker_id).order_by(PeriodCycles.cycle_start_date.desc()).filter(PeriodCycles.cycle_start_date >= date.today() - timedelta(days=months*30)).all()
+            predictions = []
+            reality = []
+            for cycle in cycles:
+                predictions.append({
+                    'predictions': get_cycle_phases_dates(tracker_id, cycle.id)['cycle_predictions'],
+                })
+                reality.append({
+                    'reality': get_cycle_phases_dates(tracker_id, cycle.id)['cycle_info'],
+                })
+            return {
+                'predictions': predictions,
+                'reality': reality
+            }
+        except Exception as e:
+            raise ValueError(f"Failed to get prediction history: {str(e)}")
+
+
     @staticmethod
-    def _get_prediction_history(tracker_id: int, months: int) -> List[Dict]:
-        """Get historical predictions vs actuals."""
-        # This requires storing predictions when they're made
-        # Might need new database table: PeriodPredictions
-        pass
-    
-    @staticmethod
-    def _generate_medical_note(avg_length: float, std_dev: float) -> str:
+    def generate_medical_note(avg_length: float, std_dev: float) -> str:
         """Generate medical context note about cycle regularity."""
         notes = []
         
@@ -358,7 +573,7 @@ class PeriodAnalyticsService:
         return " ".join(notes)
     
     @staticmethod
-    def _generate_phase_insights(
+    def generate_phase_insights(
         phase_analysis: Dict,
         symptom_field: str
     ) -> List[str]:
@@ -371,7 +586,7 @@ class PeriodAnalyticsService:
         return insights
     
     @staticmethod
-    def _generate_accuracy_recommendation(avg_error: float, count: int) -> str:
+    def generate_accuracy_recommendation(avg_error: float, count: int) -> str:
         """Generate recommendation based on prediction accuracy."""
         if count < 3:
             return "Log more cycles to improve prediction accuracy."

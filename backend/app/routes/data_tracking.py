@@ -12,6 +12,7 @@ import io
 from app import db
 from app.models.user import User
 from app.models.tracker import Tracker
+from app.models.tracker_category import TrackerCategory
 from app.models.tracking_data import TrackingData
 from app.schemas.tracking_data_schema import TrackingDataSchema
 from app.services.tracking_service import TrackingService
@@ -1152,28 +1153,91 @@ def get_time_evolution_chart(tracker_id: int):
 #-----------------------------------------------------
 #CYCLE ANALYSIS ROUTES
 
-@data_tracking_bp.route('/<int:tracker_id>/get-cycle-calendar', methods=['GET'])
+# ============================================================================
+# CALENDAR ENDPOINTS 
+# ============================================================================
+
+@data_tracking_bp.route('/<int:tracker_id>/calendar', methods=['GET'])
 @jwt_required()
-def get_cycle_calendar(tracker_id: int):
+def get_cycle_calendar_data(tracker_id: int):
+    """
+    Get cycle calendar data for frontend rendering.
+    
+    Query params:
+    - month: Target month (YYYY-MM format, default: current month)
+    - include_predictions: Include future predictions (default: true)
+    
+    Returns JSON data that frontend can render as calendar.
+    """
     try:
         _, user_id = get_current_user()
         tracker = verify_tracker_ownership(tracker_id, user_id)
-    except ValueError as e:
-        return error_response(str(e), 404)
-    try:
-        # Get parameters
-        time_period = request.args.get('time_period')
-        if not time_period:
-            return error_response("time_period query parameter is required", 400)
-        valid_periods = ['month', 'all']
-        if time_period not in valid_periods:
-            return error_response(f"Invalid time_period. Valid: {', '.join(valid_periods)}", 400)
         
-        # Get cycle calendar
-        calendar = PeriodAnalyticsService.generate_cycle_calendar(tracker_id, time_period)
-        return success_response("Cycle calendar generated successfully", calendar)
+        category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
+        if not category or category.name != 'Period Tracker':
+            return error_response("This endpoint is only for Period Trackers", 400)
+        
+        # Parse query parameters
+        month_str = request.args.get('month')  # e.g., "2025-12"
+        include_predictions = request.args.get('include_predictions', 'true').lower() == 'true'
+        
+        if month_str:
+            year, month = map(int, month_str.split('-'))
+            target_date = date(year, month, 1)
+        else:
+            target_date = date.today()
+        
+        # Get calendar data
+        calendar_data = PeriodAnalyticsService.get_calendar_data(
+            tracker_id,
+            target_date,
+            include_predictions=include_predictions
+        )
+        
+        return success_response(
+            "Calendar data retrieved successfully",
+            calendar_data
+        )
+    
     except ValueError as e:
         return error_response(str(e), 400)
     except Exception as e:
-        return error_response(f"Failed to get cycle calendar: {str(e)}", 500)
+        return error_response(f"Failed to get calendar data: {str(e)}", 500)
 
+
+@data_tracking_bp.route('/<int:tracker_id>/calendar/overview', methods=['GET'])
+@jwt_required()
+def get_calendar_overview(tracker_id: int):
+    """
+    Get overview of all cycles for timeline/history view.
+    
+    Query params:
+    - months: How many months back to include (default: 12)
+    
+    Returns simplified data for timeline visualization.
+    """
+    try:
+        _, user_id = get_current_user()
+        tracker = verify_tracker_ownership(tracker_id, user_id)
+        
+        category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
+        if not category or category.name != 'Period Tracker':
+            return error_response("This endpoint is only for Period Trackers", 400)
+        
+        months = request.args.get('months', type=int, default=12)
+        
+        # Get overview data
+        overview_data = PeriodAnalyticsService.get_calendar_overview(
+            tracker_id,
+            months=months
+        )
+        
+        return success_response(
+            "Calendar overview retrieved successfully",
+            overview_data
+        )
+    
+    except ValueError as e:
+        return error_response(str(e), 400)
+    except Exception as e:
+        return error_response(f"Failed to get calendar overview: {str(e)}", 500)
