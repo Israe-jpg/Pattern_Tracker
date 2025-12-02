@@ -55,7 +55,7 @@ class PeriodAnalyticsService:
         - Trend (getting more/less regular)
         """
         # Get period start dates from tracking data
-        period_starts = PeriodAnalyticsService._get_period_start_dates(
+        period_starts = PeriodAnalyticsService.get_period_start_dates(
             tracker_id, months
         )
         
@@ -64,6 +64,9 @@ class PeriodAnalyticsService:
                 'message': 'Need at least 2 cycles to analyze regularity',
                 'cycles_found': len(period_starts)
             }
+        
+        # Sort dates in ascending order (oldest first) for correct cycle length calculation
+        period_starts = sorted(period_starts)
         
         # Calculate cycle lengths
         cycle_lengths = []
@@ -100,7 +103,7 @@ class PeriodAnalyticsService:
             'regularity_level': regularity_level,
             'cycle_lengths': cycle_lengths,
             'period_start_dates': [d.isoformat() for d in period_starts],
-            'medical_note': PeriodAnalyticsService._generate_medical_note(
+            'medical_note': PeriodAnalyticsService.generate_medical_note(
                 avg_length, std_dev
             )
         }
@@ -128,7 +131,7 @@ class PeriodAnalyticsService:
             Dictionary with phase analysis and insights
         """
         # === PERIOD-SPECIFIC: Get entries that belong to cycles ===
-        entries = PeriodAnalyticsService._get_entries_with_cycles(
+        entries = PeriodAnalyticsService.get_entries_with_cycles(
             tracker_id, symptom_field, months
         )
         
@@ -157,7 +160,7 @@ class PeriodAnalyticsService:
         )
         
         # === PERIOD-SPECIFIC: Add cycle phase to each data point ===
-        data_with_phases = PeriodAnalyticsService._annotate_with_phases(
+        data_with_phases = PeriodAnalyticsService.annotate_cycle_phases(
             extracted_data, tracker_id
         )
         
@@ -207,22 +210,75 @@ class PeriodAnalyticsService:
     
     @staticmethod
     def analyze_prediction_accuracy(tracker_id: int, months: int = 6) -> Dict[str, Any]:
+        """
+        Analyze prediction accuracy by comparing predicted vs actual cycle dates.
+        
+        Compares:
+        - Predicted next period date vs actual next period start
+        - Predicted ovulation date vs actual (if available)
+        """
         # Get historical predictions vs actuals
-        predictions = PeriodAnalyticsService._get_prediction_history(
+        history_data = PeriodAnalyticsService.get_prediction_history(
             tracker_id, months
         )
         
-        if not predictions:
+        if not history_data or not history_data.get('predictions'):
             return {
                 'message': 'No prediction history available',
                 'note': 'Predictions are made when you log entries'
             }
         
-        # Calculate accuracy
+        predictions_list = history_data.get('predictions', [])
+        reality_list = history_data.get('reality', [])
+        
+        if not predictions_list or not reality_list:
+            return {
+                'message': 'No prediction history available',
+                'note': 'Predictions are made when you log entries'
+            }
+        
+        # Reverse lists to chronological order (oldest first)
+        # The query returns cycles in descending order (newest first), so we reverse to get oldest first
+        predictions_list = list(reversed(predictions_list))
+        reality_list = list(reversed(reality_list))
+        
+        # Calculate accuracy by comparing predicted vs actual dates
         errors = []
-        for pred in predictions:
-            error_days = abs((pred['actual_date'] - pred['predicted_date']).days)
-            errors.append(error_days)
+        prediction_comparisons = []
+        
+        # Compare each cycle's predictions with the NEXT cycle's reality
+        # Cycle N's predicted_next_period_date should be compared with Cycle N+1's actual period_start
+        for i in range(len(predictions_list) - 1):
+            # Get predictions from current cycle
+            pred_dict = predictions_list[i]
+            pred_data = pred_dict.get('predictions', {})
+            
+            # Get reality from NEXT cycle (the one that actually started)
+            next_reality_dict = reality_list[i + 1]
+            next_reality_data = next_reality_dict.get('reality', {})
+            
+            # Compare predicted next period date with actual next period start
+            if pred_data.get('predicted_next_period_date') and next_reality_data.get('period_start'):
+                try:
+                    predicted_date = date.fromisoformat(pred_data['predicted_next_period_date'])
+                    actual_date = date.fromisoformat(next_reality_data['period_start'])
+                    error_days = abs((actual_date - predicted_date).days)
+                    errors.append(error_days)
+                    
+                    prediction_comparisons.append({
+                        'predicted_date': pred_data['predicted_next_period_date'],
+                        'actual_date': next_reality_data['period_start'],
+                        'error_days': error_days
+                    })
+                except (ValueError, TypeError, KeyError):
+                    # Skip invalid dates
+                    continue
+        
+        if not errors:
+            return {
+                'message': 'No valid prediction comparisons available',
+                'note': 'Need completed cycles with predictions to analyze accuracy'
+            }
         
         avg_error = np.mean(errors)
         
@@ -237,19 +293,12 @@ class PeriodAnalyticsService:
             accuracy_level = "Less Accurate"
         
         return {
-            'predictions_analyzed': len(predictions),
+            'predictions_analyzed': len(errors),
             'average_error_days': round(avg_error, 1),
             'accuracy_level': accuracy_level,
-            'predictions': [
-                {
-                    'predicted_date': p['predicted_date'].isoformat(),
-                    'actual_date': p['actual_date'].isoformat(),
-                    'error_days': abs((p['actual_date'] - p['predicted_date']).days)
-                }
-                for p in predictions
-            ],
-            'recommendation': PeriodAnalyticsService._generate_accuracy_recommendation(
-                avg_error, len(predictions)
+            'predictions': prediction_comparisons,
+            'recommendation': PeriodAnalyticsService.generate_accuracy_recommendation(
+                avg_error, len(errors)
             )
         }
     
@@ -279,12 +328,12 @@ class PeriodAnalyticsService:
         month_end = date(year, month, last_day)
         
         # Get calendar grid (include surrounding days to fill weeks)
-        calendar_grid = PeriodAnalyticsService._build_calendar_grid(
+        calendar_grid = PeriodAnalyticsService.build_calendar_grid(
             month_start, month_end
         )
         
         # Get all cycles that overlap with this month (including buffer days)
-        cycles = PeriodAnalyticsService._get_cycles_for_month(
+        cycles = PeriodAnalyticsService.get_cycles_for_month(
             tracker_id,
             date.fromisoformat(calendar_grid['calendar_start']),
             date.fromisoformat(calendar_grid['calendar_end'])
@@ -339,7 +388,7 @@ class PeriodAnalyticsService:
         }
     
     @staticmethod
-    def _build_calendar_grid(month_start: date, month_end: date) -> Dict[str, Any]:
+    def build_calendar_grid(month_start: date, month_end: date) -> Dict[str, Any]:
         # Include days from previous month to start on Monday
         start_weekday = month_start.weekday()  # 0=Monday
         calendar_start = month_start - timedelta(days=start_weekday)
@@ -377,7 +426,7 @@ class PeriodAnalyticsService:
         }
     
     @staticmethod
-    def _get_cycles_for_month(
+    def get_cycles_for_month(
         tracker_id: int,
         start_date: date,
         end_date: date
@@ -402,7 +451,7 @@ class PeriodAnalyticsService:
         return overlapping
     
     @staticmethod
-    def _annotate_calendar_days(
+    def annotate_calendar_days(
         days: List[Dict],
         cycles: List[PeriodCycle],
         include_predictions: bool
@@ -414,7 +463,7 @@ class PeriodAnalyticsService:
             day_date = date.fromisoformat(day_info['date'])
             
             # Find which cycle this day belongs to
-            cycle_info = PeriodAnalyticsService._find_cycle_for_day(
+            cycle_info = PeriodAnalyticsService.find_cycle_for_day(
                 day_date, cycles
             )
             
@@ -565,7 +614,7 @@ class PeriodAnalyticsService:
             tracker = Tracker.query.get(tracker_id)
             if not tracker:
                 raise ValueError(f"Tracker {tracker_id} not found")
-            cycles = PeriodCycles.query.filter_by(tracker_id=tracker_id).order_by(PeriodCycles.cycle_start_date.desc()).filter(PeriodCycles.cycle_start_date >= date.today() - timedelta(days=months*30)).all()
+            cycles = PeriodCycle.query.filter_by(tracker_id=tracker_id).order_by(PeriodCycle.cycle_start_date.desc()).filter(PeriodCycle.cycle_start_date >= date.today() - timedelta(days=months*30)).all()
             return [cycle.cycle_start_date for cycle in cycles]
         except Exception as e:
             raise ValueError(f"Failed to get period start dates: {str(e)}")
@@ -576,15 +625,15 @@ class PeriodAnalyticsService:
             tracker = Tracker.query.get(tracker_id)
             if not tracker:
                 raise ValueError(f"Tracker {tracker_id} not found")
-            cycles = PeriodCycles.query.filter_by(tracker_id=tracker_id).order_by(PeriodCycles.cycle_start_date.desc()).filter(PeriodCycles.cycle_start_date >= date.today() - timedelta(days=months*30)).all()
+            cycles = PeriodCycle.query.filter_by(tracker_id=tracker_id).order_by(PeriodCycle.cycle_start_date.desc()).filter(PeriodCycle.cycle_start_date >= date.today() - timedelta(days=months*30)).all()
             predictions = []
             reality = []
             for cycle in cycles:
                 predictions.append({
-                    'predictions': get_cycle_phases_dates(tracker_id, cycle.id)['cycle_predictions'],
+                    'predictions': PeriodCycleService.get_cycle_phases_dates(tracker_id, cycle.id)['cycle_predictions'],
                 })
                 reality.append({
-                    'reality': get_cycle_phases_dates(tracker_id, cycle.id)['cycle_info'],
+                    'reality': PeriodCycleService.get_cycle_phases_dates(tracker_id, cycle.id)['cycle_info'],
                 })
             return {
                 'predictions': predictions,
@@ -614,7 +663,7 @@ class PeriodAnalyticsService:
         return " ".join(notes)
     
     @staticmethod
-    def _get_entries_with_cycles(
+    def get_entries_with_cycles(
         tracker_id: int,
         field_name: str,
         months: int
@@ -672,7 +721,7 @@ class PeriodAnalyticsService:
         return entries_with_cycles
     
     @staticmethod
-    def _annotate_with_phases(
+    def annotate_cycle_phases(
         data: List[Dict[str, Any]],
         tracker_id: int
     ) -> List[Dict[str, Any]]:
@@ -765,7 +814,7 @@ class PeriodAnalyticsService:
                         'span': round(data['max'] - data['min'], 2),
                         'data_points': data['count']
                     },
-                    'interpretation': PeriodAnalyticsService._interpret_numeric_phase(
+                    'interpretation': PeriodAnalyticsService.interpret_numeric_phase(
                         phase, data, symptom_field
                     )
                 }
@@ -833,7 +882,7 @@ class PeriodAnalyticsService:
                             'distribution': frequencies,
                             'data_points': total_count
                         },
-                        'interpretation': PeriodAnalyticsService._interpret_categorical_phase(
+                        'interpretation': PeriodAnalyticsService.interpret_categorical_phase(
                             phase, frequencies, symptom_field
                         )
                     }
@@ -869,7 +918,7 @@ class PeriodAnalyticsService:
             )
         
         # Generate recommendations
-        recommendations = PeriodAnalyticsService._generate_phase_recommendations(
+        recommendations = PeriodAnalyticsService.generate_phase_recommendations(
             phase_analysis, symptom_field, is_numeric
         )
         
@@ -886,7 +935,7 @@ class PeriodAnalyticsService:
         }
     
     @staticmethod
-    def _interpret_numeric_phase(phase: str, data: Dict, symptom_field: str) -> str:
+    def interpret_numeric_phase(phase: str, data: Dict, symptom_field: str) -> str:
         """Generate interpretation for numeric phase data."""
         phase_labels = {
             'menstruation': 'menstrual',
@@ -912,7 +961,7 @@ class PeriodAnalyticsService:
         )
     
     @staticmethod
-    def _interpret_categorical_phase(phase: str, frequencies: Dict, symptom_field: str) -> str:
+    def interpret_categorical_phase(phase: str, frequencies: Dict, symptom_field: str) -> str:
         """Generate interpretation for categorical phase data."""
         phase_labels = {
             'menstruation': 'menstrual',
@@ -939,7 +988,7 @@ class PeriodAnalyticsService:
         )
     
     @staticmethod
-    def _generate_phase_recommendations(
+    def generate_phase_recommendations(
         phase_analysis: Dict,
         symptom_field: str,
         is_numeric: bool

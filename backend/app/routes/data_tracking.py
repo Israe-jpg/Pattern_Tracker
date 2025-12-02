@@ -1153,6 +1153,39 @@ def get_time_evolution_chart(tracker_id: int):
 #-----------------------------------------------------
 #CYCLE ANALYSIS ROUTES
 
+#general analysis of cycles inside a period tracker
+@data_tracking_bp.route('/<int:tracker_id>/general-cycle-analysis', methods=['GET'])
+@jwt_required()
+def get_general_cycle_analysis(tracker_id: int):
+    """
+    Get general cycle analysis(usually at the end of the cycle)
+    """
+    try:
+        _, user_id = get_current_user()
+        tracker = verify_tracker_ownership(tracker_id, user_id)
+
+        category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
+        if not category or category.name != 'Period Tracker':
+            return error_response("This endpoint is only for Period Trackers", 400)
+        
+        regularity = PeriodAnalyticsService.analyze_cycle_regularity(tracker_id)
+        if not regularity:
+            return error_response("Failed to get cycle regularity", 500)
+        prediction_accuracy = PeriodAnalyticsService.analyze_prediction_accuracy(tracker_id)
+        if not prediction_accuracy:
+            return error_response("Failed to get prediction accuracy", 500)
+        return success_response("General cycle analysis retrieved successfully", {
+            'regularity': regularity,
+            'prediction_accuracy': prediction_accuracy
+        })
+    except ValueError as e:
+        return error_response(str(e), 400)
+    except Exception as e:
+        return error_response(f"Failed to get general cycle analysis: {str(e)}", 500)
+
+
+
+#analyze a symptom by phase of cycle
 @data_tracking_bp.route('/<int:tracker_id>/symptoms-by-phase', methods=['GET'])
 @jwt_required()
 def get_symptoms_by_phase(tracker_id: int):
