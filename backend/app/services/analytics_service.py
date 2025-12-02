@@ -10,6 +10,13 @@ import matplotlib.dates as mdates
 import io
 
 from app.services.analytics_data_sufficiency_system import DataSufficiencyChecker, InsightType, ConfidenceLevel, AnalyticsDisplayStrategy
+from app.services.analytics_base import (
+    AnalyticsDataExtractor,
+    AnalyticsGrouper,
+    AnalyticsStatsCalculator,
+    NumericExtractor,
+    FieldTypeDetector
+)
 
 from app import db
 from app.models.tracking_data import TrackingData
@@ -20,201 +27,6 @@ from app.models.field_option import FieldOption
 
 
 
-class NumericExtractor:
-    """Intelligently extracts numeric values from complex nested data structures."""
-    
-    # Priority order for numeric keys (most common first)
-    NUMERIC_KEYS_PRIORITY = [
-        'level', 'overall', 'rating', 'score',  # Common rating keys
-        'hours', 'minutes', 'duration',          # Time-based
-        'amount', 'count', 'quantity',           # Quantity-based
-        'value', 'number'                         # Generic
-    ]
-    
-    NUMERIC_OPTION_TYPES = {'number', 'number_input', 'rating', 'slider'}
-    
-    @staticmethod
-    def extract(
-        field_data: Any,
-        numeric_option_names: Optional[List[str]] = None
-    ) -> Optional[float]:
-        """
-        Extract numeric value from field data with intelligent fallback.
-        
-        Handles:
-        - Direct numbers: 5, 7.5
-        - String numbers: "5", "7.5"
-        - Simple dict: {"level": 5}
-        - Complex dict: {"mood": {"overall": 5, "notes": "text"}}
-        - Arrays: Skip (not numeric)
-        
-        Args:
-            field_data: Data to extract from
-            numeric_option_names: Known numeric option names for this field
-        
-        Returns:
-            Float value or None if no numeric value found
-        """
-        if field_data is None:
-            return None
-        
-        # 1. Direct numeric value
-        if isinstance(field_data, (int, float)):
-            return float(field_data)
-        
-        # 2. String number
-        if isinstance(field_data, str):
-            try:
-                return float(field_data)
-            except (ValueError, TypeError):
-                return None
-        
-        # 3. Dictionary - use priority-based extraction
-        if isinstance(field_data, dict):
-            # Skip empty dicts
-            if not field_data:
-                return None
-            
-            # Priority 1: User-provided numeric option names
-            if numeric_option_names:
-                for option_name in numeric_option_names:
-                    value = field_data.get(option_name)
-                    if value is not None and not isinstance(value, (list, dict)):
-                        try:
-                            return float(value)
-                        except (ValueError, TypeError):
-                            continue
-            
-            # Priority 2: Common numeric keys (ordered by likelihood)
-            for key in NumericExtractor.NUMERIC_KEYS_PRIORITY:
-                if key in field_data:
-                    value = field_data[key]
-                    if value is not None and not isinstance(value, (list, dict)):
-                        try:
-                            return float(value)
-                        except (ValueError, TypeError):
-                            continue
-            
-            # Priority 3: Single key-value pair
-            if len(field_data) == 1:
-                value = list(field_data.values())[0]
-                if not isinstance(value, (list, dict)):
-                    try:
-                        return float(value)
-                    except (ValueError, TypeError):
-                        pass
-            
-            # Priority 4: First numeric value found (last resort)
-            for value in field_data.values():
-                if isinstance(value, (int, float)):
-                    return float(value)
-                if not isinstance(value, (list, dict)) and isinstance(value, str):
-                    try:
-                        return float(value)
-                    except (ValueError, TypeError):
-                        continue
-        
-        return None
-    
-    @staticmethod
-    def get_numeric_option_names(field_name: str, tracker_id: int) -> List[str]:
-        """Get list of numeric option names for a field from schema."""
-        try:
-            tracker = Tracker.query.get(tracker_id)
-            if not tracker:
-                return []
-            
-            # Check user-specific fields first
-            user_field = TrackerUserField.query.filter_by(
-                tracker_id=tracker_id,
-                field_name=field_name,
-                is_active=True
-            ).first()
-            
-            if user_field:
-                options = FieldOption.query.filter_by(
-                    tracker_user_field_id=user_field.id,
-                    is_active=True
-                ).all()
-                return [
-                    opt.option_name for opt in options
-                    if opt.option_type in NumericExtractor.NUMERIC_OPTION_TYPES
-                ]
-            
-            # Check category fields
-            category_field = TrackerField.query.filter_by(
-                category_id=tracker.category_id,
-                field_name=field_name,
-                is_active=True
-            ).first()
-            
-            if category_field:
-                options = FieldOption.query.filter_by(
-                    tracker_field_id=category_field.id,
-                    is_active=True
-                ).all()
-                return [
-                    opt.option_name for opt in options
-                    if opt.option_type in NumericExtractor.NUMERIC_OPTION_TYPES
-                ]
-            
-            return []
-        except Exception:
-            return []
-    
-    @staticmethod
-    def validate_numeric_field(field_name: str, tracker_id: int) -> Tuple[bool, Optional[str]]:
-        """
-        Check if field has numeric options in schema.
-        
-        Returns:
-            (is_valid, error_message)
-        """
-        try:
-            tracker = Tracker.query.get(tracker_id)
-            if not tracker:
-                return False, "Tracker not found"
-            
-            # Check user field
-            user_field = TrackerUserField.query.filter_by(
-                tracker_id=tracker_id,
-                field_name=field_name,
-                is_active=True
-            ).first()
-            
-            if user_field:
-                has_numeric = FieldOption.query.filter_by(
-                    tracker_user_field_id=user_field.id,
-                    is_active=True
-                ).filter(
-                    FieldOption.option_type.in_(NumericExtractor.NUMERIC_OPTION_TYPES)
-                ).first() is not None
-                
-                return (True, None) if has_numeric else (False, "Field has no numeric options")
-            
-            # Check category field
-            category_field = TrackerField.query.filter_by(
-                category_id=tracker.category_id,
-                field_name=field_name,
-                is_active=True
-            ).first()
-            
-            if category_field:
-                has_numeric = FieldOption.query.filter_by(
-                    tracker_field_id=category_field.id,
-                    is_active=True
-                ).filter(
-                    FieldOption.option_type.in_(NumericExtractor.NUMERIC_OPTION_TYPES)
-                ).first() is not None
-                
-                return (True, None) if has_numeric else (False, "Field has no numeric options")
-            
-            # Field not in schema - allow (might be legacy or direct numeric)
-            return True, None
-            
-        except Exception as e:
-            return False, f"Error validating field: {str(e)}"
-
 
 class StatisticalAnalyzer:
     """Performs statistical analysis on time series data."""
@@ -222,64 +34,27 @@ class StatisticalAnalyzer:
     @staticmethod
     def calculate_trend(x_values: np.ndarray, y_values: np.ndarray) -> Dict[str, Any]:
         """
-        Calculate trend line using linear regression with proper statistics.
+        Calculate trend line using linear regression with user-friendly summary.
+        
+        Uses shared base layer for core statistics, then adds domain-specific
+        user-friendly summary message.
         
         Returns:
-            Dictionary with slope, intercept, r_value, p_value, std_err
+            Dictionary with slope, intercept, r_value, p_value, std_err, and summary
         """
-        # Linear regression using scipy for accurate p-values
-        slope, intercept, r_value, p_value, std_err = stats.linregress(x_values, y_values)
+        # === USE SHARED BASE LAYER: Get core trend statistics ===
+        trend_stats = AnalyticsStatsCalculator.calculate_trend(x_values, y_values)
         
-        # Convert numpy types to Python types for JSON serialization
-        slope = float(slope)
-        intercept = float(intercept)
-        r_value = float(r_value)
-        p_value = float(p_value)
-        std_err = float(std_err)
-        
-        # Determine trend characteristics
-        if abs(slope) < 0.01:
-            direction = 'stable'
-            strength = 'none'
-        elif slope > 0:
-            direction = 'increasing'
-            strength = StatisticalAnalyzer._classify_strength(abs(r_value))
-        else:
-            direction = 'decreasing'
-            strength = StatisticalAnalyzer._classify_strength(abs(r_value))
-        
-        # Statistical significance (convert to Python bool for JSON serialization)
-        is_significant = bool(p_value < 0.05)
-        confidence = 'high' if is_significant and abs(r_value) > 0.7 else \
-                     'medium' if is_significant else 'low'
-        
-        # Generate user-friendly summary message
+        # === DOMAIN-SPECIFIC: Add user-friendly summary ===
         summary = StatisticalAnalyzer._generate_user_summary(
-            direction, strength, confidence, abs(r_value), is_significant
+            trend_stats['direction'], trend_stats['strength'], trend_stats['confidence'],
+            abs(trend_stats['correlation']), trend_stats['is_significant']
         )
         
-        return {
-            'direction': direction,
-            'strength': strength,
-            'slope': round(slope, 4),
-            'intercept': round(intercept, 4),
-            'correlation': round(r_value, 4),
-            'p_value': round(p_value, 6),
-            'std_error': round(std_err, 4),
-            'is_significant': is_significant,
-            'confidence': confidence,
-            'summary': summary  # User-friendly interpretation
-        }
-    
-    @staticmethod
-    def _classify_strength(abs_r_value: float) -> str:
-        """Classify correlation strength."""
-        if abs_r_value > 0.7:
-            return 'strong'
-        elif abs_r_value > 0.4:
-            return 'moderate'
-        else:
-            return 'weak'
+        # Add summary to trend stats
+        trend_stats['summary'] = summary
+        
+        return trend_stats
     
     @staticmethod
     def _generate_user_summary(
@@ -353,6 +128,9 @@ class StatisticalAnalyzer:
         """
         Calculate comprehensive descriptive statistics.
         
+        Uses shared base layer for core stats, then adds domain-specific features
+        (variance, user-friendly descriptions).
+        
         Args:
             values: List of numeric values
             field_name: Name of the field (e.g., 'sleep')
@@ -360,40 +138,31 @@ class StatisticalAnalyzer:
         
         Returns both raw values and user-friendly descriptions.
         """
-        arr = np.array(values)
+        # === USE SHARED BASE LAYER: Get core statistics ===
+        core_stats = AnalyticsStatsCalculator.calculate_numeric_stats(values)
         
-        # Calculate all statistics
-        mean_val = round(float(np.mean(arr)), 2)
-        median_val = round(float(np.median(arr)), 2)
-        std_dev_val = round(float(np.std(arr)), 2)
+        if not core_stats:
+            return {}
+        
+        # === DOMAIN-SPECIFIC: Add variance (not in base layer) ===
+        arr = np.array([v for v in values if v is not None and isinstance(v, (int, float))])
         variance_val = round(float(np.var(arr)), 2)
-        min_val = round(float(np.min(arr)), 2)
-        max_val = round(float(np.max(arr)), 2)
-        range_val = round(float(np.max(arr) - np.min(arr)), 2)
-        q1_val = round(float(np.percentile(arr, 25)), 2)
-        q3_val = round(float(np.percentile(arr, 75)), 2)
         
         # Build display name for descriptions
         display_name = StatisticalAnalyzer._build_display_name(field_name, option)
         
         # Generate user-friendly descriptions
         descriptions = StatisticalAnalyzer._generate_stat_descriptions(
-            mean_val, median_val, std_dev_val, min_val, max_val, 
-            range_val, q1_val, q3_val, len(values), display_name
+            core_stats['mean'], core_stats['median'], core_stats['std_dev'],
+            core_stats['min'], core_stats['max'], core_stats['range'],
+            core_stats['q1'], core_stats['q3'], core_stats['count'], display_name
         )
         
+        # Combine core stats with domain-specific additions
         return {
-            'count': len(values),
-            'mean': mean_val,
-            'median': median_val,
-            'std_dev': std_dev_val,
-            'variance': variance_val,
-            'min': min_val,
-            'max': max_val,
-            'range': range_val,
-            'q1': q1_val,
-            'q3': q3_val,
-            'descriptions': descriptions  # User-friendly explanations
+            **core_stats,  # Include all core stats from base layer
+            'variance': variance_val,  # Domain-specific addition
+            'descriptions': descriptions  # Domain-specific: user-friendly explanations
         }
     
     @staticmethod
@@ -466,106 +235,6 @@ class StatisticalAnalyzer:
             'q3': f"75% of your {display_name.lower()} are {q3} or lower. This represents your upper range.",
             'summary': f"On average, your {display_name.lower()} is {mean} with a middle value of {median}. {distribution_note} Your data shows {consistency} with values ranging from {min_val} to {max_val}."
         }
-
-
-class FieldTypeDetector:
-    """
-    Automatically detects whether a field should be analyzed as numeric or categorical.
-    """
-    
-    @staticmethod
-    def detect_field_type(
-        field_name: str,
-        tracker_id: int,
-        option: Optional[str] = None
-    ) -> Tuple[str, Optional[str]]:
-        """
-        Detect if field should be analyzed as 'numeric' or 'categorical'.
-        
-        Args:
-            field_name: Field to analyze
-            tracker_id: Tracker ID
-            option: Specific option to analyze (if provided)
-        
-        Returns:
-            Tuple of (field_type, reason)
-            - field_type: 'numeric' or 'categorical'
-            - reason: Human-readable explanation of detection
-        """
-        try:
-            # Get numeric options for this field
-            numeric_option_names = NumericExtractor.get_numeric_option_names(
-                field_name, tracker_id
-            )
-            
-            # If option is specified, check if it's numeric
-            if option:
-                if option in numeric_option_names:
-                    return 'numeric', f"Option '{option}' is a numeric field"
-                else:
-                    return 'categorical', f"Option '{option}' is not numeric"
-            
-            # If field has numeric options, it's numeric
-            if numeric_option_names:
-                if len(numeric_option_names) == 1:
-                    return 'numeric', f"Field has numeric option: {numeric_option_names[0]}"
-                else:
-                    return 'numeric', f"Field has numeric options: {', '.join(numeric_option_names)}"
-            
-            # Check actual data to determine type
-            sample_data = FieldTypeDetector._sample_field_data(field_name, tracker_id)
-            
-            if not sample_data:
-                # No data yet - default to categorical (safer default)
-                return 'categorical', "No data available yet - defaulting to categorical"
-            
-            # Analyze sample data
-            numeric_count = 0
-            total_count = len(sample_data)
-            
-            for field_data in sample_data:
-                numeric_value = NumericExtractor.extract(field_data, numeric_option_names)
-                if numeric_value is not None:
-                    numeric_count += 1
-            
-            # If majority of samples are numeric, treat as numeric
-            if numeric_count / total_count >= 0.5:
-                return 'numeric', f"Field contains numeric data ({numeric_count}/{total_count} samples)"
-            else:
-                return 'categorical', f"Field contains categorical data ({total_count - numeric_count}/{total_count} samples)"
-                
-        except Exception as e:
-            # Default to categorical on error (safer)
-            return 'categorical', f"Error detecting type: {str(e)}"
-    
-    @staticmethod
-    def _sample_field_data(field_name: str, tracker_id: int, sample_size: int = 10) -> List[Any]:
-        """
-        Get sample of field data from recent entries.
-        
-        Args:
-            field_name: Field to sample
-            tracker_id: Tracker ID
-            sample_size: Number of samples to retrieve
-        
-        Returns:
-            List of field data values
-        """
-        try:
-            entries = TrackingData.query.filter_by(
-                tracker_id=tracker_id
-            ).order_by(
-                TrackingData.entry_date.desc()
-            ).limit(sample_size).all()
-            
-            sample_data = []
-            for entry in entries:
-                if entry.data and field_name in entry.data:
-                    sample_data.append(entry.data[field_name])
-            
-            return sample_data
-        except Exception:
-            return []
 
 
 
@@ -683,19 +352,19 @@ class TrendLineAnalyzer:
                     "No data available for this field in the specified time range"
                 )
             
-            # Extract numeric values
+            # === USE SHARED BASE LAYER: Extract field values ===
+            extracted_data = AnalyticsDataExtractor.extract_field_values(
+                entries, field_name, option, tracker_id
+            )
+            
+            # Convert to data_points format (for backward compatibility)
             data_points = []
-            for entry in entries:
-                field_data = entry.data.get(field_name)
-                numeric_value = NumericExtractor.extract(
-                    field_data, numeric_option_names
-                )
-                
-                if numeric_value is not None:
+            for item in extracted_data:
+                if item['value'] is not None:
                     data_points.append({
-                        'date': entry.entry_date.isoformat(),
-                        'value': numeric_value,
-                        'entry_id': entry.id
+                        'date': item['entry_date'].isoformat(),
+                        'value': item['value'],
+                        'entry_id': item['entry_id']
                     })
             
             # Check minimum data points
@@ -855,8 +524,15 @@ class TrendLineAnalyzer:
         x_values = np.array([(d - first_date).days for d in dates])
         y_values = np.array(values)
         
-        # Calculate trend
-        trend_stats = StatisticalAnalyzer.calculate_trend(x_values, y_values)
+        # === USE SHARED BASE LAYER: Calculate trend ===
+        trend_stats = AnalyticsStatsCalculator.calculate_trend(x_values, y_values)
+        
+        # === DOMAIN-SPECIFIC: Add user-friendly summary ===
+        summary = StatisticalAnalyzer._generate_user_summary(
+            trend_stats['direction'], trend_stats['strength'], trend_stats['confidence'],
+            abs(trend_stats['correlation']), trend_stats['is_significant']
+        )
+        trend_stats['summary'] = summary  # Add domain-specific user-friendly message
         
         # Generate trend line points
         trend_points = []
@@ -1333,19 +1009,53 @@ class CategoricalAnalyzer:
                     "No data available for this field in the specified time range"
                 )
             
-            # Extract categorical values
-            frequency_data = CategoricalAnalyzer._extract_frequencies(
-                entries, field_name, option
+            # === USE SHARED BASE LAYER: Extract field values ===
+            extracted_data = AnalyticsDataExtractor.extract_field_values(
+                entries, field_name, option, tracker_id
             )
             
-            if not frequency_data:
+            if not extracted_data:
                 return CategoricalAnalyzer._no_data_response(
                     field_name, time_range,
                     "No valid categorical data found for this field"
                 )
             
-            # Calculate statistics
-            stats = CategoricalAnalyzer._calculate_categorical_stats(frequency_data)
+            # Extract values for frequency counting
+            categorical_values = [item['value'] for item in extracted_data if item['value'] is not None]
+            
+            if not categorical_values:
+                return CategoricalAnalyzer._no_data_response(
+                    field_name, time_range,
+                    "No valid categorical data found for this field"
+                )
+            
+            # === USE SHARED BASE LAYER: Calculate categorical statistics ===
+            stats = AnalyticsStatsCalculator.calculate_categorical_stats(categorical_values)
+            
+            # Build frequency dict from stats (for backward compatibility)
+            frequency_data = stats.get('frequency', {})
+            
+            # Sort by frequency (descending) for backward compatibility
+            frequency_data = dict(sorted(frequency_data.items(), key=lambda x: x[1], reverse=True))
+            
+            # Add backward compatibility fields to stats
+            if stats:
+                # Add total_count (alias for count)
+                stats['total_count'] = stats.get('count', 0)
+                
+                # Add least_common if we have frequency data
+                if frequency_data:
+                    least_common_item = min(frequency_data.items(), key=lambda x: x[1])
+                    total = sum(frequency_data.values())
+                    stats['least_common'] = {
+                        'value': least_common_item[0],
+                        'count': least_common_item[1],
+                        'percentage': round((least_common_item[1] / total) * 100, 1)
+                    }
+                    
+                    # Add diversity
+                    unique_count = len(frequency_data)
+                    stats['diversity'] = 'high' if unique_count > 5 else 'medium' if unique_count > 2 else 'low'
             
             # Build response
             display_name = CategoricalAnalyzer._build_display_name(field_name, option)
@@ -1409,115 +1119,10 @@ class CategoricalAnalyzer:
         # Filter entries with the field
         return [e for e in all_entries if e.data and field_name in e.data]
     
-    @staticmethod
-    def _extract_frequencies(
-        entries: List[TrackingData],
-        field_name: str,
-        option: Optional[str] = None
-    ) -> Dict[str, int]:
-        """
-        Extract frequency counts for categorical values.
-        
-        Handles:
-        - Direct values: "positive", "negative"
-        - Boolean: true, false
-        - Arrays: ["symptom1", "symptom2"]
-        - Nested: {"option": "value"}
-        """
-        frequency = {}
-        
-        for entry in entries:
-            field_data = entry.data.get(field_name)
-            if field_data is None:
-                continue
-            
-            # Handle nested option
-            if option and isinstance(field_data, dict):
-                field_data = field_data.get(option)
-                if field_data is None:
-                    continue
-            
-            # Extract values based on type
-            values = CategoricalAnalyzer._extract_categorical_values(field_data)
-            
-            for value in values:
-                # Normalize value for counting
-                normalized = str(value).lower().strip()
-                frequency[normalized] = frequency.get(normalized, 0) + 1
-        
-        # Sort by frequency (descending)
-        return dict(sorted(frequency.items(), key=lambda x: x[1], reverse=True))
-    
-    @staticmethod
-    def _extract_categorical_values(field_data: Any) -> List[str]:
-        """Extract categorical values from various data structures."""
-        if field_data is None:
-            return []
-        
-        # Boolean values
-        if isinstance(field_data, bool):
-            return ["yes" if field_data else "no"]
-        
-        # String values
-        if isinstance(field_data, str):
-            return [field_data]
-        
-        # Array values
-        if isinstance(field_data, list):
-            return [str(v) for v in field_data if v is not None]
-        
-        # Dictionary - extract all string values
-        if isinstance(field_data, dict):
-            values = []
-            for v in field_data.values():
-                if isinstance(v, (str, bool)):
-                    values.append(str(v))
-                elif isinstance(v, list):
-                    values.extend([str(item) for item in v])
-            return values
-        
-        # Fallback: convert to string
-        return [str(field_data)]
-    
-    @staticmethod
-    def _calculate_categorical_stats(frequency: Dict[str, int]) -> Dict[str, Any]:
-        """Calculate statistics for categorical data."""
-        total = sum(frequency.values())
-        if total == 0:
-            return {}
-        
-        # Most common
-        most_common = max(frequency.items(), key=lambda x: x[1])
-
-        # Least common
-        least_common = min(frequency.items(), key=lambda x: x[1])
-        
-        # Percentage distribution (ensure Python float types)
-        distribution = {
-            key: round(float(count / total) * 100, 1)
-            for key, count in frequency.items()
-        }
-        
-        # Diversity (how many unique values)
-        diversity = len(frequency)
-        
-        # Ensure all values are Python types for JSON serialization
-        return {
-            'total_count': int(total),
-            'unique_values': int(diversity),
-            'most_common': {
-                'value': str(most_common[0]),  # Ensure string
-                'count': int(most_common[1]),  # Ensure int
-                'percentage': round(float(most_common[1] / total) * 100, 1)  # Ensure float
-            },
-            'least_common': {
-                'value': str(least_common[0]),  # Ensure string
-                'count': int(least_common[1]),  # Ensure int
-                'percentage': round(float(least_common[1] / total) * 100, 1)  # Ensure float
-            },
-            'distribution': distribution,
-            'diversity': 'high' if diversity > 5 else 'medium' if diversity > 2 else 'low'
-        }
+    # NOTE: _extract_frequencies, _extract_categorical_values, and _calculate_categorical_stats
+    # have been removed. They are now handled by the shared base layer:
+    # - AnalyticsDataExtractor.extract_field_values() for extraction
+    # - AnalyticsStatsCalculator.calculate_categorical_stats() for statistics
     
     @staticmethod
     def _build_display_name(field_name: str, option: Optional[str] = None) -> str:
@@ -2246,12 +1851,18 @@ class TimeEvolutionAnalyzer:
                     if field_data is None:
                         continue
                 
-                # Extract values
-                values = CategoricalAnalyzer._extract_categorical_values(field_data)
-                
-                for value in values:
-                    normalized = str(value).lower().strip()
-                    bucket_frequency[normalized] = bucket_frequency.get(normalized, 0) + 1
+                # Extract values using shared base layer
+                # Handle list values (arrays) separately
+                if isinstance(field_data, list):
+                    for item in field_data:
+                        if item is not None:
+                            normalized = str(item).lower().strip()
+                            bucket_frequency[normalized] = bucket_frequency.get(normalized, 0) + 1
+                else:
+                    cat_value = AnalyticsDataExtractor._extract_categorical_value(field_data, option)
+                    if cat_value:
+                        normalized = str(cat_value).lower().strip()
+                        bucket_frequency[normalized] = bucket_frequency.get(normalized, 0) + 1
             
             # Only add bucket if it has data
             if bucket_frequency:
