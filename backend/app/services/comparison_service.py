@@ -19,11 +19,19 @@ from app.services.analytics_base import AnalyticsDataExtractor, AnalyticsGrouper
 
 class ComparisonService:
 
-    #cycle to cycle comparisons
+    #cycle to cycle comparisons general insights and differences globally
     @staticmethod
-    def compare_cycles(tracker_id: int, cycle_id: int) -> Dict[str, Any]:
+    def compare_cycle_with_previous(tracker_id: int, cycle_id: int) -> Dict[str, Any]:
         pass
 
+
+    #compare field developement of this cycle with previous cycle
+    @staticmethod
+    def compare_field_between_cycles(tracker_id: int, field_name: str, option: str) -> Dict[str, Any]:
+        pass
+    
+    
+    #cycle to average cycle comparisons
     @staticmethod
     def compare_cycles_with_average(tracker_id: int, cycle_id: int) -> Dict[str, Any]:
         pass
