@@ -550,6 +550,7 @@ class AnalyticsStatsCalculator:
         
         return {
             'count': total,
+            'mode': most_common[0],
             'unique_values': len(frequency),
             'frequency': frequency,
             'most_common': {
