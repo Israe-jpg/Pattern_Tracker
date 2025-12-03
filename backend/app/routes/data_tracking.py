@@ -18,7 +18,7 @@ from app.schemas.tracking_data_schema import TrackingDataSchema
 from app.services.tracking_service import TrackingService
 from app.services.analytics_service import TrendLineAnalyzer, ChartGenerator, CategoricalAnalyzer,UnifiedAnalyzer, TimeEvolutionAnalyzer
 from app.services.period_analytics_service import PeriodAnalyticsService
-
+from app.services.pattern_recognition_service import PatternRecognitionService
 from app.services.analytics_data_sufficiency_system import DataSufficiencyChecker, InsightType, ConfidenceLevel, AnalyticsDisplayStrategy
 
 data_tracking_bp = Blueprint('data_tracking', __name__)
@@ -1333,6 +1333,253 @@ def get_calendar_overview(tracker_id: int):
         return error_response(f"Failed to get calendar overview: {str(e)}", 500)
 
 
+
+
+
+
+# ============================================================================
+# PATTERN RECOGNITION ENDPOINTS (Universal - All Trackers)
+# ============================================================================
+
+@data_tracking_bp.route('/<int:tracker_id>/detect-patterns', methods=['GET'])
+@jwt_required()
+def detect_field_patterns(tracker_id: int):
+    """
+    Detect all patterns for a specific field across temporal dimensions.
+    
+    Works for ALL trackers (regular and period):
+    - Day-of-week patterns (e.g., "poor sleep on weekends")
+    - Time-of-month patterns (e.g., "mood drops mid-month")
+    - Cycle phase patterns (period tracker only)
+    - Streak patterns (consecutive days)
+    
+    Query params:
+    - field_name: Field to analyze (required)
+    - option: Optional specific option for nested fields
+    - months: Number of months to analyze (default: 3, max: 12)
+    - min_confidence: Minimum confidence threshold 0-1 (default: 0.6)
+    
+    Returns detected patterns with confidence levels and insights.
+    
+    Examples:
+    GET /api/data-tracking/1/detect-patterns?field_name=sleep_hours&months=3
+    GET /api/data-tracking/33/detect-patterns?field_name=discharge&option=consistency&months=6
+    """
+    try:
+        _, user_id = get_current_user()
+        tracker = verify_tracker_ownership(tracker_id, user_id)
+    except ValueError as e:
+        return error_response(str(e), 404)
+    
+    try:
+        # Get query parameters
+        field_name = request.args.get('field_name')
+        if not field_name:
+            return error_response("field_name query parameter is required", 400)
+        
+        option = request.args.get('option')  # Optional
+        months = request.args.get('months', type=int, default=3)
+        
+        if months < 1 or months > 12:
+            return error_response("months must be between 1 and 12", 400)
+        
+        min_confidence = request.args.get('min_confidence', type=float, default=0.6)
+        if not 0 < min_confidence <= 1:
+            return error_response("min_confidence must be between 0 and 1", 400)
+        
+        # Detect patterns
+        patterns = PatternRecognitionService.detect_all_patterns(
+            tracker_id,
+            field_name,
+            option=option,
+            months=months,
+            min_confidence=min_confidence
+        )
+        
+        return success_response(
+            f"Pattern analysis for '{field_name}' completed",
+            patterns
+        )
+    
+    except ValueError as e:
+        return error_response(str(e), 400)
+    except Exception as e:
+        return error_response(f"Failed to detect patterns: {str(e)}", 500)
+
+
+@data_tracking_bp.route('/<int:tracker_id>/pattern-summary', methods=['GET'])
+@jwt_required()
+def get_tracker_pattern_summary(tracker_id: int):
+    """
+    Get pattern summary for multiple fields in a tracker.
+    
+    Query params:
+    - fields: Comma-separated list of field names (required)
+    - months: Number of months to analyze (default: 3)
+    
+    Returns patterns for all specified fields with overall insights.
+    
+    Example:
+    GET /api/data-tracking/1/pattern-summary?fields=sleep_hours,mood,energy&months=3
+    """
+    try:
+        _, user_id = get_current_user()
+        tracker = verify_tracker_ownership(tracker_id, user_id)
+    except ValueError as e:
+        return error_response(str(e), 404)
+    
+    try:
+        # Get query parameters
+        fields_str = request.args.get('fields')
+        if not fields_str:
+            return error_response("fields query parameter is required", 400)
+        
+        fields = [f.strip() for f in fields_str.split(',') if f.strip()]
+        if not fields:
+            return error_response("At least one field must be specified", 400)
+        
+        if len(fields) > 10:
+            return error_response("Maximum 10 fields allowed", 400)
+        
+        months = request.args.get('months', type=int, default=3)
+        if months < 1 or months > 12:
+            return error_response("months must be between 1 and 12", 400)
+        
+        # Detect patterns for each field
+        field_patterns = {}
+        total_patterns = 0
+        high_confidence_count = 0
+        
+        for field_name in fields:
+            try:
+                patterns = PatternRecognitionService.detect_all_patterns(
+                    tracker_id,
+                    field_name,
+                    months=months,
+                    min_confidence=0.6
+                )
+                
+                # Skip fields with no data or errors
+                if patterns and not patterns.get('message'):
+                    field_patterns[field_name] = {
+                        'patterns_detected': len(patterns.get('patterns', {})),
+                        'pattern_strength': patterns.get('pattern_strength', {}).get('overall_strength'),
+                        'key_insight': patterns.get('insights', [])[0] if patterns.get('insights') else None
+                    }
+                    
+                    total_patterns += len(patterns.get('patterns', {}))
+                    if patterns.get('pattern_strength', {}).get('overall_strength') == 'strong':
+                        high_confidence_count += 1
+            
+            except Exception:
+                continue  # Skip problematic fields
+        
+        if not field_patterns:
+            return success_response(
+                "No patterns detected for the specified fields",
+                {
+                    'fields_analyzed': fields,
+                    'patterns_found': 0,
+                    'message': 'Need more data or consistent tracking to detect patterns'
+                }
+            )
+        
+        # Generate overall summary
+        summary = {
+            'fields_analyzed': len(field_patterns),
+            'total_patterns_detected': total_patterns,
+            'fields_with_strong_patterns': high_confidence_count,
+            'field_patterns': field_patterns,
+            'overall_insight': PatternRecognitionService.generate_summary_insight(
+                len(field_patterns), total_patterns, high_confidence_count
+            ),
+            'analysis_period': {
+                'months': months,
+                'start_date': (date.today() - timedelta(days=months*30)).isoformat(),
+                'end_date': date.today().isoformat()
+            }
+        }
+        
+        return success_response(
+            "Pattern summary retrieved successfully",
+            summary
+        )
+    
+    except ValueError as e:
+        return error_response(str(e), 400)
+    except Exception as e:
+        return error_response(f"Failed to get pattern summary: {str(e)}", 500)
+
+
+# ============================================================================
+# ADVANCED PATTERN ENDPOINTS (Period Tracker Specific)
+# ============================================================================
+
+@data_tracking_bp.route('/<int:tracker_id>/recurring-symptom-patterns', methods=['GET'])
+@jwt_required()
+def detect_recurring_cycle_patterns(tracker_id: int):
+    """
+    Detect symptoms that recur consistently across multiple cycles.
+    
+    Identifies patterns like:
+    - "Cramps always start 2 days before period"
+    - "Discharge becomes creamy when period ends (detected in 4/6 cycles)"
+    - "Mood drops 3 days before ovulation (consistent across cycles)"
+    
+    Query params:
+    - symptom_field: Symptom to analyze (required)
+    - option: Optional specific option
+    - min_cycles: Minimum cycles where pattern must occur (default: 2)
+    - max_cycles: Maximum cycles to analyze (default: 6)
+    
+    Period Tracker Only.
+    
+    Example:
+    GET /api/data-tracking/33/recurring-symptom-patterns?symptom_field=discharge&option=consistency&min_cycles=2
+    """
+    try:
+        _, user_id = get_current_user()
+        tracker = verify_tracker_ownership(tracker_id, user_id)
+        
+        category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
+        if not category or category.name != 'Period Tracker':
+            return error_response("This endpoint is only for Period Trackers", 400)
+    except ValueError as e:
+        return error_response(str(e), 404)
+    
+    try:
+        # Get query parameters
+        symptom_field = request.args.get('symptom_field')
+        if not symptom_field:
+            return error_response("symptom_field query parameter is required", 400)
+        
+        option = request.args.get('option')
+        min_cycles = request.args.get('min_cycles', type=int, default=2)
+        max_cycles = request.args.get('max_cycles', type=int, default=6)
+        
+        if min_cycles < 2:
+            return error_response("min_cycles must be at least 2", 400)
+        if max_cycles > 6:
+            return error_response("max_cycles cannot exceed 6", 400)
+        
+        # Detect recurring patterns
+        recurring_patterns = PatternRecognitionService.detect_recurring_cycle_patterns(
+            tracker_id,
+            symptom_field,
+            option=option,
+            min_cycles=min_cycles,
+            max_cycles=max_cycles
+        )
+        
+        return success_response(
+            f"Recurring pattern analysis for '{symptom_field}' completed",
+            recurring_patterns
+        )
+    
+    except ValueError as e:
+        return error_response(str(e), 400)
+    except Exception as e:
+        return error_response(f"Failed to detect recurring patterns: {str(e)}", 500)
 
 
 
