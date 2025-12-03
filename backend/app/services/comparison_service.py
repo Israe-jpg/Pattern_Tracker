@@ -16,14 +16,50 @@ from app.models.tracker_settings_category import TrackerSettingsCategory
 from app.models.tracker_settings_category_option import TrackerSettingsCategoryOption
 from app.models.tracker_settings_category_option_value import TrackerSettingsCategoryOptionValue
 from app.services.analytics_base import AnalyticsDataExtractor, AnalyticsGrouper, AnalyticsStatsCalculator, NumericExtractor, FieldTypeDetector
+from app.services.period_cycle_service import PeriodCycleService
 
 class ComparisonService:
 
     #cycle to cycle comparisons general insights and differences globally
     @staticmethod
     def compare_cycle_with_previous(tracker_id: int, cycle_id: int) -> Dict[str, Any]:
-        pass
+        try:
+            current_cycle = PeriodCycle.query.filter_by(tracker_id=tracker_id, id=cycle_id).first()
+            finished_cycle = PeriodCycle.query.filter_by(tracker_id=tracker_id, id=cycle_id - 1).first()
+            previous_cycle = PeriodCycle.query.filter_by(tracker_id=tracker_id, id=cycle_id - 2).first()
+            if not current_cycle or not previous_cycle or not finished_cycle:
+                raise ValueError("Cycle not found")
 
+            #cycle metrics
+            cycle_metrics = {}
+            
+            #compare lenght of the cycles
+            finished_cycle_length = (finished_cycle.cycle_end_date - finished_cycle.cycle_start_date).days
+            previous_cycle_length = (previous_cycle.cycle_end_date - previous_cycle.cycle_start_date).days
+            length_difference = finished_cycle_length - previous_cycle_length
+            length_difference_percentage = (length_difference / previous_cycle_length) * 100
+            cycle_length_insight = f"Cycle length is {length_difference} days {'longer' if length_difference > 0 else 'shorter'} than previous cycle"
+            cycle_metrics['cycle_length_insight'] = cycle_length_insight
+
+            #compare length of the periods
+            finished_period_length = (finished_cycle.period_end_date - finished_cycle.period_start_date).days
+            previous_period_length = (previous_cycle.period_end_date - previous_cycle.period_start_date).days
+            period_difference = finished_period_length - previous_period_length
+            period_difference_percentage = (period_difference / previous_period_length) * 100
+            period_length_insight = f"Period length is {period_difference} days {'longer' if period_difference > 0 elif period_difference ==0 'same' else 'shorter'} than previous cycle"
+            cycle_metrics['period_length_insight'] = period_length_insight
+            
+            #compare how soon ovulation was
+            finished_cycle_ovulation_time = finished_cycle.cycle_length - 14
+            previous_cycle_ovulation_time = previous_cycle.cycle_length - 14
+            ovulation_difference = finished_cycle_ovulation_time - previous_cycle_ovulation_time
+            ovulation_difference_percentage = (ovulation_difference / previous_cycle_ovulation_time) * 100
+            ovulation_insight = f"Ovulation was {ovulation_difference} days {'earlier' if ovulation_difference < 0 else 'later'} than previous cycle"
+            cycle_metrics['ovulation_insight'] = ovulation_insight
+         
+            return cycle_metrics
+        except Exception as e:
+            raise ValueError(f"Failed to compare cycle with previous: {str(e)}")
 
     #compare field developement of this cycle with previous cycle
     @staticmethod
