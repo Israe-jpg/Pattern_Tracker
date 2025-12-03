@@ -221,7 +221,7 @@ class PeriodAnalyticsService:
         history_data = PeriodAnalyticsService.get_prediction_history(
             tracker_id, months
         )
-        
+
         if not history_data or not history_data.get('predictions'):
             return {
                 'message': 'No prediction history available',
@@ -268,7 +268,8 @@ class PeriodAnalyticsService:
                     prediction_comparisons.append({
                         'predicted_date': pred_data['predicted_next_period_date'],
                         'actual_date': next_reality_data['period_start'],
-                        'error_days': error_days
+                        'error_days': error_days,
+                        'period_start_timing_insight': f"Period started {error_days} days {'earlier' if (actual_date - predicted_date).days < 0 else 'later'} than expected"
                     })
                 except (ValueError, TypeError, KeyError):
                     # Skip invalid dates
