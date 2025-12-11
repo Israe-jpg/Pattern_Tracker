@@ -407,6 +407,18 @@ class PeriodCycleService:
             raise ValueError(f"Failed to get current cycle: {str(e)}")
 
     @staticmethod
+    def get_last_finished_cycle(tracker_id: int) -> Optional[PeriodCycle]:
+        try:
+            last_finished_cycle = PeriodCycle.query.filter_by(
+                tracker_id=tracker_id,
+            ).filter(
+                PeriodCycle.cycle_end_date.isnot(None)
+            ).order_by(PeriodCycle.cycle_end_date.desc()).first()
+            return last_finished_cycle
+        except Exception as e:
+            raise ValueError(f"Failed to get last finished cycle: {str(e)}")
+
+    @staticmethod
     def get_cycle_phases_dates(tracker_id: int, cycle_id: int) -> Dict[str, Any]:
         try:
             cycle = PeriodCycle.query.filter_by(tracker_id=tracker_id, id=cycle_id).first()
