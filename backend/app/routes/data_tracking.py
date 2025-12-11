@@ -14,12 +14,16 @@ from app.models.user import User
 from app.models.tracker import Tracker
 from app.models.tracker_category import TrackerCategory
 from app.models.tracking_data import TrackingData
+from app.models.period_cycle import PeriodCycle
 from app.schemas.tracking_data_schema import TrackingDataSchema
 from app.services.tracking_service import TrackingService
 from app.services.analytics_service import TrendLineAnalyzer, ChartGenerator, CategoricalAnalyzer,UnifiedAnalyzer, TimeEvolutionAnalyzer
 from app.services.period_analytics_service import PeriodAnalyticsService
 from app.services.pattern_recognition_service import PatternRecognitionService
 from app.services.analytics_data_sufficiency_system import DataSufficiencyChecker, InsightType, ConfidenceLevel, AnalyticsDisplayStrategy
+from app.services.comparison_service import ComparisonService
+from app.services.period_cycle_service import PeriodCycleService
+
 
 data_tracking_bp = Blueprint('data_tracking', __name__)
 
@@ -1168,15 +1172,27 @@ def get_general_cycle_analysis(tracker_id: int):
         if not category or category.name != 'Period Tracker':
             return error_response("This endpoint is only for Period Trackers", 400)
         
+        #get cycle regularity
         regularity = PeriodAnalyticsService.analyze_cycle_regularity(tracker_id)
         if not regularity:
             return error_response("Failed to get cycle regularity", 500)
+
+        #get comparisons
+        cycle_to_compare = PeriodCycleService.get_last_finished_cycle(tracker_id)
+        if not cycle_to_compare:
+            return error_response("Failed to get last finished cycle", 500)
+        comparison = ComparisonService.compare_cycle_with_previous(tracker_id, cycle_to_compare.id)
+        if not comparison:
+            return error_response("Failed to compare cycle with previous", 500)
+        
+        #get prediction accuracy
         prediction_accuracy = PeriodAnalyticsService.analyze_prediction_accuracy(tracker_id)
         if not prediction_accuracy:
             return error_response("Failed to get prediction accuracy", 500)
         return success_response("General cycle analysis retrieved successfully", {
             'regularity': regularity,
-            'prediction_accuracy': prediction_accuracy
+            'prediction_accuracy': prediction_accuracy,
+            'comparison': comparison
         })
     except ValueError as e:
         return error_response(str(e), 400)
