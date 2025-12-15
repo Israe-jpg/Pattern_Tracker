@@ -1181,10 +1181,12 @@ def get_general_cycle_analysis(tracker_id: int):
         cycle_to_compare = PeriodCycleService.get_last_finished_cycle(tracker_id)
         if not cycle_to_compare:
             return error_response("Failed to get last finished cycle", 500)
-        comparison = ComparisonService.compare_cycle_with_previous(tracker_id, cycle_to_compare.id)
-        if not comparison:
+        comparison_with_previous = ComparisonService.compare_cycle_with_previous(tracker_id, cycle_to_compare.id)
+        if not comparison_with_previous:
             return error_response("Failed to compare cycle with previous", 500)
-        
+        comparison_with_average = ComparisonService.compare_cycle_with_average(tracker_id, cycle_to_compare.id)
+        if not comparison_with_average:
+            return error_response("Failed to compare cycle with average", 500)
         #get prediction accuracy
         prediction_accuracy = PeriodAnalyticsService.analyze_prediction_accuracy(tracker_id)
         if not prediction_accuracy:
@@ -1192,7 +1194,8 @@ def get_general_cycle_analysis(tracker_id: int):
         return success_response("General cycle analysis retrieved successfully", {
             'regularity': regularity,
             'prediction_accuracy': prediction_accuracy,
-            'comparison': comparison
+            'comparison_with_previous': comparison_with_previous,
+            'comparison_with_average': comparison_with_average
         })
     except ValueError as e:
         return error_response(str(e), 400)
