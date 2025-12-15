@@ -1088,7 +1088,8 @@ class ComparisonService:
         # Symptom insights
         significant_changes = [
             name for name, comp in symptom_comparisons.items()
-            if comp.get('significant', False)
+            # Use the same flag key we set when building comparisons
+            if comp.get('is_significant', False)
         ]
         
         if significant_changes:
