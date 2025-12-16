@@ -1155,7 +1155,108 @@ def get_time_evolution_chart(tracker_id: int):
         return error_response(f"Failed to get unified chart: {str(e)}", 500)
 
 #-----------------------------------------------------
-#CYCLE ANALYSIS ROUTES
+#COMPARISON ROUTES (All Trackers)
+
+@data_tracking_bp.route('/<int:tracker_id>/compare', methods=['GET'])
+@jwt_required()
+def compare_tracker_periods(tracker_id: int):
+    """
+    Universal comparison endpoint for all trackers.
+    
+    Query params:
+    - comparison_type: "week", "month", "general" (default: "general")
+    - months: For "general" type, how many months to analyze (default: 3)
+    
+    Examples:
+    - GET /api/data-tracking/1/compare?comparison_type=week
+    - GET /api/data-tracking/1/compare?comparison_type=general&months=6
+    """
+    try:
+        _, user_id = get_current_user()
+        tracker = verify_tracker_ownership(tracker_id, user_id)
+        
+        comparison_type = request.args.get('comparison_type', 'general')
+        
+        if comparison_type == 'week':
+            result = ComparisonService.compare_current_week_with_previous(tracker_id)
+        elif comparison_type == 'month':
+            result = ComparisonService.compare_current_month_with_previous(tracker_id)
+        elif comparison_type == 'general':
+            months = request.args.get('months', type=int, default=3)
+            if months < 1 or months > 12:
+                return error_response("months must be between 1 and 12", 400)
+            result = ComparisonService.get_general_summary(tracker_id, months=months)
+        else:
+            return error_response(
+                "Invalid comparison_type. Valid: week, month, general",
+                400
+            )
+        
+        return success_response("Comparison retrieved successfully", result)
+    
+    except ValueError as e:
+        return error_response(str(e), 400)
+    except Exception as e:
+        return error_response(f"Failed to get comparison: {str(e)}", 500)
+
+
+@data_tracking_bp.route('/<int:tracker_id>/compare-custom', methods=['GET'])
+@jwt_required()
+def compare_custom_ranges(tracker_id: int):
+    """
+    Compare custom date ranges for any tracker.
+    
+    Query params:
+    - target_start: Start of target period (YYYY-MM-DD, required)
+    - target_end: End of target period (YYYY-MM-DD, required)
+    - comparison_start: Start of comparison period (YYYY-MM-DD, required)
+    - comparison_end: End of comparison period (YYYY-MM-DD, required)
+    
+    Example:
+    GET /api/data-tracking/1/compare-custom?target_start=2025-01-01&target_end=2025-01-31&comparison_start=2024-12-01&comparison_end=2024-12-31
+    """
+    try:
+        _, user_id = get_current_user()
+        tracker = verify_tracker_ownership(tracker_id, user_id)
+        
+        # Parse dates
+        target_start_str = request.args.get('target_start')
+        target_end_str = request.args.get('target_end')
+        comparison_start_str = request.args.get('comparison_start')
+        comparison_end_str = request.args.get('comparison_end')
+        
+        if not all([target_start_str, target_end_str, comparison_start_str, comparison_end_str]):
+            return error_response(
+                "All date parameters required: target_start, target_end, comparison_start, comparison_end",
+                400
+            )
+        
+        try:
+            target_start = datetime.strptime(target_start_str, '%Y-%m-%d').date()
+            target_end = datetime.strptime(target_end_str, '%Y-%m-%d').date()
+            comparison_start = datetime.strptime(comparison_start_str, '%Y-%m-%d').date()
+            comparison_end = datetime.strptime(comparison_end_str, '%Y-%m-%d').date()
+        except ValueError:
+            return error_response("Invalid date format. Use YYYY-MM-DD", 400)
+        
+        result = ComparisonService.compare_date_ranges(
+            tracker_id,
+            target_start,
+            target_end,
+            comparison_start,
+            comparison_end
+        )
+        
+        return success_response("Custom comparison retrieved successfully", result)
+    
+    except ValueError as e:
+        return error_response(str(e), 400)
+    except Exception as e:
+        return error_response(f"Failed to compare custom ranges: {str(e)}", 500)
+
+
+#-----------------------------------------------------
+#CYCLE ANALYSIS ROUTES (Period Tracker Only)
 
 #general analysis of cycles inside a period tracker
 @data_tracking_bp.route('/<int:tracker_id>/general-cycle-analysis', methods=['GET'])
