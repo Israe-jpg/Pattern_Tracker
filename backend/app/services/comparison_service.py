@@ -369,9 +369,20 @@ class InsightGenerator:
             if not isinstance(comp, dict):
                 continue
             
+            # Check if field is significant
+            if not comp.get('is_significant', False):
+                continue
+            
             percent_change = comp.get('percent_change')
-            if percent_change is not None and abs(percent_change) > threshold:
-                significant_changes.append(f"{field_name} ({percent_change:+.1f}%)")
+            if percent_change is not None:
+                # Numeric field with percent change
+                if abs(percent_change) > threshold:
+                    significant_changes.append(f"{field_name} ({percent_change:+.1f}%)")
+            else:
+                # Categorical field or numeric without percent change
+                change_direction = comp.get('change_direction', '')
+                if change_direction in ['changed', 'increased', 'decreased']:
+                    significant_changes.append(f"{field_name} ({change_direction})")
         
         if significant_changes:
             insights.append(f"Significant changes: {', '.join(significant_changes[:5])}")
@@ -403,12 +414,16 @@ class InsightGenerator:
             comp.get('change_direction') in ['decreased', 'below_average']
         )
         
+        # Stable = fields that are NOT significant
+        # This correctly handles categorical fields with change_direction='changed'
+        fields_stable = total_fields - significant_count
+        
         return {
             'total_fields': total_fields,
             'significant_changes': significant_count,
             'fields_increased': improved,
             'fields_decreased': declined,
-            'fields_stable': total_fields - improved - declined
+            'fields_stable': fields_stable
         }
     
     @staticmethod
@@ -488,9 +503,12 @@ class ComparisonService:
         if field_names is None:
             field_names = ComparisonService._get_tracked_fields(tracker_id)[:max_fields]
         
-        # Compare each field
+        # Compare each field (skip notes/text fields)
         field_comparisons = {}
         for field_name in field_names:
+            # Skip notes/text fields - they can't be meaningfully compared
+            if field_name.endswith('.notes') or field_name == 'notes' or '.notes' in field_name.lower():
+                continue
             try:
                 comparison = FieldComparator.compare_field(
                     target_entries,
@@ -517,7 +535,7 @@ class ComparisonService:
         # Build response
         return {
             **provider.get_metadata(),
-            'field_comparisons': field_comparisons,
+            **summary,
             'top_changes': top_changes,
             'insights': insights,
             'has_comparison': True
@@ -905,7 +923,7 @@ class ComparisonService:
     
     @staticmethod
     def _get_tracked_fields(tracker_id: int) -> List[str]:
-        """Get list of fields tracked for this tracker."""
+        """Get list of fields tracked for this tracker, excluding notes/text fields."""
         entries = TrackingData.query.filter_by(tracker_id=tracker_id).limit(100).all()
         
         def flatten_fields(data: Dict[str, Any], prefix: str = "") -> List[str]:
@@ -918,11 +936,23 @@ class ComparisonService:
                     fields.append(field_path)
             return fields
         
+        def is_notes_field(field_path: str) -> bool:
+            """Check if field is a notes/text field that shouldn't be compared."""
+            # Exclude fields ending with .notes
+            if field_path.endswith('.notes') or field_path == 'notes':
+                return True
+            # Exclude fields with 'notes' in the option name
+            if '.notes' in field_path.lower():
+                return True
+            return False
+        
         field_counts = defaultdict(int)
         for entry in entries:
             if entry.data:
                 for field_path in flatten_fields(entry.data):
-                    field_counts[field_path] += 1
+                    # Skip notes/text fields
+                    if not is_notes_field(field_path):
+                        field_counts[field_path] += 1
         
         sorted_fields = sorted(field_counts.items(), key=lambda x: x[1], reverse=True)
         return [field_name for field_name, _ in sorted_fields[:15]]
