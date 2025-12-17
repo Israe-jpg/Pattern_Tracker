@@ -1165,7 +1165,7 @@ def compare_tracker_periods(tracker_id: int):
     
     Query params:
     - comparison_type: "week", "month", "general" (default: "general")
-    - months: For "general" type, how many months to analyze (default: 3)
+    - months: For "general" type, how many months of baseline history to use (default: 5)
     
     Examples:
     - GET /api/data-tracking/1/compare?comparison_type=week
@@ -1182,7 +1182,9 @@ def compare_tracker_periods(tracker_id: int):
         elif comparison_type == 'month':
             result = ComparisonService.compare_current_month_with_previous(tracker_id)
         elif comparison_type == 'general':
-            months = request.args.get('months', type=int, default=3)
+            # months = how many months of baseline history to compare against
+            # Target is the current month (from 1st of this month to today)
+            months = request.args.get('months', type=int, default=5)
             if months < 1 or months > 12:
                 return error_response("months must be between 1 and 12", 400)
             result = ComparisonService.get_general_summary(tracker_id, months=months)

@@ -723,18 +723,21 @@ class ComparisonService:
         return result
     
     @staticmethod
-    def get_general_summary(tracker_id: int, months: int = 3) -> Dict[str, Any]:
+    def get_general_summary(tracker_id: int, months: int = 5) -> Dict[str, Any]:
         """
         Get general comparison summary for any tracker.
         
-        Compares recent period with historical baseline.
+        Compares the current month with the previous N months.
+        - Target: current month (from 1st of this month to today)
+        - Baseline: previous `months` months before this month
         """
         tracker = Tracker.query.get(tracker_id)
         if not tracker:
             raise ValueError(f"Tracker {tracker_id} not found")
         
         today = date.today()
-        target_start = today - timedelta(days=months * 30)
+        # Target: current month (from 1st of this month to today)
+        target_start = date(today.year, today.month, 1)
         target_end = today
         
         result = ComparisonService.compare_with_baseline(
