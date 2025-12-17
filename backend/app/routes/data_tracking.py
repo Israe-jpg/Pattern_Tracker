@@ -23,6 +23,7 @@ from app.services.pattern_recognition_service import PatternRecognitionService
 from app.services.analytics_data_sufficiency_system import DataSufficiencyChecker, InsightType, ConfidenceLevel, AnalyticsDisplayStrategy
 from app.services.comparison_service import ComparisonService
 from app.services.period_cycle_service import PeriodCycleService
+from app.services.tracker_calendar_service import TrackerCalendarService
 
 
 data_tracking_bp = Blueprint('data_tracking', __name__)
@@ -1455,6 +1456,83 @@ def get_calendar_overview(tracker_id: int):
         return error_response(f"Failed to get calendar overview: {str(e)}", 500)
 
 
+# ============================================================================
+# CALENDAR ENDPOINTS FOR NORMAL TRACKERS
+# ============================================================================
+
+@data_tracking_bp.route('/<int:tracker_id>/tracker-calendar', methods=['GET'])
+@jwt_required()
+def get_tracker_calendar_data(tracker_id: int):
+    """
+    Get calendar data for normal (non-period) trackers.
+    
+    Query params:
+    - month: Target month (YYYY-MM format, default: current month)
+    
+    Returns JSON data for calendar rendering showing which days have entries.
+    """
+    try:
+        _, user_id = get_current_user()
+        tracker = verify_tracker_ownership(tracker_id, user_id)
+        
+        # Parse query parameters
+        month_str = request.args.get('month')  # e.g., "2025-12"
+        
+        if month_str:
+            year, month = map(int, month_str.split('-'))
+            target_date = date(year, month, 1)
+        else:
+            target_date = date.today()
+        
+        # Get calendar data
+        calendar_data = TrackerCalendarService.get_calendar_data(
+            tracker_id,
+            target_date
+        )
+        
+        return success_response(
+            "Calendar data retrieved successfully",
+            calendar_data
+        )
+    
+    except ValueError as e:
+        return error_response(str(e), 400)
+    except Exception as e:
+        return error_response(f"Failed to get tracker calendar data: {str(e)}", 500)
+
+
+@data_tracking_bp.route('/<int:tracker_id>/tracker-calendar/overview', methods=['GET'])
+@jwt_required()
+def get_tracker_calendar_overview(tracker_id: int):
+    """
+    Get overview of tracking activity for timeline/history view.
+    
+    Query params:
+    - months: How many months back to include (default: 12)
+    
+    Returns tracking frequency and streak information.
+    """
+    try:
+        _, user_id = get_current_user()
+        tracker = verify_tracker_ownership(tracker_id, user_id)
+        
+        months = request.args.get('months', type=int, default=12)
+        
+        # Get overview data
+        overview_data = TrackerCalendarService.get_calendar_overview(
+            tracker_id,
+            months=months
+        )
+        
+        return success_response(
+            "Calendar overview retrieved successfully",
+            overview_data
+        )
+    
+    except ValueError as e:
+        return error_response(str(e), 400)
+    except Exception as e:
+        return error_response(f"Failed to get tracker calendar overview: {str(e)}", 500)
 
 
 
