@@ -940,6 +940,91 @@ def get_insights(tracker_id: int):
         return error_response(f"Failed to get all insights: {str(e)}", 500)
 
 
+@data_tracking_bp.route('/<int:tracker_id>/general-tracker-analysis', methods=['GET'])
+@jwt_required()
+def get_general_tracker_analysis(tracker_id: int):
+    """
+    Get general analysis for any tracker (non-period trackers).
+    
+    Includes:
+    - Overall insights summary
+    - Comparisons (week/month/general)
+    - Top correlations
+    
+    Query params:
+    - comparison_type: "week", "month", or "general" (default: "general")
+    - months: For general comparison, baseline months (default: 5)
+    
+    Examples:
+    - GET /api/data-tracking/1/general-tracker-analysis
+    - GET /api/data-tracking/1/general-tracker-analysis?comparison_type=month
+    """
+    try:
+        _, user_id = get_current_user()
+        tracker = verify_tracker_ownership(tracker_id, user_id)
+        
+        # Parse parameters
+        comparison_type = request.args.get('comparison_type', 'general')
+        months = request.args.get('months', type=int, default=5)
+        
+        # Get all tracking data entries
+        all_entries = TrackingData.query.filter_by(tracker_id=tracker_id)\
+            .order_by(TrackingData.entry_date.asc()).all()
+        
+        if not all_entries:
+            return error_response("No tracking data found for this tracker", 404)
+        
+        # 1. Get Comparisons
+        try:
+            if comparison_type == 'week':
+                comparison = ComparisonService.compare_current_week_with_previous(tracker_id)
+            elif comparison_type == 'month':
+                comparison = ComparisonService.compare_current_month_with_previous(tracker_id)
+            else:  # general
+                comparison = ComparisonService.get_general_summary(tracker_id, months=months)
+        except Exception as e:
+            comparison = {
+                'has_comparison': False,
+                'message': f'Could not analyze comparison: {str(e)}'
+            }
+        
+        # 2. Get Correlations (top 3)
+        try:
+            correlations = CorrelationService.analyze_all_correlations(
+                tracker_id,
+                months=3,
+                min_correlation=0.3
+            )
+        except Exception as e:
+            correlations = {
+                'has_correlations': False,
+                'message': f'Could not analyze correlations: {str(e)}'
+            }
+        
+        # 3. Get insights summary
+        total_entries = len(all_entries)
+        first_entry = all_entries[0].entry_date
+        last_entry = all_entries[-1].entry_date
+        tracking_days = (last_entry - first_entry).days + 1
+        
+        return success_response("General tracker analysis retrieved successfully", {
+            'tracker_id': tracker_id,
+            'tracking_summary': {
+                'total_entries': total_entries,
+                'tracking_days': tracking_days,
+                'first_entry': first_entry.isoformat(),
+                'last_entry': last_entry.isoformat()
+            },
+            'comparison': comparison,
+            'correlations': correlations
+        })
+    
+    except ValueError as e:
+        return error_response(str(e), 400)
+    except Exception as e:
+        return error_response(f"Failed to get general tracker analysis: {str(e)}", 500)
+
+
 
 
 #--------------------------------------------------
@@ -1296,11 +1381,26 @@ def get_general_cycle_analysis(tracker_id: int):
         prediction_accuracy = PeriodAnalyticsService.analyze_prediction_accuracy(tracker_id)
         if not prediction_accuracy:
             return error_response("Failed to get prediction accuracy", 500)
+        
+        # Get correlations (top 3 patterns)
+        try:
+            correlations = CorrelationService.analyze_all_correlations(
+                tracker_id,
+                months=3,
+                min_correlation=0.3
+            )
+        except Exception as e:
+            correlations = {
+                'has_correlations': False,
+                'message': f'Could not analyze correlations: {str(e)}'
+            }
+        
         return success_response("General cycle analysis retrieved successfully", {
             'regularity': regularity,
             'prediction_accuracy': prediction_accuracy,
             'comparison_with_previous': comparison_with_previous,
-            'comparison_with_average': comparison_with_average
+            'comparison_with_average': comparison_with_average,
+            'correlations': correlations
         })
     except ValueError as e:
         return error_response(str(e), 400)
