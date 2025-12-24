@@ -24,6 +24,7 @@ from app.services.analytics_data_sufficiency_system import DataSufficiencyChecke
 from app.services.comparison_service import ComparisonService
 from app.services.period_cycle_service import PeriodCycleService
 from app.services.tracker_calendar_service import TrackerCalendarService
+from app.services.correlation_service import CorrelationService
 
 
 data_tracking_bp = Blueprint('data_tracking', __name__)
@@ -1782,6 +1783,201 @@ def detect_recurring_cycle_patterns(tracker_id: int):
         return error_response(f"Failed to detect recurring patterns: {str(e)}", 500)
 
 
+# ============================================================================
+# CORRELATION ANALYSIS ENDPOINTS (Universal - All Trackers)
+# ============================================================================
+
+@data_tracking_bp.route('/<int:tracker_id>/correlations', methods=['GET'])
+@jwt_required()
+def get_all_correlations(tracker_id: int):
+    """
+    Find the top 3 most meaningful correlations in your data.
+    
+    Priority order:
+    1. Triple correlations (When A AND B, then C) - most insightful
+    2. Dual correlations (When A, then B) - still useful
+    3. Ranked by observation frequency (most observed = most reliable)
+    
+    Example correlations:
+    - "When sleep.hours is 'low' AND workout.did_workout is 'no', mood.overall is 'low' (12 times)"
+    - "When stress.level is 'high', sleep.quality is often 'low' (8 times)"
+    - "Higher sleep.hours → mood.overall increases (correlation: +0.68, 25 times)"
+    
+    Query params:
+    - months: Number of months to analyze (default: 3, max: 12)
+    - min_correlation: Minimum correlation strength (default: 0.3)
+    - include_lagged: Include time-lagged correlations (default: true)
+    
+    Returns: Top 3 most meaningful and frequently observed correlations
+    
+    Examples:
+    - GET /api/data-tracking/1/correlations
+    - GET /api/data-tracking/1/correlations?months=6
+    """
+    try:
+        _, user_id = get_current_user()
+        tracker = verify_tracker_ownership(tracker_id, user_id)
+        
+        # Parse parameters
+        months = request.args.get('months', type=int, default=3)
+        if months < 1 or months > 12:
+            return error_response("months must be between 1 and 12", 400)
+        
+        min_correlation = request.args.get('min_correlation', type=float, default=0.3)
+        if min_correlation < 0 or min_correlation > 1:
+            return error_response("min_correlation must be between 0 and 1", 400)
+        
+        include_lagged = request.args.get('include_lagged', 'true').lower() == 'true'
+        
+        # Analyze correlations
+        result = CorrelationService.analyze_all_correlations(
+            tracker_id,
+            months=months,
+            min_correlation=min_correlation,
+            include_lagged=include_lagged
+        )
+        
+        return success_response("Correlation analysis completed", result)
+    
+    except ValueError as e:
+        return error_response(str(e), 400)
+    except Exception as e:
+        return error_response(f"Failed to analyze correlations: {str(e)}", 500)
+
+
+@data_tracking_bp.route('/<int:tracker_id>/correlations/field', methods=['GET'])
+@jwt_required()
+def get_field_correlations(tracker_id: int):
+    """
+    Find correlations for a specific field (field treated as outcome).
+    
+    Example: "What affects my sleep quality?"
+    
+    Query params:
+    - field_name: Field to analyze (required)
+    - correlation_type: 'triple' or 'dual' (default: 'dual')
+        - 'triple': When A AND B → field (e.g., "When sleep=6 AND stress=high → mood=low")
+        - 'dual': When A → field (e.g., "When sleep=6 → mood=low")
+    - months: Number of months to analyze (default: 3)
+    - min_correlation: Minimum correlation strength (default: 0.3)
+    - include_lagged: Include time-lagged correlations (default: true)
+    
+    Returns: Top 3 correlations for this field
+    
+    Examples:
+    - GET /api/data-tracking/1/correlations/field?field_name=sleep.quality&correlation_type=dual
+    - GET /api/data-tracking/1/correlations/field?field_name=mood.overall&correlation_type=triple&months=6
+    """
+    try:
+        _, user_id = get_current_user()
+        tracker = verify_tracker_ownership(tracker_id, user_id)
+        
+        # Parse parameters
+        field_name = request.args.get('field_name')
+        if not field_name:
+            return error_response("field_name query parameter is required", 400)
+        
+        correlation_type = request.args.get('correlation_type', 'dual').lower()
+        if correlation_type not in ['triple', 'dual']:
+            return error_response("correlation_type must be 'triple' or 'dual'", 400)
+        
+        months = request.args.get('months', type=int, default=3)
+        if months < 1 or months > 12:
+            return error_response("months must be between 1 and 12", 400)
+        
+        min_correlation = request.args.get('min_correlation', type=float, default=0.3)
+        include_lagged = request.args.get('include_lagged', 'true').lower() == 'true'
+        
+        # Analyze correlations
+        result = CorrelationService.analyze_field_correlations(
+            tracker_id,
+            field_name,
+            months=months,
+            min_correlation=min_correlation,
+            include_lagged=include_lagged,
+            correlation_type=correlation_type
+        )
+        
+        return success_response(f"{correlation_type.capitalize()} correlations for '{field_name}' analyzed", result)
+    
+    except ValueError as e:
+        return error_response(str(e), 400)
+    except Exception as e:
+        return error_response(f"Failed to analyze field correlations: {str(e)}", 500)
+
+
+@data_tracking_bp.route('/<int:tracker_id>/correlations/specific', methods=['GET'])
+@jwt_required()
+def get_specific_correlation(tracker_id: int):
+    """
+    Analyze correlation between specific fields.
+    
+    Supports both dual and triple correlations:
+    - Dual: "Does field1 affect field2?"
+    - Triple: "When field1=A AND field2=B, what happens to field3?"
+    
+    Query params:
+    - field1: First field (required)
+    - field2: Second field (required)
+    - field3: Third field (optional, for triple correlations)
+    - months: Number of months to analyze (default: 3)
+    - lag_days: Time lag in days (default: 0, same day) - only for dual correlations
+    
+    Examples:
+    - Dual: GET /api/data-tracking/1/correlations/specific?field1=sleep.hours&field2=mood.overall
+    - Dual with lag: GET /api/data-tracking/1/correlations/specific?field1=sleep.hours&field2=energy.level&lag_days=1
+    - Triple: GET /api/data-tracking/1/correlations/specific?field1=sleep.hours&field2=stress.level&field3=mood.overall
+    """
+    try:
+        _, user_id = get_current_user()
+        tracker = verify_tracker_ownership(tracker_id, user_id)
+        
+        # Parse parameters
+        field1 = request.args.get('field1')
+        field2 = request.args.get('field2')
+        field3 = request.args.get('field3', None)
+        
+        if not field1 or not field2:
+            return error_response("field1 and field2 query parameters are required", 400)
+        
+        # Validate all fields are different
+        fields = [field1, field2]
+        if field3:
+            fields.append(field3)
+        
+        if len(fields) != len(set(fields)):
+            return error_response("All fields must be different", 400)
+        
+        months = request.args.get('months', type=int, default=3)
+        if months < 1 or months > 12:
+            return error_response("months must be between 1 and 12", 400)
+        
+        lag_days = request.args.get('lag_days', type=int, default=0)
+        if lag_days < 0 or lag_days > 7:
+            return error_response("lag_days must be between 0 and 7", 400)
+        
+        # Analyze correlation
+        result = CorrelationService.analyze_specific_correlation(
+            tracker_id,
+            field1,
+            field2,
+            months=months,
+            lag_days=lag_days,
+            field3=field3
+        )
+        
+        # Build response message
+        if field3:
+            msg = f"Triple correlation analyzed: When '{field1}' AND '{field2}' → '{field3}'"
+        else:
+            msg = f"Correlation between '{field1}' and '{field2}' analyzed"
+        
+        return success_response(msg, result)
+    
+    except ValueError as e:
+        return error_response(str(e), 400)
+    except Exception as e:
+        return error_response(f"Failed to analyze correlation: {str(e)}", 500)
 
 
 
