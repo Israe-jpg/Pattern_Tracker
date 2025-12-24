@@ -1855,6 +1855,8 @@ def get_field_correlations(tracker_id: int):
     
     Query params:
     - field_name: Field to analyze (required)
+        - Can be full path (e.g., 'mood.overall') or parent field (e.g., 'mood')
+        - If parent field is provided, will automatically resolve to first valid child field
     - correlation_type: 'triple' or 'dual' (default: 'dual')
         - 'triple': When A AND B → field (e.g., "When sleep=6 AND stress=high → mood=low")
         - 'dual': When A → field (e.g., "When sleep=6 → mood=low")
@@ -1866,6 +1868,7 @@ def get_field_correlations(tracker_id: int):
     
     Examples:
     - GET /api/data-tracking/1/correlations/field?field_name=sleep.quality&correlation_type=dual
+    - GET /api/data-tracking/1/correlations/field?field_name=mood&correlation_type=triple&months=6
     - GET /api/data-tracking/1/correlations/field?field_name=mood.overall&correlation_type=triple&months=6
     """
     try:
@@ -1898,7 +1901,14 @@ def get_field_correlations(tracker_id: int):
             correlation_type=correlation_type
         )
         
-        return success_response(f"{correlation_type.capitalize()} correlations for '{field_name}' analyzed", result)
+        # Build response message
+        if 'field_resolved' in result:
+            msg = (f"{correlation_type.capitalize()} correlations for '{result['field_resolved']['resolved_to']}' analyzed "
+                   f"(resolved from '{result['field_resolved']['requested']}')")
+        else:
+            msg = f"{correlation_type.capitalize()} correlations for '{field_name}' analyzed"
+        
+        return success_response(msg, result)
     
     except ValueError as e:
         return error_response(str(e), 400)
@@ -1918,13 +1928,18 @@ def get_specific_correlation(tracker_id: int):
     
     Query params:
     - field1: First field (required)
+        - Can be full path (e.g., 'mood.overall') or parent field (e.g., 'mood')
+        - If parent field is provided, will automatically resolve to first valid child field
     - field2: Second field (required)
+        - Can be full path or parent field
     - field3: Third field (optional, for triple correlations)
+        - Can be full path or parent field
     - months: Number of months to analyze (default: 3)
     - lag_days: Time lag in days (default: 0, same day) - only for dual correlations
     
     Examples:
     - Dual: GET /api/data-tracking/1/correlations/specific?field1=sleep.hours&field2=mood.overall
+    - Dual with parent: GET /api/data-tracking/1/correlations/specific?field1=sleep&field2=mood
     - Dual with lag: GET /api/data-tracking/1/correlations/specific?field1=sleep.hours&field2=energy.level&lag_days=1
     - Triple: GET /api/data-tracking/1/correlations/specific?field1=sleep.hours&field2=stress.level&field3=mood.overall
     """

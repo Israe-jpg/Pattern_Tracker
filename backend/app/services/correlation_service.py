@@ -187,6 +187,16 @@ class CorrelationService:
                 'has_correlations': False
             }
         
+        # Resolve field name (handles parent fields like 'mood' → 'mood.overall')
+        try:
+            resolved_field_name = CorrelationService._resolve_field_name(field_name, entries)
+            if resolved_field_name != field_name:
+                # Inform user about the resolution
+                original_field_name = field_name
+                field_name = resolved_field_name
+        except ValueError as e:
+            raise ValueError(str(e))
+        
         # Get all other fields (exclude the target field and notes)
         all_fields = CorrelationService._get_all_fields(entries)
         all_fields = [f for f in all_fields if f != field_name and not f.endswith('.notes')]
@@ -280,7 +290,7 @@ class CorrelationService:
         # Return only top 3 correlations
         top_correlations = correlations[:3]
         
-        return {
+        result = {
             'field_name': field_name,
             'correlation_type': correlation_type,
             'correlations_found': len(top_correlations),
@@ -293,6 +303,15 @@ class CorrelationService:
                 'entries_analyzed': len(entries)
             }
         }
+        
+        # Add note if field was resolved from parent
+        if 'original_field_name' in locals():
+            result['field_resolved'] = {
+                'requested': original_field_name,
+                'resolved_to': field_name
+            }
+        
+        return result
     
     @staticmethod
     def analyze_specific_correlation(
@@ -330,6 +349,15 @@ class CorrelationService:
                 'message': f'Need at least {CorrelationService.MIN_DATA_POINTS} entries',
                 'has_correlation': False
             }
+        
+        # Resolve field names (handles parent fields like 'mood' → 'mood.overall')
+        try:
+            field1 = CorrelationService._resolve_field_name(field1, entries)
+            field2 = CorrelationService._resolve_field_name(field2, entries)
+            if field3:
+                field3 = CorrelationService._resolve_field_name(field3, entries)
+        except ValueError as e:
+            raise ValueError(str(e))
         
         # Triple correlation
         if field3:
@@ -1255,6 +1283,51 @@ class CorrelationService:
                 }
         
         return field_data
+    
+    @staticmethod
+    def _resolve_field_name(
+        field_name: str,
+        entries: List[TrackingData]
+    ) -> str:
+        """
+        Resolve field name to actual field path.
+        
+        If user provides parent field (e.g., 'mood'), resolve to first child field (e.g., 'mood.overall').
+        Excludes notes fields.
+        
+        Args:
+            field_name: Field name provided by user (can be parent or full path)
+            entries: List of tracking entries to extract available fields from
+        
+        Returns:
+            Resolved field path
+        
+        Raises:
+            ValueError: If field doesn't exist or only has notes fields
+        """
+        # Get all available fields
+        all_fields = CorrelationService._get_all_fields(entries)
+        
+        # Check if field_name exists as-is
+        if field_name in all_fields:
+            return field_name
+        
+        # Check if it's a parent field (has children)
+        matching_fields = [
+            f for f in all_fields 
+            if f.startswith(f"{field_name}.") and not f.endswith('.notes')
+        ]
+        
+        if matching_fields:
+            # Return first valid child field (alphabetically)
+            resolved = sorted(matching_fields)[0]
+            return resolved
+        
+        # Field doesn't exist at all
+        available_parents = sorted(set(f.split('.')[0] for f in all_fields if '.' in f))
+        raise ValueError(
+            f"Field '{field_name}' not found. Available parent fields: {', '.join(available_parents)}"
+        )
     
     @staticmethod
     def _get_all_fields(entries: List[TrackingData]) -> List[str]:
