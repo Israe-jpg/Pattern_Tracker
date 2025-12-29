@@ -26,7 +26,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\r\n  \"username\": \"testuser2\",\r\n  \"email\": \"test2@example.com\", \r\n  \"password\": \"Password1123\",\r\n  \"first_name\": \"Test2\",\r\n  \"last_name\": \"User\"\r\n}",
+							"raw": "{\r\n  \"username\": \"defaultuser1\",\r\n  \"email\": \"defaultuser1@example.com\", \r\n  \"password\": \"Password1123\",\r\n  \"first_name\": \"newtest\",\r\n  \"last_name\": \"User\"\r\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -51,6 +51,26 @@
 				},
 				{
 					"name": "login",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Access token is saved to environment\", function () {\r",
+									"    var jsonData = pm.response.json();\r",
+									"    if (jsonData.access_token) {\r",
+									"        pm.environment.set(\"auth_token\", jsonData.access_token);\r",
+									"        console.log(\":white_check_mark: Token saved to environment\");\r",
+									"    }\r",
+									"    pm.expect(pm.environment.get(\"auth_token\")).to.exist;\r",
+									"});"
+								],
+								"type": "text/javascript",
+								"packages": {},
+								"requests": {}
+							}
+						}
+					],
 					"request": {
 						"auth": {
 							"type": "noauth"
@@ -65,7 +85,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\r\n  \"email\": \"test@example.com\",\r\n  \"password\": \"Password123\"\r\n}",
+							"raw": "{\r\n  \"email\": \"defaultuser1@example.com\",\r\n  \"password\": \"Password1123\"\r\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -118,12 +138,531 @@
 						}
 					},
 					"response": []
+				},
+				{
+					"name": "obtain user's sex",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2Mjg1NzA3NSwianRpIjoiOTQxMzg1NjYtODIwYy00N2VhLTgxMTgtMTljOGEzZGRlN2U2IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjYiLCJuYmYiOjE3NjI4NTcwNzUsImV4cCI6MTc2Mjg2MDY3NX0.KK0b4JcS8U6sd1FcmHxGwGS0fo1bpGCEDc6SVfBQEuQ",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"gender\":\"female\"\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:5000/api/auth/obtain-user-sex-info",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "5000",
+							"path": [
+								"api",
+								"auth",
+								"obtain-user-sex-info"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "obtain optional information about user",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2Mjg1NzA3NSwianRpIjoiOTQxMzg1NjYtODIwYy00N2VhLTgxMTgtMTljOGEzZGRlN2U2IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjYiLCJuYmYiOjE3NjI4NTcwNzUsImV4cCI6MTc2Mjg2MDY3NX0.KK0b4JcS8U6sd1FcmHxGwGS0fo1bpGCEDc6SVfBQEuQ",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"date_of_birth\":\"11-11-1990\",\r\n    \"height\":\"160\"\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:5000/api/auth/obtain-optional-user-info",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "5000",
+							"path": [
+								"api",
+								"auth",
+								"obtain-optional-user-info"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get user's profile information",
+					"protocolProfileBehavior": {
+						"disableBodyPruning": true
+					},
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2Mjk0MTExNSwianRpIjoiYTVhYTViN2EtZGQzMS00OTVhLWI0YWUtYzA2ZDgzOWE0MmJmIiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjYiLCJuYmYiOjE3NjI5NDExMTUsImV4cCI6MTc2Mjk0NDcxNX0.yzi5w5SRaK9UgP8GEIhkDDaz1VlPqhGu_8EuI5eaGZw",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"gender\":\"female\"\r\n}"
+						},
+						"url": {
+							"raw": "http://localhost:5000/api/auth/profile",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "5000",
+							"path": [
+								"api",
+								"auth",
+								"profile"
+							]
+						}
+					},
+					"response": []
 				}
 			]
 		},
 		{
 			"name": "Trackers",
 			"item": [
+				{
+					"name": "schema endpoints",
+					"item": [
+						{
+							"name": "return data schema for form fetching primary endpoint",
+							"request": {
+								"auth": {
+									"type": "bearer",
+									"bearer": [
+										{
+											"key": "token",
+											"value": "{{auth_token}}",
+											"type": "string"
+										}
+									]
+								},
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "http://localhost:5000/api/trackers/32/form-schema",
+									"protocol": "http",
+									"host": [
+										"localhost"
+									],
+									"port": "5000",
+									"path": [
+										"api",
+										"trackers",
+										"32",
+										"form-schema"
+									]
+								}
+							},
+							"response": []
+						},
+						{
+							"name": "management-schema",
+							"request": {
+								"auth": {
+									"type": "bearer",
+									"bearer": [
+										{
+											"key": "token",
+											"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2Mjk0MTExNSwianRpIjoiYTVhYTViN2EtZGQzMS00OTVhLWI0YWUtYzA2ZDgzOWE0MmJmIiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjYiLCJuYmYiOjE3NjI5NDExMTUsImV4cCI6MTc2Mjk0NDcxNX0.yzi5w5SRaK9UgP8GEIhkDDaz1VlPqhGu_8EuI5eaGZw",
+											"type": "string"
+										}
+									]
+								},
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "http://localhost:5000/api/trackers/33/management-schema",
+									"protocol": "http",
+									"host": [
+										"localhost"
+									],
+									"port": "5000",
+									"path": [
+										"api",
+										"trackers",
+										"33",
+										"management-schema"
+									]
+								}
+							},
+							"response": []
+						},
+						{
+							"name": "complete-schmea with active and inactive fields",
+							"request": {
+								"auth": {
+									"type": "bearer",
+									"bearer": [
+										{
+											"key": "token",
+											"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2Mjk0MTExNSwianRpIjoiYTVhYTViN2EtZGQzMS00OTVhLWI0YWUtYzA2ZDgzOWE0MmJmIiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjYiLCJuYmYiOjE3NjI5NDExMTUsImV4cCI6MTc2Mjk0NDcxNX0.yzi5w5SRaK9UgP8GEIhkDDaz1VlPqhGu_8EuI5eaGZw",
+											"type": "string"
+										}
+									]
+								},
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "http://localhost:5000/api/trackers/34/complete-schema",
+									"protocol": "http",
+									"host": [
+										"localhost"
+									],
+									"port": "5000",
+									"path": [
+										"api",
+										"trackers",
+										"34",
+										"complete-schema"
+									]
+								}
+							},
+							"response": []
+						}
+					]
+				},
+				{
+					"name": "Menstruation routes",
+					"item": [
+						{
+							"name": "get tracker settings of a tracker",
+							"protocolProfileBehavior": {
+								"disableBodyPruning": true
+							},
+							"request": {
+								"auth": {
+									"type": "bearer",
+									"bearer": [
+										{
+											"key": "token",
+											"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MjkzNzQ4NCwianRpIjoiOWMxOGNmYzEtYjYzOC00YjExLTk0MGEtZWVlYTMzMjVlOTRiIiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjYiLCJuYmYiOjE3NjI5Mzc0ODQsImV4cCI6MTc2Mjk0MTA4NH0.KCivldyYGXjyxG2fX6Cnw-MwU4uwgH5oVvhJpvQIuVI",
+											"type": "string"
+										}
+									]
+								},
+								"method": "GET",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "application/json",
+										"type": "text"
+									}
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\r\n    \"gender\":\"female\"\r\n}"
+								},
+								"url": {
+									"raw": "http://localhost:5000/api/trackers/33/tracker-settings",
+									"protocol": "http",
+									"host": [
+										"localhost"
+									],
+									"port": "5000",
+									"path": [
+										"api",
+										"trackers",
+										"33",
+										"tracker-settings"
+									]
+								}
+							},
+							"response": []
+						},
+						{
+							"name": "add new settings to a tracker",
+							"request": {
+								"auth": {
+									"type": "bearer",
+									"bearer": [
+										{
+											"key": "token",
+											"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MjkzNzQ4NCwianRpIjoiOWMxOGNmYzEtYjYzOC00YjExLTk0MGEtZWVlYTMzMjVlOTRiIiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjYiLCJuYmYiOjE3NjI5Mzc0ODQsImV4cCI6MTc2Mjk0MTA4NH0.KCivldyYGXjyxG2fX6Cnw-MwU4uwgH5oVvhJpvQIuVI",
+											"type": "string"
+										}
+									]
+								},
+								"method": "PUT",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "application/json",
+										"type": "text"
+									}
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\r\n    \"settings\":{\r\n        \"average_cycle_length\": 30,\r\n        \"average_period_length\": 5,\r\n        \"last_period_start_date\": \"2025-10-29\",\r\n        \"birth_control_method\": \"none\",\r\n        \"tracking_ovulation\": \"True\",\r\n        \"trying_to_conceive\": \"No\"\r\n\r\n    }\r\n}",
+									"options": {
+										"raw": {
+											"language": "json"
+										}
+									}
+								},
+								"url": {
+									"raw": "http://localhost:5000/api/trackers/33/tracker-settings",
+									"protocol": "http",
+									"host": [
+										"localhost"
+									],
+									"port": "5000",
+									"path": [
+										"api",
+										"trackers",
+										"33",
+										"tracker-settings"
+									]
+								}
+							},
+							"response": []
+						},
+						{
+							"name": "log period date",
+							"request": {
+								"auth": {
+									"type": "bearer",
+									"bearer": [
+										{
+											"key": "token",
+											"value": "{{auth_token}}",
+											"type": "string"
+										}
+									]
+								},
+								"method": "POST",
+								"header": [],
+								"body": {
+									"mode": "raw",
+									"raw": "{\r\n    \"period_date\": \"2025-06-10\"\r\n}",
+									"options": {
+										"raw": {
+											"language": "json"
+										}
+									}
+								},
+								"url": {
+									"raw": "http://localhost:5000/api/trackers/33/log-period",
+									"protocol": "http",
+									"host": [
+										"localhost"
+									],
+									"port": "5000",
+									"path": [
+										"api",
+										"trackers",
+										"33",
+										"log-period"
+									]
+								}
+							},
+							"response": []
+						},
+						{
+							"name": "get current cycle information",
+							"request": {
+								"auth": {
+									"type": "bearer",
+									"bearer": [
+										{
+											"key": "token",
+											"value": "{{auth_token}}",
+											"type": "string"
+										}
+									]
+								},
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "http://localhost:5000/api/trackers/33/current-cycle",
+									"protocol": "http",
+									"host": [
+										"localhost"
+									],
+									"port": "5000",
+									"path": [
+										"api",
+										"trackers",
+										"33",
+										"current-cycle"
+									]
+								}
+							},
+							"response": []
+						},
+						{
+							"name": "update cycle dates",
+							"request": {
+								"auth": {
+									"type": "bearer",
+									"bearer": [
+										{
+											"key": "token",
+											"value": "{{auth_token}}",
+											"type": "string"
+										}
+									]
+								},
+								"method": "PUT",
+								"header": [],
+								"body": {
+									"mode": "raw",
+									"raw": "{\r\n  \"period_dates\": [\r\n    \"2025-06-11\",\r\n    \"2025-06-12\",\r\n    \"2025-06-13\",\r\n    \"2025-06-14\"\r\n  ]\r\n}",
+									"options": {
+										"raw": {
+											"language": "json"
+										}
+									}
+								},
+								"url": {
+									"raw": "http://localhost:5000/api/trackers/33/update-cycle",
+									"protocol": "http",
+									"host": [
+										"localhost"
+									],
+									"port": "5000",
+									"path": [
+										"api",
+										"trackers",
+										"33",
+										"update-cycle"
+									]
+								}
+							},
+							"response": []
+						},
+						{
+							"name": "recalculate cycle data",
+							"request": {
+								"auth": {
+									"type": "bearer",
+									"bearer": [
+										{
+											"key": "token",
+											"value": "{{auth_token}}",
+											"type": "string"
+										}
+									]
+								},
+								"method": "POST",
+								"header": [],
+								"url": {
+									"raw": "http://localhost:5000/api/trackers/33/recalculate-cycles",
+									"protocol": "http",
+									"host": [
+										"localhost"
+									],
+									"port": "5000",
+									"path": [
+										"api",
+										"trackers",
+										"33",
+										"recalculate-cycles"
+									]
+								}
+							},
+							"response": []
+						},
+						{
+							"name": "get cycle history",
+							"request": {
+								"auth": {
+									"type": "bearer",
+									"bearer": [
+										{
+											"key": "token",
+											"value": "{{auth_token}}",
+											"type": "string"
+										}
+									]
+								},
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "http://localhost:5000/api/trackers/33/cycles-history",
+									"protocol": "http",
+									"host": [
+										"localhost"
+									],
+									"port": "5000",
+									"path": [
+										"api",
+										"trackers",
+										"33",
+										"cycles-history"
+									],
+									"query": [
+										{
+											"key": "limit",
+											"value": "3",
+											"disabled": true
+										}
+									]
+								}
+							},
+							"response": []
+						}
+					]
+				},
 				{
 					"name": "setup default trackers",
 					"request": {
@@ -132,7 +671,7 @@
 							"bearer": [
 								{
 									"key": "token",
-									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MTIzMjAyNCwianRpIjoiZmU2Y2MzZjQtNjJkYi00YzM2LTgwZTUtNTVjMmUzYzcyMDg0IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjEyMzIwMjQsImV4cCI6MTc2MTIzNTYyNH0.XcTiFPNYdwIXZvZbFRjdDRc85rlg_WENLX7ayZaM7RQ",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2Mjc2NzQwOSwianRpIjoiNmViYmY4M2UtZTU4NC00MDI0LWEzY2QtNDlhYjQ3NmVmZmM0IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjYiLCJuYmYiOjE3NjI3Njc0MDksImV4cCI6MTc2Mjc3MTAwOX0.fmwiLjU1p6BKe4Ij4xX5B-_ctyF0r4lkmu5s252uPkY",
 									"type": "string"
 								}
 							]
@@ -140,7 +679,7 @@
 						"method": "POST",
 						"header": [],
 						"url": {
-							"raw": "http://localhost:5000/api/trackers//setup-default-trackers",
+							"raw": "http://localhost:5000/api/trackers/setup-default-trackers",
 							"protocol": "http",
 							"host": [
 								"localhost"
@@ -149,7 +688,6 @@
 							"path": [
 								"api",
 								"trackers",
-								"",
 								"setup-default-trackers"
 							]
 						}
@@ -164,7 +702,7 @@
 							"bearer": [
 								{
 									"key": "token",
-									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MTgzOTQ1NiwianRpIjoiMTlhOTljNGYtOWJiZi00ZWU3LWEzZjgtZTNkODEyYWQxZTRkIiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjE4Mzk0NTYsImV4cCI6MTc2MTg0MzA1Nn0.KTZXMGe8TCENklG9FWNh48--OU07kpsYEXHHzuprhi0",
+									"value": "{{auth_token}}",
 									"type": "string"
 								}
 							]
@@ -195,7 +733,7 @@
 							"bearer": [
 								{
 									"key": "token",
-									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MTIzMjAyNCwianRpIjoiZmU2Y2MzZjQtNjJkYi00YzM2LTgwZTUtNTVjMmUzYzcyMDg0IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjEyMzIwMjQsImV4cCI6MTc2MTIzNTYyNH0.XcTiFPNYdwIXZvZbFRjdDRc85rlg_WENLX7ayZaM7RQ",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2Mjc2NTE4OCwianRpIjoiZGI1MmU2MDgtNzQwNi00NTJkLWFiNGEtM2ZmYTBmOTVjM2EyIiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjUiLCJuYmYiOjE3NjI3NjUxODgsImV4cCI6MTc2Mjc2ODc4OH0.0s8Gz00U65dKVieTtb4rZrb3JnbE92eIECs8_UAj41c",
 									"type": "string"
 								}
 							]
@@ -203,7 +741,7 @@
 						"method": "DELETE",
 						"header": [],
 						"url": {
-							"raw": "http://localhost:5000/api/trackers/delete-tracker/19",
+							"raw": "http://localhost:5000/api/trackers/delete-tracker/27",
 							"protocol": "http",
 							"host": [
 								"localhost"
@@ -213,7 +751,7 @@
 								"api",
 								"trackers",
 								"delete-tracker",
-								"19"
+								"27"
 							]
 						}
 					},
@@ -227,7 +765,7 @@
 							"bearer": [
 								{
 									"key": "token",
-									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MTIzMjAyNCwianRpIjoiZmU2Y2MzZjQtNjJkYi00YzM2LTgwZTUtNTVjMmUzYzcyMDg0IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjEyMzIwMjQsImV4cCI6MTc2MTIzNTYyNH0.XcTiFPNYdwIXZvZbFRjdDRc85rlg_WENLX7ayZaM7RQ",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2Mjc2NTE4OCwianRpIjoiZGI1MmU2MDgtNzQwNi00NTJkLWFiNGEtM2ZmYTBmOTVjM2EyIiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjUiLCJuYmYiOjE3NjI3NjUxODgsImV4cCI6MTc2Mjc2ODc4OH0.0s8Gz00U65dKVieTtb4rZrb3JnbE92eIECs8_UAj41c",
 									"type": "string"
 								}
 							]
@@ -235,7 +773,7 @@
 						"method": "PUT",
 						"header": [],
 						"url": {
-							"raw": "http://localhost:5000/api/trackers/update-default-tracker/19",
+							"raw": "http://localhost:5000/api/trackers/update-default-tracker/28",
 							"protocol": "http",
 							"host": [
 								"localhost"
@@ -245,7 +783,7 @@
 								"api",
 								"trackers",
 								"update-default-tracker",
-								"19"
+								"28"
 							]
 						}
 					},
@@ -259,7 +797,7 @@
 							"bearer": [
 								{
 									"key": "token",
-									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MTIzMjAyNCwianRpIjoiZmU2Y2MzZjQtNjJkYi00YzM2LTgwZTUtNTVjMmUzYzcyMDg0IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjEyMzIwMjQsImV4cCI6MTc2MTIzNTYyNH0.XcTiFPNYdwIXZvZbFRjdDRc85rlg_WENLX7ayZaM7RQ",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2Mjc2NzQwOSwianRpIjoiNmViYmY4M2UtZTU4NC00MDI0LWEzY2QtNDlhYjQ3NmVmZmM0IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjYiLCJuYmYiOjE3NjI3Njc0MDksImV4cCI6MTc2Mjc3MTAwOX0.fmwiLjU1p6BKe4Ij4xX5B-_ctyF0r4lkmu5s252uPkY",
 									"type": "string"
 								}
 							]
@@ -305,7 +843,7 @@
 							"bearer": [
 								{
 									"key": "token",
-									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MTgzOTQ1NiwianRpIjoiMTlhOTljNGYtOWJiZi00ZWU3LWEzZjgtZTNkODEyYWQxZTRkIiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjE4Mzk0NTYsImV4cCI6MTc2MTg0MzA1Nn0.KTZXMGe8TCENklG9FWNh48--OU07kpsYEXHHzuprhi0",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2Mjc2NTE4OCwianRpIjoiZGI1MmU2MDgtNzQwNi00NTJkLWFiNGEtM2ZmYTBmOTVjM2EyIiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjUiLCJuYmYiOjE3NjI3NjUxODgsImV4cCI6MTc2Mjc2ODc4OH0.0s8Gz00U65dKVieTtb4rZrb3JnbE92eIECs8_UAj41c",
 									"type": "string"
 								}
 							]
@@ -320,10 +858,10 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\r\n    \"new_name\": \"updated_name_test\"\r\n}"
+							"raw": "{\r\n    \"new_name\": \"updated_new_name\"\r\n}"
 						},
 						"url": {
-							"raw": "http://localhost:5000/api/trackers/20/change-tracker-name",
+							"raw": "http://localhost:5000/api/trackers/30/change-tracker-name",
 							"protocol": "http",
 							"host": [
 								"localhost"
@@ -332,7 +870,7 @@
 							"path": [
 								"api",
 								"trackers",
-								"20",
+								"30",
 								"change-tracker-name"
 							]
 						}
@@ -347,7 +885,7 @@
 							"bearer": [
 								{
 									"key": "token",
-									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MjM1Nzc3MywianRpIjoiY2MxMjk3OTktODdjZi00ZDZkLWFmMWMtNzE3MTdlZDk2ZGU0IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjIzNTc3NzMsImV4cCI6MTc2MjM2MTM3M30.piDQtY9ELUYPF-SlZ4LjlAglIu8O9tLPBs7bVXmxHYA",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2Mjc5Mjg4NCwianRpIjoiMzNiZmQzMWItYTUxZi00NjFhLTkwYTAtZGZiNmU2ZGY1Yjk2IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjYiLCJuYmYiOjE3NjI3OTI4ODQsImV4cCI6MTc2Mjc5NjQ4NH0.ltFHd9Ia-7-i4dQAr0sV_lzVGPgfRgbxh6qHrRcBH5o",
 									"type": "string"
 								}
 							]
@@ -355,7 +893,7 @@
 						"method": "GET",
 						"header": [],
 						"url": {
-							"raw": "http://localhost:5000/api/trackers/20/tracker-details",
+							"raw": "http://localhost:5000/api/trackers/34/tracker-details",
 							"protocol": "http",
 							"host": [
 								"localhost"
@@ -364,7 +902,7 @@
 							"path": [
 								"api",
 								"trackers",
-								"20",
+								"34",
 								"tracker-details"
 							]
 						}
@@ -387,7 +925,7 @@
 							"bearer": [
 								{
 									"key": "token",
-									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MTg0Mzg2NywianRpIjoiZTAzZWJjZjAtNjkwOS00YzVjLWEwZGUtYWYwMzE4ZDY1ZjY1IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjE4NDM4NjcsImV4cCI6MTc2MTg0NzQ2N30.VYtKcHKJbPAO6KmK6yXSUyhJzPt_Szf0UtquGjSylfk",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2Mjc5Mjg4NCwianRpIjoiMzNiZmQzMWItYTUxZi00NjFhLTkwYTAtZGZiNmU2ZGY1Yjk2IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjYiLCJuYmYiOjE3NjI3OTI4ODQsImV4cCI6MTc2Mjc5NjQ4NH0.ltFHd9Ia-7-i4dQAr0sV_lzVGPgfRgbxh6qHrRcBH5o",
 									"type": "string"
 								}
 							]
@@ -404,7 +942,7 @@
 							}
 						},
 						"url": {
-							"raw": "http://localhost:5000/api/trackers/20/get-data-schema",
+							"raw": "http://localhost:5000/api/trackers/34/get-data-schema",
 							"protocol": "http",
 							"host": [
 								"localhost"
@@ -413,7 +951,7 @@
 							"path": [
 								"api",
 								"trackers",
-								"20",
+								"34",
 								"get-data-schema"
 							]
 						}
@@ -428,7 +966,7 @@
 							"bearer": [
 								{
 									"key": "token",
-									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MTg0Mzg2NywianRpIjoiZTAzZWJjZjAtNjkwOS00YzVjLWEwZGUtYWYwMzE4ZDY1ZjY1IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjE4NDM4NjcsImV4cCI6MTc2MTg0NzQ2N30.VYtKcHKJbPAO6KmK6yXSUyhJzPt_Szf0UtquGjSylfk",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2Mjc2NzQwOSwianRpIjoiNmViYmY4M2UtZTU4NC00MDI0LWEzY2QtNDlhYjQ3NmVmZmM0IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjYiLCJuYmYiOjE3NjI3Njc0MDksImV4cCI6MTc2Mjc3MTAwOX0.fmwiLjU1p6BKe4Ij4xX5B-_ctyF0r4lkmu5s252uPkY",
 									"type": "string"
 								}
 							]
@@ -443,10 +981,10 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\r\n  \"field_data\": {\r\n    \"field_name\": \"third_test\",\r\n    \"display_label\": \"third test field\"\r\n  },\r\n  \"options\": [\r\n    {\r\n      \"option_name\": \"first_opton\",\r\n      \"option_type\": \"rating\",\r\n      \"min_value\": 1,\r\n      \"max_value\": 4,\r\n      \"is_required\": true\r\n    },\r\n\r\n    {\r\n      \"option_name\": \"second_opton\",\r\n      \"option_type\": \"rating\",\r\n      \"min_value\": 1,\r\n      \"max_value\": 5,\r\n      \"is_required\": true\r\n    }\r\n  ]\r\n}"
+							"raw": "{\r\n  \"field_data\": {\r\n    \"field_name\": \"new_fieldèè\",\r\n    \"display_label\": \"fourth test field\"\r\n  },\r\n  \"options\": [\r\n    {\r\n      \"option_name\": \"first_opton\",\r\n      \"option_type\": \"rating\",\r\n      \"min_value\": 1,\r\n      \"max_value\": 4,\r\n      \"is_required\": true\r\n    },\r\n\r\n    {\r\n      \"option_name\": \"second_opton\",\r\n      \"option_type\": \"rating\",\r\n      \"min_value\": 1,\r\n      \"max_value\": 5,\r\n      \"is_required\": true\r\n    }\r\n  ]\r\n}"
 						},
 						"url": {
-							"raw": "http://localhost:5000/api/trackers/20/create-new-field",
+							"raw": "http://localhost:5000/api/trackers/33/create-new-field",
 							"protocol": "http",
 							"host": [
 								"localhost"
@@ -455,7 +993,7 @@
 							"path": [
 								"api",
 								"trackers",
-								"20",
+								"33",
 								"create-new-field"
 							]
 						}
@@ -470,7 +1008,7 @@
 							"bearer": [
 								{
 									"key": "token",
-									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MTIzMjAyNCwianRpIjoiZmU2Y2MzZjQtNjJkYi00YzM2LTgwZTUtNTVjMmUzYzcyMDg0IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjEyMzIwMjQsImV4cCI6MTc2MTIzNTYyNH0.XcTiFPNYdwIXZvZbFRjdDRc85rlg_WENLX7ayZaM7RQ",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2Mjc2NzQwOSwianRpIjoiNmViYmY4M2UtZTU4NC00MDI0LWEzY2QtNDlhYjQ3NmVmZmM0IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjYiLCJuYmYiOjE3NjI3Njc0MDksImV4cCI6MTc2Mjc3MTAwOX0.fmwiLjU1p6BKe4Ij4xX5B-_ctyF0r4lkmu5s252uPkY",
 									"type": "string"
 								}
 							]
@@ -482,7 +1020,7 @@
 							"raw": ""
 						},
 						"url": {
-							"raw": "http://localhost:5000/api/trackers/43/delete-field",
+							"raw": "http://localhost:5000/api/trackers/1/delete-field",
 							"protocol": "http",
 							"host": [
 								"localhost"
@@ -491,7 +1029,7 @@
 							"path": [
 								"api",
 								"trackers",
-								"43",
+								"1",
 								"delete-field"
 							]
 						}
@@ -506,7 +1044,7 @@
 							"bearer": [
 								{
 									"key": "token",
-									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MTIzMjAyNCwianRpIjoiZmU2Y2MzZjQtNjJkYi00YzM2LTgwZTUtNTVjMmUzYzcyMDg0IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjEyMzIwMjQsImV4cCI6MTc2MTIzNTYyNH0.XcTiFPNYdwIXZvZbFRjdDRc85rlg_WENLX7ayZaM7RQ",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2Mjc2NzQwOSwianRpIjoiNmViYmY4M2UtZTU4NC00MDI0LWEzY2QtNDlhYjQ3NmVmZmM0IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjYiLCJuYmYiOjE3NjI3Njc0MDksImV4cCI6MTc2Mjc3MTAwOX0.fmwiLjU1p6BKe4Ij4xX5B-_ctyF0r4lkmu5s252uPkY",
 									"type": "string"
 								}
 							]
@@ -521,10 +1059,10 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\r\n    \"new_label\":\"testt_updated\"\r\n}"
+							"raw": "{\r\n    \"new_label\":\"user field updated\"\r\n}"
 						},
 						"url": {
-							"raw": "http://localhost:5000/api/trackers/40/update-field-display-label",
+							"raw": "http://localhost:5000/api/trackers/4/update-field-display-label",
 							"protocol": "http",
 							"host": [
 								"localhost"
@@ -533,7 +1071,7 @@
 							"path": [
 								"api",
 								"trackers",
-								"40",
+								"4",
 								"update-field-display-label"
 							]
 						}
@@ -548,7 +1086,7 @@
 							"bearer": [
 								{
 									"key": "token",
-									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MTIzMjAyNCwianRpIjoiZmU2Y2MzZjQtNjJkYi00YzM2LTgwZTUtNTVjMmUzYzcyMDg0IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjEyMzIwMjQsImV4cCI6MTc2MTIzNTYyNH0.XcTiFPNYdwIXZvZbFRjdDRc85rlg_WENLX7ayZaM7RQ",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2Mjc2NzQwOSwianRpIjoiNmViYmY4M2UtZTU4NC00MDI0LWEzY2QtNDlhYjQ3NmVmZmM0IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjYiLCJuYmYiOjE3NjI3Njc0MDksImV4cCI6MTc2Mjc3MTAwOX0.fmwiLjU1p6BKe4Ij4xX5B-_ctyF0r4lkmu5s252uPkY",
 									"type": "string"
 								}
 							]
@@ -566,7 +1104,7 @@
 							"raw": "{\r\n    \"new_help_text\":\"nex_help_text\"\r\n}"
 						},
 						"url": {
-							"raw": "http://localhost:5000/api/trackers/40/update-field-help-text",
+							"raw": "http://localhost:5000/api/trackers/4/update-field-help-text",
 							"protocol": "http",
 							"host": [
 								"localhost"
@@ -575,7 +1113,7 @@
 							"path": [
 								"api",
 								"trackers",
-								"40",
+								"4",
 								"update-field-help-text"
 							]
 						}
@@ -590,7 +1128,7 @@
 							"bearer": [
 								{
 									"key": "token",
-									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MTgzOTQ1NiwianRpIjoiMTlhOTljNGYtOWJiZi00ZWU3LWEzZjgtZTNkODEyYWQxZTRkIiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjE4Mzk0NTYsImV4cCI6MTc2MTg0MzA1Nn0.KTZXMGe8TCENklG9FWNh48--OU07kpsYEXHHzuprhi0",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2Mjc2NzQwOSwianRpIjoiNmViYmY4M2UtZTU4NC00MDI0LWEzY2QtNDlhYjQ3NmVmZmM0IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjYiLCJuYmYiOjE3NjI3Njc0MDksImV4cCI6MTc2Mjc3MTAwOX0.fmwiLjU1p6BKe4Ij4xX5B-_ctyF0r4lkmu5s252uPkY",
 									"type": "string"
 								}
 							]
@@ -598,7 +1136,7 @@
 						"method": "GET",
 						"header": [],
 						"url": {
-							"raw": "http://localhost:5000/api/trackers/40/field-details",
+							"raw": "http://localhost:5000/api/trackers/4/field-details",
 							"protocol": "http",
 							"host": [
 								"localhost"
@@ -607,7 +1145,7 @@
 							"path": [
 								"api",
 								"trackers",
-								"40",
+								"4",
 								"field-details"
 							]
 						}
@@ -622,7 +1160,7 @@
 							"bearer": [
 								{
 									"key": "token",
-									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MTg0Mzg2NywianRpIjoiZTAzZWJjZjAtNjkwOS00YzVjLWEwZGUtYWYwMzE4ZDY1ZjY1IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjE4NDM4NjcsImV4cCI6MTc2MTg0NzQ2N30.VYtKcHKJbPAO6KmK6yXSUyhJzPt_Szf0UtquGjSylfk",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2Mjc5Mjg4NCwianRpIjoiMzNiZmQzMWItYTUxZi00NjFhLTkwYTAtZGZiNmU2ZGY1Yjk2IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjYiLCJuYmYiOjE3NjI3OTI4ODQsImV4cCI6MTc2Mjc5NjQ4NH0.ltFHd9Ia-7-i4dQAr0sV_lzVGPgfRgbxh6qHrRcBH5o",
 									"type": "string"
 								}
 							]
@@ -637,7 +1175,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\r\n    \"new_order\":0\r\n\r\n}",
+							"raw": "{\r\n    \"new_order\":1\r\n\r\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -645,7 +1183,7 @@
 							}
 						},
 						"url": {
-							"raw": "http://localhost:5000/api/trackers/44/update-field-order",
+							"raw": "http://localhost:5000/api/trackers/95/update-field-order",
 							"protocol": "http",
 							"host": [
 								"localhost"
@@ -654,7 +1192,7 @@
 							"path": [
 								"api",
 								"trackers",
-								"44",
+								"95",
 								"update-field-order"
 							]
 						}
@@ -672,7 +1210,7 @@
 							"bearer": [
 								{
 									"key": "token",
-									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MTg0Mzg2NywianRpIjoiZTAzZWJjZjAtNjkwOS00YzVjLWEwZGUtYWYwMzE4ZDY1ZjY1IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjE4NDM4NjcsImV4cCI6MTc2MTg0NzQ2N30.VYtKcHKJbPAO6KmK6yXSUyhJzPt_Szf0UtquGjSylfk",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2Mjg1MjEyMSwianRpIjoiOTQ4YWUzNzctMGI2OC00ZjU3LWE1ZjgtYzFlNDY0MTA2YzBlIiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjYiLCJuYmYiOjE3NjI4NTIxMjEsImV4cCI6MTc2Mjg1NTcyMX0.S_cNFTv0UWDPLEcooibW4-jKXnRcJCNWNi_IRXiC-z8",
 									"type": "string"
 								}
 							]
@@ -684,7 +1222,7 @@
 							"raw": ""
 						},
 						"url": {
-							"raw": "http://localhost:5000/api/trackers/20/ordered-fields",
+							"raw": "http://localhost:5000/api/trackers/33/ordered-fields",
 							"protocol": "http",
 							"host": [
 								"localhost"
@@ -693,7 +1231,7 @@
 							"path": [
 								"api",
 								"trackers",
-								"20",
+								"33",
 								"ordered-fields"
 							]
 						}
@@ -708,7 +1246,7 @@
 							"bearer": [
 								{
 									"key": "token",
-									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MjM2MzkyNiwianRpIjoiMjFhOTQxMjUtN2RjZC00NjgyLTg2MWEtYTdjMGM1YzdjOWRjIiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjIzNjM5MjYsImV4cCI6MTc2MjM2NzUyNn0.ld--krA2G-iElih20purLbqj7Cahta1cXFk8nYkNQAQ",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2Mjg1MjEyMSwianRpIjoiOTQ4YWUzNzctMGI2OC00ZjU3LWE1ZjgtYzFlNDY0MTA2YzBlIiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjYiLCJuYmYiOjE3NjI4NTIxMjEsImV4cCI6MTc2Mjg1NTcyMX0.S_cNFTv0UWDPLEcooibW4-jKXnRcJCNWNi_IRXiC-z8",
 									"type": "string"
 								}
 							]
@@ -716,7 +1254,7 @@
 						"method": "PATCH",
 						"header": [],
 						"url": {
-							"raw": "http://localhost:5000/api/trackers/44/toggle-field-active-status",
+							"raw": "http://localhost:5000/api/trackers/4/toggle-field-active-status",
 							"protocol": "http",
 							"host": [
 								"localhost"
@@ -725,7 +1263,7 @@
 							"path": [
 								"api",
 								"trackers",
-								"44",
+								"4",
 								"toggle-field-active-status"
 							]
 						}
@@ -745,7 +1283,7 @@
 							"bearer": [
 								{
 									"key": "token",
-									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MjE4NDA5OCwianRpIjoiOWM5Y2Y4YzYtNzM2MS00NGVmLTg2ZWMtMWQxMWU2NjI0OTc0IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjIxODQwOTgsImV4cCI6MTc2MjE4NzY5OH0.jlc7XG9xs13RnynWGUUYDjxmy4KYn4ECTJo_fLnEQqw",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2Mjg1MjEyMSwianRpIjoiOTQ4YWUzNzctMGI2OC00ZjU3LWE1ZjgtYzFlNDY0MTA2YzBlIiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjYiLCJuYmYiOjE3NjI4NTIxMjEsImV4cCI6MTc2Mjg1NTcyMX0.S_cNFTv0UWDPLEcooibW4-jKXnRcJCNWNi_IRXiC-z8",
 									"type": "string"
 								}
 							]
@@ -760,10 +1298,10 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\r\n  \"option_data\": {\r\n    \"option_name\": \"test3\",\r\n    \"option_type\": \"text\",\r\n    \"is_required\": false,\r\n    \"display_label\": \"Additional Notes\",\r\n    \"help_text\": \"Add any additional comments\",\r\n    \"max_length\": 500,\r\n    \"placeholder\": \"Enter your notes here...\",\r\n    \"is_active\": true\r\n  }\r\n}"
+							"raw": "{\r\n  \"option_data\": {\r\n    \"option_name\": \"testnew5\",\r\n    \"option_type\": \"text\",\r\n    \"is_required\": false,\r\n    \"display_label\": \"Additional Notes\",\r\n    \"help_text\": \"Add any additional comments\",\r\n    \"max_length\": 500,\r\n    \"placeholder\": \"Enter your notes here...\",\r\n    \"is_active\": true\r\n  }\r\n}"
 						},
 						"url": {
-							"raw": "http://localhost:5000/api/trackers/40/create-new-option",
+							"raw": "http://localhost:5000/api/trackers/5/create-new-option",
 							"protocol": "http",
 							"host": [
 								"localhost"
@@ -772,7 +1310,7 @@
 							"path": [
 								"api",
 								"trackers",
-								"40",
+								"5",
 								"create-new-option"
 							]
 						}
@@ -823,7 +1361,7 @@
 							"bearer": [
 								{
 									"key": "token",
-									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MTU3OTcwNywianRpIjoiNTBjNDExYjgtZGFlOS00YWUyLThkYjAtZTUzZDc2MzhiZmUzIiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjE1Nzk3MDcsImV4cCI6MTc2MTU4MzMwN30.P9BJOeD23w01Fs61zT_Ks7iQDKuEWxYbn1CylcuiL50",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2Mjg1MjEyMSwianRpIjoiOTQ4YWUzNzctMGI2OC00ZjU3LWE1ZjgtYzFlNDY0MTA2YzBlIiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjYiLCJuYmYiOjE3NjI4NTIxMjEsImV4cCI6MTc2Mjg1NTcyMX0.S_cNFTv0UWDPLEcooibW4-jKXnRcJCNWNi_IRXiC-z8",
 									"type": "string"
 								}
 							]
@@ -838,10 +1376,10 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\r\n    \"option_name\": \"test_updated\",\r\n    \"option_type\": \"yes_no\",\r\n    \"is_required\": true,\r\n    \"display_label\": \"r u ok?\",\r\n    \"help_text\": \"yes or no quetsion\",\r\n    \"placeholder\": \"Select your mood rating\",\r\n    \"default_value\": \"yes\", \r\n    \"validation_rules\": {\r\n        \"required\": true\r\n    },\r\n    \"display_options\": {\r\n        \"show_labels\": true,\r\n        \"color_scheme\": \"mood\",\r\n        \"show_help\": true\r\n    }\r\n}"
+							"raw": "{\r\n    \"option_name\": \"test_updated22\",\r\n    \"option_type\": \"yes_no\",\r\n    \"is_required\": true,\r\n    \"display_label\": \"test?\",\r\n    \"help_text\": \"yes or no quetsion\",\r\n    \"placeholder\": \"Select your mood rating\",\r\n    \"default_value\": \"yes\", \r\n    \"validation_rules\": {\r\n        \"required\": true\r\n    },\r\n    \"display_options\": {\r\n        \"show_labels\": true,\r\n        \"color_scheme\": \"mood\",\r\n        \"show_help\": true\r\n    }\r\n}"
 						},
 						"url": {
-							"raw": "http://localhost:5000/api/trackers/62/update-option-info",
+							"raw": "http://localhost:5000/api/trackers/227/update-option-info",
 							"protocol": "http",
 							"host": [
 								"localhost"
@@ -850,7 +1388,7 @@
 							"path": [
 								"api",
 								"trackers",
-								"62",
+								"227",
 								"update-option-info"
 							]
 						}
@@ -865,7 +1403,7 @@
 							"bearer": [
 								{
 									"key": "token",
-									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MjE4NDA5OCwianRpIjoiOWM5Y2Y4YzYtNzM2MS00NGVmLTg2ZWMtMWQxMWU2NjI0OTc0IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjIxODQwOTgsImV4cCI6MTc2MjE4NzY5OH0.jlc7XG9xs13RnynWGUUYDjxmy4KYn4ECTJo_fLnEQqw",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2Mjg1MjEyMSwianRpIjoiOTQ4YWUzNzctMGI2OC00ZjU3LWE1ZjgtYzFlNDY0MTA2YzBlIiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjYiLCJuYmYiOjE3NjI4NTIxMjEsImV4cCI6MTc2Mjg1NTcyMX0.S_cNFTv0UWDPLEcooibW4-jKXnRcJCNWNi_IRXiC-z8",
 									"type": "string"
 								}
 							]
@@ -873,7 +1411,7 @@
 						"method": "GET",
 						"header": [],
 						"url": {
-							"raw": "http://localhost:5000/api/trackers//40/options",
+							"raw": "http://localhost:5000/api/trackers/108/options",
 							"protocol": "http",
 							"host": [
 								"localhost"
@@ -882,8 +1420,7 @@
 							"path": [
 								"api",
 								"trackers",
-								"",
-								"40",
+								"108",
 								"options"
 							]
 						}
@@ -930,7 +1467,7 @@
 							"bearer": [
 								{
 									"key": "token",
-									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MTgzOTQ1NiwianRpIjoiMTlhOTljNGYtOWJiZi00ZWU3LWEzZjgtZTNkODEyYWQxZTRkIiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjE4Mzk0NTYsImV4cCI6MTc2MTg0MzA1Nn0.KTZXMGe8TCENklG9FWNh48--OU07kpsYEXHHzuprhi0",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2Mjg1MjEyMSwianRpIjoiOTQ4YWUzNzctMGI2OC00ZjU3LWE1ZjgtYzFlNDY0MTA2YzBlIiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjYiLCJuYmYiOjE3NjI4NTIxMjEsImV4cCI6MTc2Mjg1NTcyMX0.S_cNFTv0UWDPLEcooibW4-jKXnRcJCNWNi_IRXiC-z8",
 									"type": "string"
 								}
 							]
@@ -945,7 +1482,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\r\n    \"new_order\": 4\r\n}",
+							"raw": "{\r\n    \"new_order\": 2\r\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -953,7 +1490,7 @@
 							}
 						},
 						"url": {
-							"raw": "http://localhost:5000/api/trackers/48/update-option-order",
+							"raw": "http://localhost:5000/api/trackers/227/update-option-order",
 							"protocol": "http",
 							"host": [
 								"localhost"
@@ -962,7 +1499,7 @@
 							"path": [
 								"api",
 								"trackers",
-								"48",
+								"227",
 								"update-option-order"
 							]
 						}
@@ -977,7 +1514,7 @@
 							"bearer": [
 								{
 									"key": "token",
-									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MjE4NDA5OCwianRpIjoiOWM5Y2Y4YzYtNzM2MS00NGVmLTg2ZWMtMWQxMWU2NjI0OTc0IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjIxODQwOTgsImV4cCI6MTc2MjE4NzY5OH0.jlc7XG9xs13RnynWGUUYDjxmy4KYn4ECTJo_fLnEQqw",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2Mjg1MjEyMSwianRpIjoiOTQ4YWUzNzctMGI2OC00ZjU3LWE1ZjgtYzFlNDY0MTA2YzBlIiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjYiLCJuYmYiOjE3NjI4NTIxMjEsImV4cCI6MTc2Mjg1NTcyMX0.S_cNFTv0UWDPLEcooibW4-jKXnRcJCNWNi_IRXiC-z8",
 									"type": "string"
 								}
 							]
@@ -992,10 +1529,10 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\r\n    \"options_to_delete\":[69,70]\r\n\r\n}"
+							"raw": "{\r\n    \"options_to_delete\":[227,228]\r\n\r\n}"
 						},
 						"url": {
-							"raw": "http://localhost:5000/api/trackers/40/bulk-delete-options",
+							"raw": "http://localhost:5000/api/trackers/5/bulk-delete-options",
 							"protocol": "http",
 							"host": [
 								"localhost"
@@ -1004,7 +1541,7 @@
 							"path": [
 								"api",
 								"trackers",
-								"40",
+								"5",
 								"bulk-delete-options"
 							]
 						}
@@ -1019,7 +1556,7 @@
 							"bearer": [
 								{
 									"key": "token",
-									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MjM2MzkyNiwianRpIjoiMjFhOTQxMjUtN2RjZC00NjgyLTg2MWEtYTdjMGM1YzdjOWRjIiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjIzNjM5MjYsImV4cCI6MTc2MjM2NzUyNn0.ld--krA2G-iElih20purLbqj7Cahta1cXFk8nYkNQAQ",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2Mjg1MjEyMSwianRpIjoiOTQ4YWUzNzctMGI2OC00ZjU3LWE1ZjgtYzFlNDY0MTA2YzBlIiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjYiLCJuYmYiOjE3NjI4NTIxMjEsImV4cCI6MTc2Mjg1NTcyMX0.S_cNFTv0UWDPLEcooibW4-jKXnRcJCNWNi_IRXiC-z8",
 									"type": "string"
 								}
 							]
@@ -1027,7 +1564,7 @@
 						"method": "PATCH",
 						"header": [],
 						"url": {
-							"raw": "http://localhost:5000/api/trackers/67/toggle-option-active-status",
+							"raw": "http://localhost:5000/api/trackers/225/toggle-option-active-status",
 							"protocol": "http",
 							"host": [
 								"localhost"
@@ -1036,7 +1573,7 @@
 							"path": [
 								"api",
 								"trackers",
-								"67",
+								"225",
 								"toggle-option-active-status"
 							]
 						}
@@ -1056,7 +1593,7 @@
 							"bearer": [
 								{
 									"key": "token",
-									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MjE4NDA5OCwianRpIjoiOWM5Y2Y4YzYtNzM2MS00NGVmLTg2ZWMtMWQxMWU2NjI0OTc0IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjIxODQwOTgsImV4cCI6MTc2MjE4NzY5OH0.jlc7XG9xs13RnynWGUUYDjxmy4KYn4ECTJo_fLnEQqw",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2Mjg1MjEyMSwianRpIjoiOTQ4YWUzNzctMGI2OC00ZjU3LWE1ZjgtYzFlNDY0MTA2YzBlIiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjYiLCJuYmYiOjE3NjI4NTIxMjEsImV4cCI6MTc2Mjg1NTcyMX0.S_cNFTv0UWDPLEcooibW4-jKXnRcJCNWNi_IRXiC-z8",
 									"type": "string"
 								}
 							]
@@ -1087,7 +1624,7 @@
 							"bearer": [
 								{
 									"key": "token",
-									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MjE4NDA5OCwianRpIjoiOWM5Y2Y4YzYtNzM2MS00NGVmLTg2ZWMtMWQxMWU2NjI0OTc0IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjIxODQwOTgsImV4cCI6MTc2MjE4NzY5OH0.jlc7XG9xs13RnynWGUUYDjxmy4KYn4ECTJo_fLnEQqw",
+									"value": "{{auth_token}}",
 									"type": "string"
 								}
 							]
@@ -1095,7 +1632,7 @@
 						"method": "GET",
 						"header": [],
 						"url": {
-							"raw": "http://localhost:5000/api/trackers/20/export-config",
+							"raw": "http://localhost:5000/api/trackers/32/export-config",
 							"protocol": "http",
 							"host": [
 								"localhost"
@@ -1104,7 +1641,7 @@
 							"path": [
 								"api",
 								"trackers",
-								"20",
+								"32",
 								"export-config"
 							]
 						}
@@ -1114,8 +1651,1392 @@
 				{
 					"name": "Get data schema with active and non active fields and options",
 					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2Mjg1MjEyMSwianRpIjoiOTQ4YWUzNzctMGI2OC00ZjU3LWE1ZjgtYzFlNDY0MTA2YzBlIiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjYiLCJuYmYiOjE3NjI4NTIxMjEsImV4cCI6MTc2Mjg1NTcyMX0.S_cNFTv0UWDPLEcooibW4-jKXnRcJCNWNi_IRXiC-z8",
+									"type": "string"
+								}
+							]
+						},
 						"method": "GET",
-						"header": []
+						"header": [],
+						"url": {
+							"raw": "http://localhost:5000/api/trackers/33/all-inclusive-data-schema",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "5000",
+							"path": [
+								"api",
+								"trackers",
+								"33",
+								"all-inclusive-data-schema"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Data Tracking",
+			"item": [
+				{
+					"name": "ANALYTICS",
+					"item": [
+						{
+							"name": "insights and data sufficiency analysis",
+							"item": [
+								{
+									"name": "get analytics insights about the eligibility of a field to be analysed successfully",
+									"request": {
+										"auth": {
+											"type": "bearer",
+											"bearer": [
+												{
+													"key": "token",
+													"value": "{{auth_token}}",
+													"type": "string"
+												}
+											]
+										},
+										"method": "GET",
+										"header": [],
+										"url": {
+											"raw": "http://localhost:5000/api/data-tracking/33/get-insights-for-field?field_name=energy&time_range=all&option=level",
+											"protocol": "http",
+											"host": [
+												"localhost"
+											],
+											"port": "5000",
+											"path": [
+												"api",
+												"data-tracking",
+												"33",
+												"get-insights-for-field"
+											],
+											"query": [
+												{
+													"key": "field_name",
+													"value": "energy"
+												},
+												{
+													"key": "time_range",
+													"value": "all"
+												},
+												{
+													"key": "option",
+													"value": "level"
+												}
+											]
+										}
+									},
+									"response": []
+								},
+								{
+									"name": "get analytics insights about all fields available in data",
+									"request": {
+										"auth": {
+											"type": "bearer",
+											"bearer": [
+												{
+													"key": "token",
+													"value": "{{auth_token}}",
+													"type": "string"
+												}
+											]
+										},
+										"method": "GET",
+										"header": [],
+										"url": {
+											"raw": "http://localhost:5000/api/data-tracking/33/get-all-insights?&time_range=month",
+											"protocol": "http",
+											"host": [
+												"localhost"
+											],
+											"port": "5000",
+											"path": [
+												"api",
+												"data-tracking",
+												"33",
+												"get-all-insights"
+											],
+											"query": [
+												{
+													"key": null,
+													"value": null
+												},
+												{
+													"key": "time_range",
+													"value": "month"
+												}
+											]
+										}
+									},
+									"response": []
+								}
+							]
+						},
+						{
+							"name": "practical analytics",
+							"item": [
+								{
+									"name": "get unified analysis",
+									"request": {
+										"auth": {
+											"type": "bearer",
+											"bearer": [
+												{
+													"key": "token",
+													"value": "{{auth_token}}",
+													"type": "string"
+												}
+											]
+										},
+										"method": "GET",
+										"header": [],
+										"url": {
+											"raw": "http://localhost:5000/api/data-tracking/33/analyze?field_name=sleep&time_range=all&option=hours",
+											"protocol": "http",
+											"host": [
+												"localhost"
+											],
+											"port": "5000",
+											"path": [
+												"api",
+												"data-tracking",
+												"33",
+												"analyze"
+											],
+											"query": [
+												{
+													"key": "field_name",
+													"value": "sleep"
+												},
+												{
+													"key": "time_range",
+													"value": "all"
+												},
+												{
+													"key": "option",
+													"value": "hours"
+												}
+											]
+										}
+									},
+									"response": []
+								},
+								{
+									"name": "get analysis bound by time evolution of a field",
+									"request": {
+										"auth": {
+											"type": "bearer",
+											"bearer": [
+												{
+													"key": "token",
+													"value": "{{auth_token}}",
+													"type": "string"
+												}
+											]
+										},
+										"method": "GET",
+										"header": [],
+										"url": {
+											"raw": "http://localhost:5000/api/data-tracking/33/time-evolution-analysis?field_name=discharge&start_date=2025-08-11&end_date=2025-09-01&time_range=3_weeks&option=amount",
+											"protocol": "http",
+											"host": [
+												"localhost"
+											],
+											"port": "5000",
+											"path": [
+												"api",
+												"data-tracking",
+												"33",
+												"time-evolution-analysis"
+											],
+											"query": [
+												{
+													"key": "field_name",
+													"value": "discharge"
+												},
+												{
+													"key": "start_date",
+													"value": "2025-08-11"
+												},
+												{
+													"key": "end_date",
+													"value": "2025-09-01"
+												},
+												{
+													"key": "time_range",
+													"value": "3_weeks"
+												},
+												{
+													"key": "option",
+													"value": "amount"
+												}
+											]
+										}
+									},
+									"response": []
+								},
+								{
+									"name": "get general tracker analysis",
+									"request": {
+										"auth": {
+											"type": "bearer",
+											"bearer": [
+												{
+													"key": "token",
+													"value": "{{auth_token}}",
+													"type": "string"
+												}
+											]
+										},
+										"method": "GET",
+										"header": [],
+										"url": {
+											"raw": "http://localhost:5000/api/data-tracking/33/general-tracker-analysis",
+											"protocol": "http",
+											"host": [
+												"localhost"
+											],
+											"port": "5000",
+											"path": [
+												"api",
+												"data-tracking",
+												"33",
+												"general-tracker-analysis"
+											]
+										}
+									},
+									"response": []
+								}
+							]
+						},
+						{
+							"name": "Cycle analytics",
+							"item": [
+								{
+									"name": "Calendar views",
+									"item": [
+										{
+											"name": "get cycle calendar",
+											"request": {
+												"auth": {
+													"type": "bearer",
+													"bearer": [
+														{
+															"key": "token",
+															"value": "{{auth_token}}",
+															"type": "string"
+														}
+													]
+												},
+												"method": "GET",
+												"header": [],
+												"url": {
+													"raw": "http://localhost:5000/api/data-tracking/33/calendar",
+													"protocol": "http",
+													"host": [
+														"localhost"
+													],
+													"port": "5000",
+													"path": [
+														"api",
+														"data-tracking",
+														"33",
+														"calendar"
+													]
+												}
+											},
+											"response": []
+										},
+										{
+											"name": "get calendar overview",
+											"request": {
+												"auth": {
+													"type": "bearer",
+													"bearer": [
+														{
+															"key": "token",
+															"value": "{{auth_token}}",
+															"type": "string"
+														}
+													]
+												},
+												"method": "GET",
+												"header": [],
+												"url": {
+													"raw": "http://localhost:5000/api/data-tracking/33/calendar/overview",
+													"protocol": "http",
+													"host": [
+														"localhost"
+													],
+													"port": "5000",
+													"path": [
+														"api",
+														"data-tracking",
+														"33",
+														"calendar",
+														"overview"
+													]
+												}
+											},
+											"response": []
+										}
+									]
+								},
+								{
+									"name": "Pattern recognition",
+									"item": [
+										{
+											"name": "pattern summary",
+											"request": {
+												"auth": {
+													"type": "bearer",
+													"bearer": [
+														{
+															"key": "token",
+															"value": "{{auth_token}}",
+															"type": "string"
+														}
+													]
+												},
+												"method": "GET",
+												"header": [],
+												"url": {
+													"raw": "http://localhost:5000/api/data-tracking/33/pattern-summary?fields=mood,discharge",
+													"protocol": "http",
+													"host": [
+														"localhost"
+													],
+													"port": "5000",
+													"path": [
+														"api",
+														"data-tracking",
+														"33",
+														"pattern-summary"
+													],
+													"query": [
+														{
+															"key": "fields",
+															"value": "mood,discharge"
+														}
+													]
+												}
+											},
+											"response": []
+										},
+										{
+											"name": "detect patterns in a field",
+											"request": {
+												"auth": {
+													"type": "bearer",
+													"bearer": [
+														{
+															"key": "token",
+															"value": "{{auth_token}}",
+															"type": "string"
+														}
+													]
+												},
+												"method": "GET",
+												"header": [],
+												"url": {
+													"raw": "http://localhost:5000/api/data-tracking/33/detect-patterns?field_name=discharge&option=consistency",
+													"protocol": "http",
+													"host": [
+														"localhost"
+													],
+													"port": "5000",
+													"path": [
+														"api",
+														"data-tracking",
+														"33",
+														"detect-patterns"
+													],
+													"query": [
+														{
+															"key": "field_name",
+															"value": "discharge"
+														},
+														{
+															"key": "option",
+															"value": "consistency"
+														}
+													]
+												}
+											},
+											"response": []
+										},
+										{
+											"name": "reeccuring patterns in period tracker specific fields",
+											"request": {
+												"auth": {
+													"type": "bearer",
+													"bearer": [
+														{
+															"key": "token",
+															"value": "{{auth_token}}",
+															"type": "string"
+														}
+													]
+												},
+												"method": "GET",
+												"header": [],
+												"url": {
+													"raw": "http://localhost:5000/api/data-tracking/33/recurring-symptom-patterns?symptom_field=discharge&option=amount",
+													"protocol": "http",
+													"host": [
+														"localhost"
+													],
+													"port": "5000",
+													"path": [
+														"api",
+														"data-tracking",
+														"33",
+														"recurring-symptom-patterns"
+													],
+													"query": [
+														{
+															"key": "symptom_field",
+															"value": "discharge"
+														},
+														{
+															"key": "option",
+															"value": "amount"
+														}
+													]
+												}
+											},
+											"response": []
+										}
+									]
+								},
+								{
+									"name": "analyze a symptom by phase",
+									"request": {
+										"auth": {
+											"type": "bearer",
+											"bearer": [
+												{
+													"key": "token",
+													"value": "{{auth_token}}",
+													"type": "string"
+												}
+											]
+										},
+										"method": "GET",
+										"header": [],
+										"url": {
+											"raw": "http://localhost:5000/api/data-tracking/33/symptoms-by-phase?symptom_field=mood&option=overall&months=12",
+											"protocol": "http",
+											"host": [
+												"localhost"
+											],
+											"port": "5000",
+											"path": [
+												"api",
+												"data-tracking",
+												"33",
+												"symptoms-by-phase"
+											],
+											"query": [
+												{
+													"key": "symptom_field",
+													"value": "mood"
+												},
+												{
+													"key": "option",
+													"value": "overall"
+												},
+												{
+													"key": "months",
+													"value": "12"
+												}
+											]
+										}
+									},
+									"response": []
+								},
+								{
+									"name": "general cycle analysis",
+									"request": {
+										"auth": {
+											"type": "bearer",
+											"bearer": [
+												{
+													"key": "token",
+													"value": "{{auth_token}}",
+													"type": "string"
+												}
+											]
+										},
+										"method": "GET",
+										"header": [],
+										"url": {
+											"raw": "http://localhost:5000/api/data-tracking/33/general-cycle-analysis",
+											"protocol": "http",
+											"host": [
+												"localhost"
+											],
+											"port": "5000",
+											"path": [
+												"api",
+												"data-tracking",
+												"33",
+												"general-cycle-analysis"
+											]
+										}
+									},
+									"response": []
+								}
+							]
+						},
+						{
+							"name": "regular trackers calendar",
+							"item": [
+								{
+									"name": "get calendar for tracker with information",
+									"request": {
+										"auth": {
+											"type": "bearer",
+											"bearer": [
+												{
+													"key": "token",
+													"value": "{{auth_token}}",
+													"type": "string"
+												}
+											]
+										},
+										"method": "GET",
+										"header": [],
+										"url": {
+											"raw": "http://localhost:5000/api/data-tracking/32/tracker-calendar",
+											"protocol": "http",
+											"host": [
+												"localhost"
+											],
+											"port": "5000",
+											"path": [
+												"api",
+												"data-tracking",
+												"32",
+												"tracker-calendar"
+											]
+										}
+									},
+									"response": []
+								},
+								{
+									"name": "get racker calendar overview( 12months default)",
+									"request": {
+										"auth": {
+											"type": "bearer",
+											"bearer": [
+												{
+													"key": "token",
+													"value": "{{auth_token}}",
+													"type": "string"
+												}
+											]
+										},
+										"method": "GET",
+										"header": [],
+										"url": {
+											"raw": "http://localhost:5000/api/data-tracking/32/tracker-calendar/overview",
+											"protocol": "http",
+											"host": [
+												"localhost"
+											],
+											"port": "5000",
+											"path": [
+												"api",
+												"data-tracking",
+												"32",
+												"tracker-calendar",
+												"overview"
+											]
+										}
+									},
+									"response": []
+								}
+							]
+						},
+						{
+							"name": "Correlations",
+							"item": [
+								{
+									"name": "general correlations",
+									"request": {
+										"auth": {
+											"type": "bearer",
+											"bearer": [
+												{
+													"key": "token",
+													"value": "{{auth_token}}",
+													"type": "string"
+												}
+											]
+										},
+										"method": "GET",
+										"header": [],
+										"url": {
+											"raw": "http://localhost:5000/api/data-tracking/32/correlations",
+											"protocol": "http",
+											"host": [
+												"localhost"
+											],
+											"port": "5000",
+											"path": [
+												"api",
+												"data-tracking",
+												"32",
+												"correlations"
+											]
+										}
+									},
+									"response": []
+								},
+								{
+									"name": "get correlations of a specific field",
+									"request": {
+										"auth": {
+											"type": "bearer",
+											"bearer": [
+												{
+													"key": "token",
+													"value": "{{auth_token}}",
+													"type": "string"
+												}
+											]
+										},
+										"method": "GET",
+										"header": [],
+										"url": {
+											"raw": "http://localhost:5000/api/data-tracking/32/correlations/field?field_name=mood&correlation_type=dual",
+											"protocol": "http",
+											"host": [
+												"localhost"
+											],
+											"port": "5000",
+											"path": [
+												"api",
+												"data-tracking",
+												"32",
+												"correlations",
+												"field"
+											],
+											"query": [
+												{
+													"key": "field_name",
+													"value": "mood"
+												},
+												{
+													"key": "correlation_type",
+													"value": "dual"
+												}
+											]
+										}
+									},
+									"response": []
+								},
+								{
+									"name": "analayze correzlation between given fields",
+									"request": {
+										"auth": {
+											"type": "bearer",
+											"bearer": [
+												{
+													"key": "token",
+													"value": "{{auth_token}}",
+													"type": "string"
+												}
+											]
+										},
+										"method": "GET",
+										"header": [],
+										"url": {
+											"raw": "http://localhost:5000/api/data-tracking/32/correlations/specific?field1=mood.overall&field2=energy.level&field3=sleep.hours",
+											"protocol": "http",
+											"host": [
+												"localhost"
+											],
+											"port": "5000",
+											"path": [
+												"api",
+												"data-tracking",
+												"32",
+												"correlations",
+												"specific"
+											],
+											"query": [
+												{
+													"key": "field1",
+													"value": "mood.overall"
+												},
+												{
+													"key": "field2",
+													"value": "energy.level"
+												},
+												{
+													"key": "field3",
+													"value": "sleep.hours"
+												}
+											]
+										}
+									},
+									"response": []
+								}
+							]
+						},
+						{
+							"name": "Charts",
+							"item": [
+								{
+									"name": "get unified chart",
+									"request": {
+										"auth": {
+											"type": "bearer",
+											"bearer": [
+												{
+													"key": "token",
+													"value": "{{auth_token}}",
+													"type": "string"
+												}
+											]
+										},
+										"method": "GET",
+										"header": [],
+										"url": {
+											"raw": "http://localhost:5000/api/data-tracking/33/chart?field_name=mood&option=overall&chart_type=box_plot",
+											"protocol": "http",
+											"host": [
+												"localhost"
+											],
+											"port": "5000",
+											"path": [
+												"api",
+												"data-tracking",
+												"33",
+												"chart"
+											],
+											"query": [
+												{
+													"key": "field_name",
+													"value": "mood"
+												},
+												{
+													"key": "time_range",
+													"value": "month",
+													"disabled": true
+												},
+												{
+													"key": "option",
+													"value": "overall"
+												},
+												{
+													"key": "start_date",
+													"value": "2025-10-04",
+													"disabled": true
+												},
+												{
+													"key": "chart_type",
+													"value": "box_plot"
+												}
+											]
+										}
+									},
+									"response": []
+								},
+								{
+									"name": "get time evolution trend chart",
+									"request": {
+										"auth": {
+											"type": "bearer",
+											"bearer": [
+												{
+													"key": "token",
+													"value": "{{auth_token}}",
+													"type": "string"
+												}
+											]
+										},
+										"method": "GET",
+										"header": [],
+										"url": {
+											"raw": "http://localhost:5000/api/data-tracking/33/time-evolution-chart?field_name=discharge&start_date=2025-08-11&end_date=2025-09-01&time_range=3_weeks&option=amount&chart_type=stacked_bar",
+											"protocol": "http",
+											"host": [
+												"localhost"
+											],
+											"port": "5000",
+											"path": [
+												"api",
+												"data-tracking",
+												"33",
+												"time-evolution-chart"
+											],
+											"query": [
+												{
+													"key": "field_name",
+													"value": "discharge"
+												},
+												{
+													"key": "start_date",
+													"value": "2025-08-11"
+												},
+												{
+													"key": "end_date",
+													"value": "2025-09-01"
+												},
+												{
+													"key": "time_range",
+													"value": "3_weeks"
+												},
+												{
+													"key": "option",
+													"value": "amount"
+												},
+												{
+													"key": "chart_type",
+													"value": "stacked_bar"
+												}
+											]
+										}
+									},
+									"response": []
+								},
+								{
+									"name": "get comparison chart",
+									"request": {
+										"method": "GET",
+										"header": []
+									},
+									"response": []
+								},
+								{
+									"name": "get correlation chart",
+									"request": {
+										"method": "GET",
+										"header": []
+									},
+									"response": []
+								},
+								{
+									"name": "get patterns chart",
+									"request": {
+										"method": "GET",
+										"header": []
+									},
+									"response": []
+								}
+							]
+						},
+						{
+							"name": "Comparisons",
+							"item": [
+								{
+									"name": "compare fields",
+									"request": {
+										"auth": {
+											"type": "bearer",
+											"bearer": [
+												{
+													"key": "token",
+													"value": "{{auth_token}}",
+													"type": "string"
+												}
+											]
+										},
+										"method": "GET",
+										"header": [],
+										"url": {
+											"raw": "http://localhost:5000/api/data-tracking/32/compare",
+											"protocol": "http",
+											"host": [
+												"localhost"
+											],
+											"port": "5000",
+											"path": [
+												"api",
+												"data-tracking",
+												"32",
+												"compare"
+											]
+										}
+									},
+									"response": []
+								},
+								{
+									"name": "compare custom date ranges",
+									"request": {
+										"auth": {
+											"type": "bearer",
+											"bearer": [
+												{
+													"key": "token",
+													"value": "{{auth_token}}",
+													"type": "string"
+												}
+											]
+										},
+										"method": "GET",
+										"header": [],
+										"url": {
+											"raw": "http://localhost:5000/api/data-tracking/32/compare-custom?target_start=2025-10-17&target_end=2025-11-16&comparison_start=2025-11-17&comparison_end=2025-12-17",
+											"protocol": "http",
+											"host": [
+												"localhost"
+											],
+											"port": "5000",
+											"path": [
+												"api",
+												"data-tracking",
+												"32",
+												"compare-custom"
+											],
+											"query": [
+												{
+													"key": "target_start",
+													"value": "2025-10-17"
+												},
+												{
+													"key": "target_end",
+													"value": "2025-11-16"
+												},
+												{
+													"key": "comparison_start",
+													"value": "2025-11-17"
+												},
+												{
+													"key": "comparison_end",
+													"value": "2025-12-17"
+												}
+											]
+										}
+									},
+									"response": []
+								}
+							]
+						}
+					]
+				},
+				{
+					"name": "retrieve the data tracking of a tracker",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:5000/api/data-tracking/20/get-all-tracking-data?page=1&per_page=2",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "5000",
+							"path": [
+								"api",
+								"data-tracking",
+								"20",
+								"get-all-tracking-data"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "per_page",
+									"value": "2"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "add a new data entry to a tracker",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2Mjk1ODg3OCwianRpIjoiZmZmYmUwMjUtY2I3OC00MzA1LTlkOWUtODJlZDAxNjExNTcxIiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NjI5NTg4NzgsImV4cCI6MTc2Mjk2MjQ3OH0.xH3w-tT0IaK-a95KoHTUVz5bbzLEHarPbIzHYOIWt3Q",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n  \"data\": {\r\n    \"mood\": {\r\n      \"overall\": 4\r\n    }\r\n  }\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:5000/api/data-tracking/20/add-tracking-data",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "5000",
+							"path": [
+								"api",
+								"data-tracking",
+								"20",
+								"add-tracking-data"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "save tracking data",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n  \"data\": {\r\n    \"symptoms\": {\r\n      \"physical\": [\"acne\", \"bloating\"]\r\n    }\r\n  }\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:5000/api/data-tracking/33/save-tracking-data",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "5000",
+							"path": [
+								"api",
+								"data-tracking",
+								"33",
+								"save-tracking-data"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "update a data entry in a specific date",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n  \"data\": {\r\n    \"mood\": {\r\n      \"overall\": null\r\n    }\r\n  },\r\n  \"entry_date\": \"2025-11-12\"\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:5000/api/data-tracking/33/update-tracking-data",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "5000",
+							"path": [
+								"api",
+								"data-tracking",
+								"33",
+								"update-tracking-data"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "retrieving tracking data between a specific range of time",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2Mjk1ODk3MywianRpIjoiMDA2MmJiNzYtZWFiZC00ZTBjLThjOWItZjlhZTI3YjZlNzllIiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjYiLCJuYmYiOjE3NjI5NTg5NzMsImV4cCI6MTc2Mjk2MjU3M30.K6YNr87v2F6H38e2_k8t9D7X1g-cwbizTelLlogLCQQ",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "http://localhost:5000/api/data-tracking/33/get-tracking-data-range?start_date=2025-11-01&end_date=2025-11-12",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "5000",
+							"path": [
+								"api",
+								"data-tracking",
+								"33",
+								"get-tracking-data-range"
+							],
+							"query": [
+								{
+									"key": "start_date",
+									"value": "2025-11-01"
+								},
+								{
+									"key": "end_date",
+									"value": "2025-11-12"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "retrieve entry data on a specific date",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2Mjk1ODk3MywianRpIjoiMDA2MmJiNzYtZWFiZC00ZTBjLThjOWItZjlhZTI3YjZlNzllIiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjYiLCJuYmYiOjE3NjI5NTg5NzMsImV4cCI6MTc2Mjk2MjU3M30.K6YNr87v2F6H38e2_k8t9D7X1g-cwbizTelLlogLCQQ",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:5000/api/data-tracking/33/get-tracking-data-by-date?entry_date=2025-11-12",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "5000",
+							"path": [
+								"api",
+								"data-tracking",
+								"33",
+								"get-tracking-data-by-date"
+							],
+							"query": [
+								{
+									"key": "end_date",
+									"value": "2025-11-5",
+									"disabled": true
+								},
+								{
+									"key": "entry_date",
+									"value": "2025-11-12"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Bulk delete data from a start date to an end date specified",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:5000/api/data-tracking/20/bulk-delete-tracking-data?start_date=2024-11-01&end_date=2024-11-30",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "5000",
+							"path": [
+								"api",
+								"data-tracking",
+								"20",
+								"bulk-delete-tracking-data"
+							],
+							"query": [
+								{
+									"key": "start_date",
+									"value": "2024-11-01"
+								},
+								{
+									"key": "end_date",
+									"value": "2024-11-30"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Buk create data for a range of a time imported from a csv file",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "csv_file",
+									"type": "file",
+									"src": "/C:/Users/isrqe/OneDrive/Desktop/mobile applications/health_tracker/backend/workout_tracker_sample_data.csv"
+								}
+							]
+						},
+						"url": {
+							"raw": "http://localhost:5000/api/data-tracking/32/bulk-create-tracking-data",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "5000",
+							"path": [
+								"api",
+								"data-tracking",
+								"32",
+								"bulk-create-tracking-data"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "export tracking data of a tracker of specific time range",
+					"protocolProfileBehavior": {
+						"disableBodyPruning": true
+					},
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "csv_file",
+									"type": "file",
+									"src": "/C:/Users/isrqe/OneDrive/Desktop/mobile applications/health_tracker/backend/sample_period_tracker_aug_oct_2025.csv"
+								}
+							]
+						},
+						"url": {
+							"raw": "http://localhost:5000/api/data-tracking/33/export-tracking-data?start_date=2025-10-01&end_date=2025-11-12",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "5000",
+							"path": [
+								"api",
+								"data-tracking",
+								"33",
+								"export-tracking-data"
+							],
+							"query": [
+								{
+									"key": "start_date",
+									"value": "2025-10-01"
+								},
+								{
+									"key": "end_date",
+									"value": "2025-11-12"
+								}
+							]
+						}
 					},
 					"response": []
 				}
