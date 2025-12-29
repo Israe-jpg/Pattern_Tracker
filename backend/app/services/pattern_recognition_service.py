@@ -140,6 +140,9 @@ class PatternRecognitionService:
             detected_patterns['patterns']
         )
         
+        # Add has_patterns flag for easier checking
+        detected_patterns['has_patterns'] = len(detected_patterns['patterns']) > 0
+        
         return detected_patterns
     
     @staticmethod

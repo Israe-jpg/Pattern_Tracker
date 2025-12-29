@@ -1139,6 +1139,11 @@ def get_unified_chart(tracker_id: int):
     except Exception as e:
         return error_response(f"Failed to get unified chart: {str(e)}", 500)
 
+
+#--------------------------------------------------
+# CHART ENDPOINTS
+#--------------------------------------------------
+
 # time evolution analysis and charts
 
 @data_tracking_bp.route('/<int:tracker_id>/time-evolution-analysis', methods=['GET'])
@@ -1240,6 +1245,234 @@ def get_time_evolution_chart(tracker_id: int):
         return error_response(str(e), 400)
     except Exception as e:
         return error_response(f"Failed to get unified chart: {str(e)}", 500)
+
+
+@data_tracking_bp.route('/<int:tracker_id>/comparison-chart', methods=['GET'])
+@jwt_required()
+def get_comparison_chart(tracker_id: int):
+    """
+    Generate comparison chart showing current vs previous period.
+    
+    Chart types:
+    - bar: Side-by-side bars comparing target vs comparison period (default)
+    - grouped_bar: Grouped bars for multiple fields
+    - delta: Delta/change visualization
+    
+    Query params:
+    - comparison_type: "week", "month", or "general" (default: "month")
+    - chart_type: Chart visualization type (default: "bar")
+    - field_name: Optional specific field to chart (if not provided, shows top changed fields)
+    
+    Returns: PNG image
+    
+    Examples:
+    - GET /api/data-tracking/1/comparison-chart?comparison_type=month
+    - GET /api/data-tracking/1/comparison-chart?comparison_type=week&field_name=mood.overall
+    """
+    try:
+        _, user_id = get_current_user()
+        tracker = verify_tracker_ownership(tracker_id, user_id)
+        
+        comparison_type = request.args.get('comparison_type', 'month')
+        chart_type = request.args.get('chart_type', 'bar')
+        field_name = request.args.get('field_name')  # Optional
+        
+        # Get comparison data
+        if comparison_type == 'week':
+            comparison_data = ComparisonService.compare_current_week_with_previous(tracker_id)
+        elif comparison_type == 'month':
+            comparison_data = ComparisonService.compare_current_month_with_previous(tracker_id)
+        else:  # general
+            months = request.args.get('months', type=int, default=5)
+            comparison_data = ComparisonService.get_general_summary(tracker_id, months=months)
+        
+        # Generate chart
+        from app.services.comparison_chart_service import ComparisonChartService
+        image_data = ComparisonChartService.generate_comparison_chart(
+            comparison_data,
+            chart_type=chart_type,
+            field_name=field_name
+        )
+        
+        # Build filename
+        filename = f'comparison_chart_{comparison_type}'
+        if field_name:
+            filename += f'_{field_name}'
+        filename += f'_{chart_type}.png'
+        
+        return Response(
+            image_data,
+            mimetype='image/png',
+            headers={
+                'Content-Disposition': f'inline; filename={filename}'
+            }
+        )
+    
+    except ValueError as e:
+        return error_response(str(e), 400)
+    except Exception as e:
+        return error_response(f"Failed to generate comparison chart: {str(e)}", 500)
+
+
+@data_tracking_bp.route('/<int:tracker_id>/correlation-chart', methods=['GET'])
+@jwt_required()
+def get_correlation_chart(tracker_id: int):
+    """
+    Generate correlation visualization chart.
+    
+    Chart types:
+    - bar: User-friendly bar chart with annotations (default, recommended)
+    - line: Same as bar, shows correlations as horizontal bars
+    - scatter: Scatter plot showing relationship between two numeric fields
+    - heatmap: Correlation heatmap for multiple fields
+    - network: Network diagram showing correlations
+    
+    Query params:
+    - chart_type: Chart visualization type (default: "bar")
+    - field_name: For field-specific correlation chart
+    - field1, field2: For specific pair scatter plot
+    - months: Number of months to analyze (default: 3)
+    
+    Returns: PNG image
+    
+    Examples:
+    - GET /api/data-tracking/1/correlation-chart (bar chart of all correlations)
+    - GET /api/data-tracking/1/correlation-chart?field_name=mood.overall (field-specific)
+    - GET /api/data-tracking/1/correlation-chart?field1=sleep.hours&field2=mood.overall&chart_type=scatter
+    """
+    try:
+        _, user_id = get_current_user()
+        tracker = verify_tracker_ownership(tracker_id, user_id)
+        
+        chart_type = request.args.get('chart_type', 'bar')
+        field_name = request.args.get('field_name')
+        field1 = request.args.get('field1')
+        field2 = request.args.get('field2')
+        months = request.args.get('months', type=int, default=3)
+        
+        # Get correlation data
+        if field1 and field2:
+            # Specific pair correlation
+            correlation_data = CorrelationService.analyze_specific_correlation(
+                tracker_id, field1, field2, months=months
+            )
+        elif field_name:
+            # Field-specific correlations
+            correlation_type = request.args.get('correlation_type', 'dual')
+            correlation_data = CorrelationService.analyze_field_correlations(
+                tracker_id, field_name, months=months, correlation_type=correlation_type
+            )
+        else:
+            # All correlations
+            correlation_data = CorrelationService.analyze_all_correlations(
+                tracker_id, months=months
+            )
+        
+        # Generate chart
+        from app.services.correlation_chart_service import CorrelationChartService
+        image_data = CorrelationChartService.generate_correlation_chart(
+            correlation_data,
+            chart_type=chart_type,
+            tracker_id=tracker_id
+        )
+        
+        # Build filename
+        filename = f'correlation_chart'
+        if field_name:
+            filename += f'_{field_name}'
+        elif field1 and field2:
+            filename += f'_{field1}_vs_{field2}'
+        filename += f'_{chart_type}.png'
+        
+        return Response(
+            image_data,
+            mimetype='image/png',
+            headers={
+                'Content-Disposition': f'inline; filename={filename}'
+            }
+        )
+    
+    except ValueError as e:
+        return error_response(str(e), 400)
+    except Exception as e:
+        return error_response(f"Failed to generate correlation chart: {str(e)}", 500)
+
+
+@data_tracking_bp.route('/<int:tracker_id>/pattern-chart', methods=['GET'])
+@jwt_required()
+def get_pattern_chart(tracker_id: int):
+    """
+    Generate pattern visualization chart.
+    
+    Chart types:
+    - heatmap: Day-of-week heatmap (default)
+    - calendar: Calendar view with pattern highlights
+    - polar: Polar/radar chart for cyclical patterns
+    - bar: Bar chart showing pattern frequencies
+    
+    Query params:
+    - field_name: Field to analyze (required)
+    - chart_type: Chart visualization type (default: "heatmap")
+    - months: Number of months to analyze (default: 3)
+    - option: Optional specific option for nested fields
+    
+    Returns: PNG image
+    
+    Examples:
+    - GET /api/data-tracking/1/pattern-chart?field_name=mood.overall
+    - GET /api/data-tracking/1/pattern-chart?field_name=sleep.hours&chart_type=calendar&months=6
+    """
+    try:
+        _, user_id = get_current_user()
+        tracker = verify_tracker_ownership(tracker_id, user_id)
+        
+        field_name = request.args.get('field_name')
+        if not field_name:
+            return error_response("field_name query parameter is required", 400)
+        
+        chart_type = request.args.get('chart_type', 'heatmap')
+        months = request.args.get('months', type=int, default=3)
+        option = request.args.get('option')
+        
+        # Get pattern data
+        pattern_data = PatternRecognitionService.detect_all_patterns(
+            tracker_id,
+            field_name,
+            option=option,
+            months=months,
+            min_confidence=0.5
+        )
+        
+        # Generate chart
+        from app.services.pattern_chart_service import PatternChartService
+        image_data = PatternChartService.generate_pattern_chart(
+            pattern_data,
+            tracker_id,
+            field_name,
+            chart_type=chart_type,
+            months=months
+        )
+        
+        # Build filename
+        filename = f'pattern_chart_{field_name}'
+        if option:
+            filename += f'_{option}'
+        filename += f'_{chart_type}_'
+        filename += f'{months}months.png'
+        
+        return Response(
+            image_data,
+            mimetype='image/png',
+            headers={
+                'Content-Disposition': f'inline; filename={filename}'
+            }
+        )
+    
+    except ValueError as e:
+        return error_response(str(e), 400)
+    except Exception as e:
+        return error_response(f"Failed to generate pattern chart: {str(e)}", 500)
+
 
 #-----------------------------------------------------
 #COMPARISON ROUTES (All Trackers)
