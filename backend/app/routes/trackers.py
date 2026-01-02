@@ -135,8 +135,29 @@ def ensure_category_fields_initialized(category: TrackerCategory) -> bool:
             field_group=CategoryService.PERIOD_TRACKER_KEY
         ).first() is not None
     
-    # If both baseline and category-specific fields exist, category is fully initialized
+    # If both baseline and category-specific fields exist, check if options need updating
     if baseline_fields_exist and category_specific_fields_exist:
+        # Update existing options that might be missing choices from nested structures
+        config = CategoryService._load_config()
+        baseline_schema = config.get('baseline', {})
+        
+        if category.name in CategoryService.PREBUILT_CATEGORIES:
+            config_key = CategoryService.PREBUILT_CATEGORIES[category.name]
+            specific_schema = config.get(config_key, {})
+            
+            # Update baseline fields
+            baseline_updated = CategoryService._update_existing_options_with_choices(
+                category.id, baseline_schema, 'baseline'
+            )
+            # Update category-specific fields
+            specific_updated = CategoryService._update_existing_options_with_choices(
+                category.id, specific_schema, config_key
+            )
+            
+            # Only commit if something was actually updated
+            if baseline_updated or specific_updated:
+                db.session.commit()
+        
         return False  # Already initialized
     
     # Initialize category properly (baseline + category-specific fields)

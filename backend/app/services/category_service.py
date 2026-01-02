@@ -540,9 +540,27 @@ class CategoryService:
         # Extract choices
         if 'enum' in option_schema:
             option_data['choices'] = option_schema['enum']
+        # For array types, check nested items for enum (e.g., activities.items.exercise_type.enum)
+        elif schema_type == 'array' and 'items' in option_schema:
+            items = option_schema['items']
+            # Check if items is a dict with nested structure
+            if isinstance(items, dict):
+                # Look for enum in nested properties (e.g., exercise_type.enum)
+                for key, value in items.items():
+                    if isinstance(value, dict) and 'enum' in value:
+                        option_data['choices'] = value['enum']
+                        # Also extract labels if available
+                        if 'labels' in value:
+                            option_data['choice_labels'] = value['labels']
+                        break
+                # If no nested enum found, check if items itself has enum
+                if 'choices' not in option_data and 'enum' in items:
+                    option_data['choices'] = items['enum']
+                    if 'labels' in items:
+                        option_data['choice_labels'] = items['labels']
         
-        # Extract labels
-        if 'labels' in option_schema:
+        # Extract labels (if not already extracted from nested structure)
+        if 'labels' in option_schema and 'choice_labels' not in option_data:
             option_data['choice_labels'] = option_schema['labels']
         
         # Extract other fields
@@ -551,6 +569,57 @@ class CategoryService:
                 option_data[key] = option_schema[key]
         
         return option_data
+    
+    @staticmethod
+    def _update_existing_options_with_choices(category_id: int, schema: Dict[str, Any], field_group: str) -> bool:
+        """
+        Update existing FieldOption objects that are missing choices from nested structures.
+        Returns True if any updates were made, False otherwise.
+        """
+        from sqlalchemy.orm.attributes import flag_modified
+        
+        updated = False
+        
+        for field_name, field_options in schema.items():
+            tracker_field = TrackerField.query.filter_by(
+                category_id=category_id,
+                field_name=field_name,
+                field_group=field_group
+            ).first()
+            
+            if not tracker_field:
+                continue
+            
+            for option_name, option_schema in field_options.items():
+                field_option = FieldOption.query.filter_by(
+                    tracker_field_id=tracker_field.id,
+                    option_name=option_name
+                ).first()
+                
+                if not field_option:
+                    continue
+                
+                # Check if this option should have choices but doesn't
+                schema_type = option_schema.get('type', 'string')
+                needs_choices = (
+                    (schema_type == 'array' and field_option.option_type == 'multiple_choice') or
+                    (schema_type == 'string' and 'enum' in option_schema and field_option.option_type == 'single_choice')
+                )
+                
+                if needs_choices and (not field_option.choices or len(field_option.choices) == 0):
+                    # Re-extract option data to get choices
+                    option_data = CategoryService._schema_to_option_data(option_name, option_schema)
+                    
+                    if 'choices' in option_data and option_data['choices']:
+                        field_option.choices = option_data['choices']
+                        if 'choice_labels' in option_data:
+                            field_option.choice_labels = option_data['choice_labels']
+                        flag_modified(field_option, 'choices')
+                        if 'choice_labels' in option_data:
+                            flag_modified(field_option, 'choice_labels')
+                        updated = True
+        
+        return updated
     
     # ========================================================================
     # FIELD OPERATIONS (for custom fields)

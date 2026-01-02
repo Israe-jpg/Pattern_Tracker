@@ -211,140 +211,196 @@ export default function LogSymptomsScreen({ route, navigation }) {
     }
   };
 
+  const renderOption = (field, option) => {
+    const optionLabel = option.display_label || option.option_name;
+    const currentValue = formData[field.field_name]?.[option.option_name];
+
+    switch (option.option_type) {
+      case "yes_no":
+        return (
+          <View key={option.id} style={styles.optionContainer}>
+            <Text style={styles.optionLabel}>{optionLabel}</Text>
+            <View style={styles.choiceButtons}>
+              <TouchableOpacity
+                style={[
+                  styles.choiceButton,
+                  currentValue === true && styles.choiceButtonSelected,
+                ]}
+                onPress={() => updateFieldValue(field.field_name, option.option_name, true)}
+              >
+                <Text
+                  style={[
+                    styles.choiceButtonText,
+                    currentValue === true && styles.choiceButtonTextSelected,
+                  ]}
+                >
+                  Yes
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.choiceButton,
+                  currentValue === false && styles.choiceButtonSelected,
+                ]}
+                onPress={() => updateFieldValue(field.field_name, option.option_name, false)}
+              >
+                <Text
+                  style={[
+                    styles.choiceButtonText,
+                    currentValue === false && styles.choiceButtonTextSelected,
+                  ]}
+                >
+                  No
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        );
+
+      case "single_choice":
+        return (
+          <View key={option.id} style={styles.optionContainer}>
+            <Text style={styles.optionLabel}>{optionLabel}</Text>
+            <View style={styles.choiceButtons}>
+              {option.choices?.map((choice) => {
+                const isSelected = currentValue === choice;
+                return (
+                  <TouchableOpacity
+                    key={choice}
+                    style={[
+                      styles.choiceButton,
+                      isSelected && styles.choiceButtonSelected,
+                    ]}
+                    onPress={() => updateFieldValue(field.field_name, option.option_name, choice)}
+                  >
+                    <Text
+                      style={[
+                        styles.choiceButtonText,
+                        isSelected && styles.choiceButtonTextSelected,
+                      ]}
+                    >
+                      {option.choice_labels?.[choice] || choice}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        );
+
+      case "multiple_choice":
+        const choices = option.choices || [];
+        if (choices.length === 0) {
+          console.warn(`Multiple choice option "${optionLabel}" has no choices:`, option);
+        }
+        return (
+          <View key={option.id} style={styles.optionContainer}>
+            <Text style={styles.optionLabel}>{optionLabel}</Text>
+            {choices.length > 0 ? (
+              <View style={styles.choiceButtons}>
+                {choices.map((choice) => {
+                  const selectedChoices = currentValue || [];
+                  const isSelected = selectedChoices.includes(choice);
+                  return (
+                    <TouchableOpacity
+                      key={choice}
+                      style={[
+                        styles.choiceButton,
+                        isSelected && styles.choiceButtonSelected,
+                      ]}
+                      onPress={() => {
+                        const newChoices = isSelected
+                          ? selectedChoices.filter((c) => c !== choice)
+                          : [...selectedChoices, choice];
+                        updateFieldValue(field.field_name, option.option_name, newChoices);
+                      }}
+                    >
+                      <Text
+                        style={[
+                          styles.choiceButtonText,
+                          isSelected && styles.choiceButtonTextSelected,
+                        ]}
+                      >
+                        {option.choice_labels?.[choice] || choice}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            ) : (
+              <Text style={styles.emptyChoicesText}>
+                No choices available for this option
+              </Text>
+            )}
+          </View>
+        );
+
+      case "rating":
+        return (
+          <View key={option.id} style={styles.optionContainer}>
+            <Text style={styles.optionLabel}>{optionLabel}</Text>
+            <SliderComponent
+              field={field}
+              option={option}
+              minValue={option.min_value || 0}
+              maxValue={option.max_value || 10}
+              currentValue={currentValue}
+              onValueChange={(value) => updateFieldValue(field.field_name, option.option_name, value)}
+            />
+          </View>
+        );
+
+      case "number_input":
+        return (
+          <View key={option.id} style={styles.optionContainer}>
+            <Text style={styles.optionLabel}>{optionLabel}</Text>
+            <TextInput
+              style={styles.numberInput}
+              keyboardType="numeric"
+              placeholder={option.placeholder || `Enter ${optionLabel}`}
+              value={currentValue?.toString() || ""}
+              onChangeText={(text) => {
+                const numValue = text ? parseFloat(text) : null;
+                updateFieldValue(field.field_name, option.option_name, numValue);
+              }}
+            />
+          </View>
+        );
+
+      case "text":
+      case "notes":
+        return (
+          <View key={option.id} style={styles.optionContainer}>
+            <Text style={styles.optionLabel}>{optionLabel}</Text>
+            <TextInput
+              style={styles.textInput}
+              multiline={option.option_type === "notes"}
+              numberOfLines={option.option_type === "notes" ? 4 : 1}
+              placeholder={option.placeholder || `Enter ${optionLabel}`}
+              value={currentValue || ""}
+              onChangeText={(text) => updateFieldValue(field.field_name, option.option_name, text)}
+              maxLength={option.max_length}
+            />
+          </View>
+        );
+
+      default:
+        return null;
+    }
+  };
+
   const renderField = (field) => {
     if (!field.options || field.options.length === 0) return null;
 
-    // If field has only one option and option name matches field label, don't show field label separately
-    const shouldShowFieldLabel = field.options.length > 1 || 
-      (field.display_label || field.field_name) !== field.options[0]?.option_name;
-
     return (
       <View key={field.id} style={styles.fieldContainer}>
-        {shouldShowFieldLabel && (
-          <Text style={styles.fieldLabel}>{field.display_label || field.field_name}</Text>
+        {field.display_label && (
+          <Text style={styles.fieldLabel}>{field.display_label}</Text>
         )}
         
-        {field.options.map((option) => {
-          switch (option.option_type) {
-            case "single_choice":
-              return (
-                <View key={option.id} style={styles.optionContainer}>
-                  {(!shouldShowFieldLabel || option.option_name !== (field.display_label || field.field_name)) && (
-                    <Text style={styles.optionLabel}>{option.option_name}</Text>
-                  )}
-                  <View style={styles.choiceButtons}>
-                    {option.choices?.map((choice) => {
-                      const isSelected =
-                        formData[field.field_name]?.[option.option_name] === choice;
-                      return (
-                        <TouchableOpacity
-                          key={choice}
-                          style={[
-                            styles.choiceButton,
-                            isSelected && styles.choiceButtonSelected,
-                          ]}
-                          onPress={() => updateFieldValue(field.field_name, option.option_name, choice)}
-                        >
-                          <Text
-                            style={[
-                              styles.choiceButtonText,
-                              isSelected && styles.choiceButtonTextSelected,
-                            ]}
-                          >
-                            {option.choice_labels?.[choice] || choice}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                </View>
-              );
-
-            case "multiple_choice":
-              return (
-                <View key={option.id} style={styles.optionContainer}>
-                  {(!shouldShowFieldLabel || option.option_name !== (field.display_label || field.field_name)) && (
-                    <Text style={styles.optionLabel}>{option.option_name}</Text>
-                  )}
-                  <View style={styles.choiceButtons}>
-                    {option.choices?.map((choice) => {
-                      const selectedChoices =
-                        formData[field.field_name]?.[option.option_name] || [];
-                      const isSelected = selectedChoices.includes(choice);
-                      return (
-                        <TouchableOpacity
-                          key={choice}
-                          style={[
-                            styles.choiceButton,
-                            isSelected && styles.choiceButtonSelected,
-                          ]}
-                          onPress={() => {
-                            const currentChoices =
-                              formData[field.field_name]?.[option.option_name] || [];
-                            const newChoices = isSelected
-                              ? currentChoices.filter((c) => c !== choice)
-                              : [...currentChoices, choice];
-                            updateFieldValue(field.field_name, option.option_name, newChoices);
-                          }}
-                        >
-                          <Text
-                            style={[
-                              styles.choiceButtonText,
-                              isSelected && styles.choiceButtonTextSelected,
-                            ]}
-                          >
-                            {option.choice_labels?.[choice] || choice}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                </View>
-              );
-
-            case "number_input":
-              return (
-                <View key={option.id} style={styles.optionContainer}>
-                  {(!shouldShowFieldLabel || option.option_name !== (field.display_label || field.field_name)) && (
-                    <Text style={styles.optionLabel}>{option.option_name}</Text>
-                  )}
-                  <TextInput
-                    style={styles.numberInput}
-                    keyboardType="numeric"
-                    placeholder={`Enter ${option.option_name}`}
-                    value={
-                      formData[field.field_name]?.[option.option_name]?.toString() || ""
-                    }
-                    onChangeText={(text) => {
-                      const numValue = text ? parseFloat(text) : null;
-                      updateFieldValue(field.field_name, option.option_name, numValue);
-                    }}
-                  />
-                </View>
-              );
-
-            case "rating":
-              const currentRating = formData[field.field_name]?.[option.option_name];
-              return (
-                <View key={option.id} style={styles.optionContainer}>
-                  {(!shouldShowFieldLabel || option.option_name !== (field.display_label || field.field_name)) && (
-                    <Text style={styles.optionLabel}>{option.option_name}</Text>
-                  )}
-                  <SliderComponent
-                    field={field}
-                    option={option}
-                    minValue={option.min_value || 0}
-                    maxValue={option.max_value || 10}
-                    currentValue={currentRating}
-                    onValueChange={(value) => updateFieldValue(field.field_name, option.option_name, value)}
-                  />
-                </View>
-              );
-
-            default:
-              return null;
-          }
-        })}
+        {field.options
+          .sort((a, b) => (a.option_order || 0) - (b.option_order || 0))
+          .map((option) => renderOption(field, option))}
       </View>
     );
   };
@@ -553,6 +609,23 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     fontSize: 16,
     color: colors.text,
+  },
+  textInput: {
+    backgroundColor: colors.background,
+    borderRadius: 8,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    fontSize: 16,
+    color: colors.text,
+    minHeight: 40,
+    textAlignVertical: "top",
+  },
+  emptyChoicesText: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    fontStyle: "italic",
+    marginTop: 8,
   },
   sliderContainer: {
     marginTop: 8,
