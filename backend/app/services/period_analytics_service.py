@@ -341,7 +341,7 @@ class PeriodAnalyticsService:
         )
         
         # Annotate each day with cycle information
-        annotated_days = PeriodAnalyticsService._annotate_calendar_days(
+        annotated_days = PeriodAnalyticsService.annotate_calendar_days(
             calendar_grid['days'],
             cycles,
             include_predictions
@@ -464,7 +464,7 @@ class PeriodAnalyticsService:
             day_date = date.fromisoformat(day_info['date'])
             
             # Find which cycle this day belongs to
-            cycle_info = PeriodAnalyticsService.find_cycle_for_day(
+            cycle_info = PeriodAnalyticsService._find_cycle_for_day(
                 day_date, cycles
             )
             
