@@ -34,6 +34,7 @@ export default function AppNavigator() {
       ) : needsGender ? (
         <>
           <Stack.Screen name="Gender" component={GenderScreen} />
+          <Stack.Screen name="UserInfo" component={UserInfoScreen} />
         </>
       ) : (
         <>

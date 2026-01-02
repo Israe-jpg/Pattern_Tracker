@@ -130,14 +130,33 @@ export const AuthProvider = ({ children }) => {
     try {
       const response = await authService.register(userData);
       
-      // After successful registration, user is logged in
-      // Get the profile to check if gender is set
-      setIsAuthenticated(true);
-      const profile = await authService.getProfile();
-      setUser(profile);
-      
-      // Backend returns {message: '...', user: {...}} on success (status 201)
+      // After successful registration, automatically log the user in
+      // to get access and refresh tokens
       if (response && (response.message || response.user)) {
+        try {
+          // Auto-login after registration
+          await authService.login(
+            userData.email,
+            userData.password
+          );
+          
+          // Set authenticated state
+          setIsAuthenticated(true);
+          
+          // Get the profile to check if gender is set
+          const profile = await authService.getProfile();
+          setUser(profile);
+        } catch (loginError) {
+          // If auto-login fails, still return success but user needs to login manually
+          console.error('Auto-login after registration failed:', loginError);
+          return {
+            success: true,
+            data: response,
+            needsManualLogin: true,
+            message: 'Registration successful. Please login to continue.'
+          };
+        }
+        
         return { success: true, data: response };
       }
       
