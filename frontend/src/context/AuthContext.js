@@ -40,7 +40,19 @@ export const AuthProvider = ({ children }) => {
 
   const submitGender = async (gender) => {
     try {
+      // Submit gender to backend
       await authService.submitGender(gender);
+      
+      // Setup default trackers based on gender
+      try {
+        await authService.setupDefaultTrackers();
+        console.log('Default trackers setup successfully');
+      } catch (trackerError) {
+        // Log error but don't fail the gender submission
+        console.error('Failed to setup trackers:', trackerError);
+        // Continue anyway - trackers can be set up later
+      }
+      
       // Refresh profile to get updated user data with gender
       const profile = await authService.getProfile();
       setUser(profile);
@@ -50,6 +62,25 @@ export const AuthProvider = ({ children }) => {
         || error.response?.data?.message 
         || error.message 
         || 'Failed to save gender information';
+      return { 
+        success: false, 
+        error: errorMessage
+      };
+    }
+  };
+
+  const submitUserInfo = async (userInfo) => {
+    try {
+      await authService.submitUserInfo(userInfo);
+      // Refresh profile to get updated user data
+      const profile = await authService.getProfile();
+      setUser(profile);
+      return { success: true };
+    } catch (error) {
+      const errorMessage = error.response?.data?.error 
+        || error.response?.data?.message 
+        || error.message 
+        || 'Failed to save user information';
       return { 
         success: false, 
         error: errorMessage
@@ -177,6 +208,7 @@ export const AuthProvider = ({ children }) => {
     register,
     checkAuthStatus,
     submitGender,
+    submitUserInfo,
     refreshUserProfile,
   };
 

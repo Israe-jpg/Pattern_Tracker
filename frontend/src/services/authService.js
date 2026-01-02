@@ -98,4 +98,16 @@ export const authService = {
     const response = await api.post('/auth/obtain-user-sex-info', { gender });
     return response.data;
   },
+
+  // Submit optional user information (date of birth, height, weight, unit system)
+  submitUserInfo: async (userInfo) => {
+    const response = await api.post('/auth/obtain-optional-user-info', userInfo);
+    return response.data;
+  },
+
+  // Setup default trackers for user based on gender
+  setupDefaultTrackers: async () => {
+    const response = await api.post(API_ENDPOINTS.SETUP_DEFAULT_TRACKERS);
+    return response.data;
+  },
 };

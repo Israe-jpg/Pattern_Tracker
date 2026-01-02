@@ -34,7 +34,8 @@ export default function GenderScreen({ navigation }) {
     try {
       const result = await submitGender(selectedGender);
       if (result.success) {
-        // Navigation will be handled by AppNavigator based on updated user state
+        // Navigate to UserInfoScreen after successful gender submission
+        navigation.navigate("UserInfo");
       } else {
         setError(result.error || "Failed to save gender information");
       }
