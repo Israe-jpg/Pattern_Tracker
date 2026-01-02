@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -6,36 +6,59 @@ import {
   FlatList,
   TouchableOpacity,
   ActivityIndicator,
-} from 'react-native';
-import { useAuth } from '../context/AuthContext';
-import { trackerService } from '../services/trackerService';
-import { colors } from '../constants/colors';
+} from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
+import { useAuth } from "../context/AuthContext";
+import { trackerService } from "../services/trackerService";
+import { colors } from "../constants/colors";
 
 export default function HomeScreen({ navigation }) {
   const { user, logout } = useAuth();
   const [trackers, setTrackers] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    loadTrackers();
-  }, []);
-
   const loadTrackers = async () => {
     try {
       setLoading(true);
       const response = await trackerService.getMyTrackers();
-      setTrackers(response.data || []);
+      // Backend returns { message: '...', trackers: [...], total_count: ... }
+      // (data is merged into response, not nested)
+      const trackersList = response.trackers || [];
+
+      // Map to format expected by the UI
+      const formattedTrackers = trackersList.map((item) => ({
+        id: item.tracker_info?.id,
+        name:
+          item.tracker_name ||
+          item.tracker_info?.category_name ||
+          "Unknown Tracker",
+        category_name: item.tracker_name || "Unknown",
+        ...item.tracker_info,
+      }));
+
+      setTrackers(formattedTrackers);
     } catch (error) {
-      console.error('Error loading trackers:', error);
+      console.error("Error loading trackers:", error);
+      console.error("Error details:", error.response?.data);
+      setTrackers([]);
     } finally {
       setLoading(false);
     }
   };
 
+  // Reload trackers when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      loadTrackers();
+    }, [])
+  );
+
   const renderTracker = ({ item }) => (
     <TouchableOpacity
       style={styles.trackerCard}
-      onPress={() => navigation.navigate('TrackerDetail', { trackerId: item.id })}
+      onPress={() =>
+        navigation.navigate("TrackerDetail", { trackerId: item.id })
+      }
     >
       <Text style={styles.trackerName}>{item.name}</Text>
       <Text style={styles.trackerType}>{item.category_name}</Text>
@@ -53,7 +76,7 @@ export default function HomeScreen({ navigation }) {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>My Trackers</Text>
+        <Text style={styles.title}>Trackt</Text>
         <TouchableOpacity onPress={logout}>
           <Text style={styles.logoutText}>Logout</Text>
         </TouchableOpacity>
@@ -81,13 +104,13 @@ const styles = StyleSheet.create({
   },
   centerContainer: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     padding: 20,
     paddingTop: 60,
     backgroundColor: colors.surface,
@@ -96,7 +119,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 24,
-    fontWeight: 'bold',
+    fontWeight: "bold",
     color: colors.text,
   },
   logoutText: {
@@ -116,7 +139,7 @@ const styles = StyleSheet.create({
   },
   trackerName: {
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: "600",
     color: colors.text,
     marginBottom: 4,
   },
@@ -126,8 +149,8 @@ const styles = StyleSheet.create({
   },
   emptyContainer: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     paddingTop: 100,
   },
   emptyText: {
@@ -135,4 +158,3 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
 });
-
