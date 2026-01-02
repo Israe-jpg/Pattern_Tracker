@@ -56,6 +56,7 @@ export const API_ENDPOINTS = {
 
   // Trackers
   MY_TRACKERS: "/trackers/my-trackers",
+  SETUP_DEFAULT_TRACKERS: "/trackers/setup-default-trackers",
   TRACKER_DETAILS: (id) => `/trackers/${id}/tracker-details`,
   FORM_SCHEMA: (id) => `/trackers/${id}/form-schema`,
 
