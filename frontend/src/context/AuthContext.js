@@ -38,6 +38,25 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const submitGender = async (gender) => {
+    try {
+      await authService.submitGender(gender);
+      // Refresh profile to get updated user data with gender
+      const profile = await authService.getProfile();
+      setUser(profile);
+      return { success: true };
+    } catch (error) {
+      const errorMessage = error.response?.data?.error 
+        || error.response?.data?.message 
+        || error.message 
+        || 'Failed to save gender information';
+      return { 
+        success: false, 
+        error: errorMessage
+      };
+    }
+  };
+
   const login = async (email, password) => {
     try {
       const response = await authService.login(email, password);
@@ -57,6 +76,15 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const refreshUserProfile = async () => {
+    try {
+      const profile = await authService.getProfile();
+      setUser(profile);
+    } catch (error) {
+      console.error('Error refreshing profile:', error);
+    }
+  };
+
   const logout = async () => {
     try {
       await authService.logout();
@@ -70,6 +98,12 @@ export const AuthProvider = ({ children }) => {
   const register = async (userData) => {
     try {
       const response = await authService.register(userData);
+      
+      // After successful registration, user is logged in
+      // Get the profile to check if gender is set
+      setIsAuthenticated(true);
+      const profile = await authService.getProfile();
+      setUser(profile);
       
       // Backend returns {message: '...', user: {...}} on success (status 201)
       if (response && (response.message || response.user)) {
@@ -142,6 +176,8 @@ export const AuthProvider = ({ children }) => {
     logout,
     register,
     checkAuthStatus,
+    submitGender,
+    refreshUserProfile,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

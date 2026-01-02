@@ -76,7 +76,8 @@ export const authService = {
   // Get current user profile
   getProfile: async () => {
     const response = await api.get(API_ENDPOINTS.PROFILE);
-    return response.data;
+    // Backend returns { message: '...', user: {...} }
+    return response.data.user || response.data;
   },
 
   // Check if user is authenticated (has valid token)
@@ -90,5 +91,11 @@ export const authService = {
     const access_token = await AsyncStorage.getItem(ACCESS_TOKEN_KEY);
     const refresh_token = await AsyncStorage.getItem(REFRESH_TOKEN_KEY);
     return { access_token, refresh_token };
+  },
+
+  // Submit user gender/sex information
+  submitGender: async (gender) => {
+    const response = await api.post('/auth/obtain-user-sex-info', { gender });
+    return response.data;
   },
 };

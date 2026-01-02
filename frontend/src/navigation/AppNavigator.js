@@ -1,23 +1,27 @@
-import React from 'react';
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { useAuth } from '../context/AuthContext';
-import LoadingScreen from '../components/LoadingScreen';
+import React from "react";
+import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import { useAuth } from "../context/AuthContext";
+import LoadingScreen from "../components/LoadingScreen";
 
 // Screens
-import LoginScreen from '../screens/auth/LoginScreen';
-import RegisterScreen from '../screens/auth/RegisterScreen';
-import HomeScreen from '../screens/HomeScreen';
-import CalendarScreen from '../screens/CalendarScreen';
-import TrackerDetailScreen from '../screens/TrackerDetailScreen';
+import LoginScreen from "../screens/auth/LoginScreen";
+import RegisterScreen from "../screens/auth/RegisterScreen";
+import GenderScreen from "../screens/auth/GenderScreen";
+import HomeScreen from "../screens/HomeScreen";
+import CalendarScreen from "../screens/CalendarScreen";
+import TrackerDetailScreen from "../screens/TrackerDetailScreen";
 
 const Stack = createNativeStackNavigator();
 
 export default function AppNavigator() {
-  const { isAuthenticated, loading } = useAuth();
+  const { isAuthenticated, loading, user } = useAuth();
 
   if (loading) {
     return <LoadingScreen />;
   }
+
+  // Check if user needs to set gender
+  const needsGender = isAuthenticated && user && !user.gender;
 
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
@@ -25,6 +29,10 @@ export default function AppNavigator() {
         <>
           <Stack.Screen name="Login" component={LoginScreen} />
           <Stack.Screen name="Register" component={RegisterScreen} />
+        </>
+      ) : needsGender ? (
+        <>
+          <Stack.Screen name="Gender" component={GenderScreen} />
         </>
       ) : (
         <>
@@ -36,4 +44,3 @@ export default function AppNavigator() {
     </Stack.Navigator>
   );
 }
-
