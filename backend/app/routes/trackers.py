@@ -561,28 +561,45 @@ def get_form_schema(tracker_id: int):
         if is_period_tracker:
             result = CategoryService.get_contextual_period_schema(tracker)
             
+            # Check if setup is required
+            if result.get('setup_required'):
+                return success_response(
+                    "Period Tracker setup required",
+                    {
+                        'setup_required': True,
+                        'message': result.get('message', 'Please configure your Period Tracker settings first'),
+                        'required_settings': result.get('required_settings', []),
+                        'tracker_name': category.name,
+                        'tracker_id': tracker.id,
+                    }
+                )
+            
             # Format response consistently with other trackers
+            cycle_info = result.get('cycle_info') or {}
+            predictions = result.get('predictions') or {}
+            data_schema = result.get('data_schema') or {}
+            
             return success_response(
                 "Form schema retrieved successfully",
                 {
-                    'field_groups': result.get('data_schema'),
+                    'field_groups': data_schema,
                     'tracker_name': category.name,
                     'tracker_id': tracker.id,
-                    'cycle_info':{
-                        'cycle_day': result.get('cycle_info').get('cycle_day'),
-                        'cycle_phase': result.get('cycle_info').get('cycle_phase'),
-                        'is_menstruating': result.get('cycle_info').get('is_menstruating')
+                    'cycle_info': {
+                        'cycle_day': cycle_info.get('cycle_day'),
+                        'cycle_phase': cycle_info.get('cycle_phase'),
+                        'is_menstruating': cycle_info.get('is_menstruating')
                     },
-                    'predictions':{
-                        'ovulation_date': result.get('predictions').get('ovulation_date'),
-                        'next_period_date': result.get('predictions').get('next_period_date'),
-                        'period_expected_soon': result.get('predictions').get('period_expected_soon'),
-                        'period_late': result.get('predictions').get('period_late')
+                    'predictions': {
+                        'ovulation_date': predictions.get('ovulation_date'),
+                        'next_period_date': predictions.get('next_period_date'),
+                        'period_expected_soon': predictions.get('period_expected_soon'),
+                        'period_late': predictions.get('period_late')
                     },
                     'is_prebuilt': True,
                     'is_contextual': True,
                     'context': result.get('context'),
-                    'field_count': len(result.get('data_schema').get('baseline')) + len(result.get('data_schema').get('period_tracker')) + len(result.get('data_schema').get('custom')),
+                    'field_count': len(data_schema.get('baseline', [])) + len(data_schema.get('period_tracker', [])) + len(data_schema.get('custom', [])),
                 }
             )
         
