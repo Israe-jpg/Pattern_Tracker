@@ -22,7 +22,8 @@ import MenuDrawer from "../components/MenuDrawer";
 export default function HomeScreen({ navigation }) {
   const { user, logout } = useAuth();
   const [trackers, setTrackers] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [menuVisible, setMenuVisible] = useState(false);
   const [profileDropdownVisible, setProfileDropdownVisible] = useState(false);
   const [defaultTracker, setDefaultTracker] = useState(null);
@@ -30,12 +31,14 @@ export default function HomeScreen({ navigation }) {
   const [selectedDate, setSelectedDate] = useState(
     new Date().toISOString().split("T")[0]
   );
-  const [calendarLoading, setCalendarLoading] = useState(false);
   const [needsSetup, setNeedsSetup] = useState(null); // null = checking, true = needs setup, false = configured
 
   const loadTrackers = async () => {
     try {
-      setLoading(true);
+      // Only show full-screen loading on initial load AND if we have no trackers yet
+      if (isInitialLoad && trackers.length === 0) {
+        setLoading(true);
+      }
       const response = await trackerService.getMyTrackers();
       // Backend returns { message: '...', trackers: [...], total_count: ... }
       // (data is merged into response, not nested)
@@ -76,6 +79,7 @@ export default function HomeScreen({ navigation }) {
       setTrackers([]);
     } finally {
       setLoading(false);
+      setIsInitialLoad(false);
     }
   };
 
@@ -141,7 +145,6 @@ export default function HomeScreen({ navigation }) {
     if (!tracker) return;
 
     try {
-      setCalendarLoading(true);
       const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM format
 
       // Check if it's a Period Tracker
@@ -204,8 +207,6 @@ export default function HomeScreen({ navigation }) {
       });
       // Silently fail for calendar - don't block the UI
       setCalendarData({});
-    } finally {
-      setCalendarLoading(false);
     }
   };
 
@@ -235,7 +236,8 @@ export default function HomeScreen({ navigation }) {
     </TouchableOpacity>
   );
 
-  if (loading) {
+  // Only show loading screen on initial load when we have no data
+  if (loading && trackers.length === 0 && isInitialLoad) {
     return (
       <View style={styles.centerContainer}>
         <ActivityIndicator size="large" color={colors.primary} />
@@ -352,13 +354,7 @@ export default function HomeScreen({ navigation }) {
             ) : needsSetup === false ? (
               // Show calendar and log button when configured
               <View style={styles.calendarSection}>
-                {calendarLoading ? (
-                  <ActivityIndicator
-                    size="small"
-                    color={colors.primary}
-                    style={styles.calendarLoader}
-                  />
-                ) : (
+                <View style={{ position: "relative" }}>
                   <Calendar
                     current={selectedDate}
                     onDayPress={onDayPress}
@@ -392,7 +388,7 @@ export default function HomeScreen({ navigation }) {
                     }}
                     style={styles.calendar}
                   />
-                )}
+                </View>
                 <TouchableOpacity
                   style={styles.logButton}
                   onPress={() => {
