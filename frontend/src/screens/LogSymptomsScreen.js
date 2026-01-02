@@ -26,61 +26,201 @@ export default function LogSymptomsScreen({ route, navigation }) {
     loadFormSchema();
   }, [trackerId]);
 
+  // Convert nested schema structure to field/option format
+  const convertSchemaToFields = (schemaObj, groupName) => {
+    if (
+      !schemaObj ||
+      typeof schemaObj !== "object" ||
+      Array.isArray(schemaObj)
+    ) {
+      return [];
+    }
+
+    const fields = [];
+
+    // Iterate over top-level keys (field names)
+    for (const fieldName in schemaObj) {
+      const fieldSchema = schemaObj[fieldName];
+      if (!fieldSchema || typeof fieldSchema !== "object") continue;
+
+      const options = [];
+      let optionOrder = 0;
+
+      // Iterate over nested keys (option names)
+      for (const optionName in fieldSchema) {
+        const optionSchema = fieldSchema[optionName];
+        if (!optionSchema || typeof optionSchema !== "object") continue;
+
+        // Determine option type from schema
+        let optionType = "text";
+        if (optionSchema.type === "integer" || optionSchema.type === "float") {
+          if (
+            optionSchema.range &&
+            optionSchema.range[0] !== null &&
+            optionSchema.range[1] !== null
+          ) {
+            optionType = "rating";
+          } else {
+            optionType = "number_input";
+          }
+        } else if (optionSchema.type === "string") {
+          if (optionSchema.enum) {
+            optionType = "single_choice";
+          } else {
+            optionType = optionSchema.max_length ? "notes" : "text";
+          }
+        } else if (optionSchema.type === "array") {
+          if (optionSchema.items === "string" && optionSchema.enum) {
+            optionType = "multiple_choice";
+          } else {
+            optionType = "multiple_choice";
+          }
+        } else if (optionSchema.type === "boolean") {
+          optionType = "yes_no";
+        }
+
+        // Build option object
+        const option = {
+          id: `${fieldName}_${optionName}`,
+          option_name: optionName,
+          display_label:
+            optionSchema.labels?.[optionName] ||
+            optionName
+              .split("_")
+              .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+              .join(" "),
+          option_type: optionType,
+          option_order: optionOrder++,
+          optional: optionSchema.optional || false,
+        };
+
+        // Add type-specific properties
+        if (optionType === "rating" || optionType === "number_input") {
+          option.min_value = optionSchema.range?.[0] ?? 0;
+          option.max_value = optionSchema.range?.[1] ?? 10;
+          option.labels = optionSchema.labels || {};
+        }
+
+        if (
+          optionType === "single_choice" ||
+          optionType === "multiple_choice"
+        ) {
+          option.choices = optionSchema.enum || [];
+          option.choice_labels = optionSchema.labels || {};
+        }
+
+        if (optionType === "text" || optionType === "notes") {
+          option.max_length = optionSchema.max_length;
+          option.placeholder = optionSchema.placeholder;
+        }
+
+        options.push(option);
+      }
+
+      if (options.length > 0) {
+        fields.push({
+          id: `${groupName}_${fieldName}`,
+          field_name: fieldName,
+          display_label: fieldName
+            .split("_")
+            .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+            .join(" "),
+          field_group: groupName,
+          options: options,
+        });
+      }
+    }
+
+    return fields;
+  };
+
   const loadFormSchema = async () => {
     try {
       setLoading(true);
       const startTime = Date.now();
       const response = await trackerService.getFormSchema(trackerId);
       console.log("API call took:", Date.now() - startTime, "ms");
-      
+
       // Backend returns data merged at top level
       // Handle both 'field-groups' (hyphen) and 'field_groups' (underscore)
-      const fieldGroups = response["field-groups"] || response.field_groups || {};
-      
+      const fieldGroups =
+        response["field-groups"] || response.field_groups || {};
+
+      // Debug: Log field groups structure
+      console.log("Field groups received:", Object.keys(fieldGroups));
+      console.log("Baseline fields:", fieldGroups.baseline?.length || 0);
+      console.log(
+        "Period tracker fields:",
+        fieldGroups.period_tracker?.length || 0
+      );
+      console.log("Custom fields:", fieldGroups.custom?.length || 0);
+      console.log(
+        "Category specific fields:",
+        fieldGroups.category_specific?.length || 0
+      );
+
       const processStartTime = Date.now();
       // Initialize form data structure - optimized
       const initialData = {};
-      const allGroups = Object.values(fieldGroups);
-      
-      for (const group of allGroups) {
-        if (!Array.isArray(group)) continue;
-        for (const field of group) {
+
+      // Helper to process fields (either from array or converted from schema)
+      const processFields = (fields) => {
+        for (const field of fields) {
           if (!field.options || field.options.length === 0) continue;
-          
+
           const fieldData = {};
           for (const option of field.options) {
-            fieldData[option.option_name] = 
+            fieldData[option.option_name] =
               option.option_type === "multiple_choice" ? [] : null;
           }
           initialData[field.field_name] = fieldData;
         }
+      };
+
+      // Process all field groups (handle both array and schema formats)
+      for (const groupName in fieldGroups) {
+        const group = fieldGroups[groupName];
+        if (Array.isArray(group)) {
+          processFields(group);
+        } else if (group && typeof group === "object") {
+          // Convert schema to fields format
+          const convertedFields = convertSchemaToFields(group, groupName);
+          processFields(convertedFields);
+        }
       }
-      
+
       console.log("Data processing took:", Date.now() - processStartTime, "ms");
-      
+
       // Calculate unique fields count for logging
       const tempFieldMap = new Map();
       const tempSeenNames = new Set();
-      for (const group of Object.values(fieldGroups)) {
+      for (const groupName in fieldGroups) {
+        const group = fieldGroups[groupName];
+        let fieldsToProcess = [];
+
         if (Array.isArray(group)) {
-          for (const field of group) {
-            if (field) {
-              const key = field.field_name || field.id;
-              if (key && !tempSeenNames.has(key)) {
-                tempSeenNames.add(key);
-                tempFieldMap.set(key, field);
-              }
+          fieldsToProcess = group;
+        } else if (group && typeof group === "object") {
+          fieldsToProcess = convertSchemaToFields(group, groupName);
+        }
+
+        for (const field of fieldsToProcess) {
+          if (field) {
+            const key = field.field_name || field.id;
+            if (key && !tempSeenNames.has(key)) {
+              tempSeenNames.add(key);
+              tempFieldMap.set(key, field);
             }
           }
         }
       }
-      
+
       setFormSchema({
         ...response,
         fieldGroups: fieldGroups,
       });
       setFormData(initialData);
-      
+
       console.log("Total load time:", Date.now() - startTime, "ms");
       console.log("Fields loaded:", tempFieldMap.size, "unique fields");
       setLoading(false);
@@ -92,29 +232,28 @@ export default function LogSymptomsScreen({ route, navigation }) {
         data: error.response?.data,
         message: error.message,
       });
-      
+
       // Don't show alert immediately - let the error state UI handle it
       // This prevents blocking the UI
       setLoading(false);
-      
+
       // Only show alert for network errors, not for 500s (backend issues)
       if (!error.response || error.response.status !== 500) {
-        const errorMessage = error.response?.data?.error || error.message || "Failed to load form. Please try again.";
-        Alert.alert(
-          "Error Loading Form",
-          errorMessage,
-          [
-            {
-              text: "Retry",
-              onPress: () => loadFormSchema(),
-            },
-            {
-              text: "Go Back",
-              style: "cancel",
-              onPress: () => navigation.goBack(),
-            },
-          ]
-        );
+        const errorMessage =
+          error.response?.data?.error ||
+          error.message ||
+          "Failed to load form. Please try again.";
+        Alert.alert("Error Loading Form", errorMessage, [
+          {
+            text: "Retry",
+            onPress: () => loadFormSchema(),
+          },
+          {
+            text: "Go Back",
+            style: "cancel",
+            onPress: () => navigation.goBack(),
+          },
+        ]);
       }
     }
   };
@@ -129,9 +268,23 @@ export default function LogSymptomsScreen({ route, navigation }) {
     }));
   };
 
-  const SliderComponent = ({ field, option, minValue, maxValue, currentValue, onValueChange }) => {
-    const [localValue, setLocalValue] = useState(currentValue !== null && currentValue !== undefined ? currentValue : minValue);
-    const displayValue = currentValue !== null && currentValue !== undefined ? currentValue : minValue;
+  const SliderComponent = ({
+    field,
+    option,
+    minValue,
+    maxValue,
+    currentValue,
+    onValueChange,
+  }) => {
+    const [localValue, setLocalValue] = useState(
+      currentValue !== null && currentValue !== undefined
+        ? currentValue
+        : minValue
+    );
+    const displayValue =
+      currentValue !== null && currentValue !== undefined
+        ? currentValue
+        : minValue;
 
     // Update local value when currentValue changes externally
     useEffect(() => {
@@ -171,7 +324,7 @@ export default function LogSymptomsScreen({ route, navigation }) {
   const handleSubmit = async () => {
     try {
       setSubmitting(true);
-      
+
       // Format data for backend
       const formattedData = {};
       Object.keys(formData).forEach((fieldName) => {
@@ -190,13 +343,17 @@ export default function LogSymptomsScreen({ route, navigation }) {
       const payload = {
         data: formattedData,
       };
-      
+
       if (selectedDate) {
         payload.entry_date = selectedDate;
       }
 
-      await dataTrackingService.saveData(trackerId, payload.data, payload.entry_date);
-      
+      await dataTrackingService.saveData(
+        trackerId,
+        payload.data,
+        payload.entry_date
+      );
+
       Alert.alert("Success", "Symptoms logged successfully!", [
         {
           text: "OK",
@@ -205,7 +362,11 @@ export default function LogSymptomsScreen({ route, navigation }) {
       ]);
     } catch (error) {
       console.error("Error submitting form:", error);
-      Alert.alert("Error", error.response?.data?.error || "Failed to save symptoms. Please try again.");
+      Alert.alert(
+        "Error",
+        error.response?.data?.error ||
+          "Failed to save symptoms. Please try again."
+      );
     } finally {
       setSubmitting(false);
     }
@@ -228,7 +389,11 @@ export default function LogSymptomsScreen({ route, navigation }) {
                 ]}
                 onPress={() => {
                   // Toggle: if already true, set to null to unselect
-                  updateFieldValue(field.field_name, option.option_name, currentValue === true ? null : true);
+                  updateFieldValue(
+                    field.field_name,
+                    option.option_name,
+                    currentValue === true ? null : true
+                  );
                 }}
               >
                 <Text
@@ -247,7 +412,11 @@ export default function LogSymptomsScreen({ route, navigation }) {
                 ]}
                 onPress={() => {
                   // Toggle: if already false, set to null to unselect
-                  updateFieldValue(field.field_name, option.option_name, currentValue === false ? null : false);
+                  updateFieldValue(
+                    field.field_name,
+                    option.option_name,
+                    currentValue === false ? null : false
+                  );
                 }}
               >
                 <Text
@@ -279,7 +448,11 @@ export default function LogSymptomsScreen({ route, navigation }) {
                     ]}
                     onPress={() => {
                       // Toggle: if already selected, unselect by setting to null
-                      updateFieldValue(field.field_name, option.option_name, isSelected ? null : choice);
+                      updateFieldValue(
+                        field.field_name,
+                        option.option_name,
+                        isSelected ? null : choice
+                      );
                     }}
                   >
                     <Text
@@ -300,7 +473,10 @@ export default function LogSymptomsScreen({ route, navigation }) {
       case "multiple_choice":
         const choices = option.choices || [];
         if (choices.length === 0) {
-          console.warn(`Multiple choice option "${optionLabel}" has no choices:`, option);
+          console.warn(
+            `Multiple choice option "${optionLabel}" has no choices:`,
+            option
+          );
         }
         return (
           <View key={option.id} style={styles.optionContainer}>
@@ -321,7 +497,11 @@ export default function LogSymptomsScreen({ route, navigation }) {
                         const newChoices = isSelected
                           ? selectedChoices.filter((c) => c !== choice)
                           : [...selectedChoices, choice];
-                        updateFieldValue(field.field_name, option.option_name, newChoices);
+                        updateFieldValue(
+                          field.field_name,
+                          option.option_name,
+                          newChoices
+                        );
                       }}
                     >
                       <Text
@@ -354,7 +534,9 @@ export default function LogSymptomsScreen({ route, navigation }) {
               minValue={option.min_value || 0}
               maxValue={option.max_value || 10}
               currentValue={currentValue}
-              onValueChange={(value) => updateFieldValue(field.field_name, option.option_name, value)}
+              onValueChange={(value) =>
+                updateFieldValue(field.field_name, option.option_name, value)
+              }
             />
           </View>
         );
@@ -370,7 +552,11 @@ export default function LogSymptomsScreen({ route, navigation }) {
               value={currentValue?.toString() || ""}
               onChangeText={(text) => {
                 const numValue = text ? parseFloat(text) : null;
-                updateFieldValue(field.field_name, option.option_name, numValue);
+                updateFieldValue(
+                  field.field_name,
+                  option.option_name,
+                  numValue
+                );
               }}
             />
           </View>
@@ -387,7 +573,9 @@ export default function LogSymptomsScreen({ route, navigation }) {
               numberOfLines={option.option_type === "notes" ? 4 : 1}
               placeholder={option.placeholder || `Enter ${optionLabel}`}
               value={currentValue || ""}
-              onChangeText={(text) => updateFieldValue(field.field_name, option.option_name, text)}
+              onChangeText={(text) =>
+                updateFieldValue(field.field_name, option.option_name, text)
+              }
               maxLength={option.max_length}
             />
           </View>
@@ -406,7 +594,7 @@ export default function LogSymptomsScreen({ route, navigation }) {
         {field.display_label && (
           <Text style={styles.fieldLabel}>{field.display_label}</Text>
         )}
-        
+
         {field.options
           .sort((a, b) => (a.option_order || 0) - (b.option_order || 0))
           .map((option) => renderOption(field, option))}
@@ -431,25 +619,33 @@ export default function LogSymptomsScreen({ route, navigation }) {
             style={styles.backButton}
             onPress={() => navigation.goBack()}
           >
-            <Ionicons name="arrow-back" size={24} color={colors.textOnPrimary} />
+            <Ionicons
+              name="arrow-back"
+              size={24}
+              color={colors.textOnPrimary}
+            />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Log Symptoms</Text>
           <View style={styles.placeholder} />
         </View>
         <View style={styles.centerContainer}>
-          <Ionicons name="alert-circle-outline" size={64} color={colors.error} />
+          <Ionicons
+            name="alert-circle-outline"
+            size={64}
+            color={colors.error}
+          />
           <Text style={styles.errorText}>Failed to load form</Text>
           <Text style={styles.errorSubtext}>
             The server encountered an error. Please try again.
           </Text>
-          <TouchableOpacity 
-            style={styles.retryButton} 
+          <TouchableOpacity
+            style={styles.retryButton}
             onPress={() => loadFormSchema()}
           >
             <Text style={styles.retryButtonText}>Retry</Text>
           </TouchableOpacity>
-          <TouchableOpacity 
-            style={styles.backButtonStyle} 
+          <TouchableOpacity
+            style={styles.backButtonStyle}
             onPress={() => navigation.goBack()}
           >
             <Text style={styles.backButtonTextStyle}>Go Back</Text>
@@ -460,34 +656,59 @@ export default function LogSymptomsScreen({ route, navigation }) {
   }
 
   const fieldGroups = formSchema.fieldGroups || {};
+
   // Handle both period_tracker (for Period Tracker) and category_specific (for other trackers)
   // Use Map for faster deduplication - key by both id and field_name to catch all duplicates
   const fieldMap = new Map();
   const seenFieldNames = new Set();
-  
-  const groupsToProcess = [
-    fieldGroups.baseline,
-    fieldGroups.category_specific,
-    fieldGroups.period_tracker,
-    fieldGroups.custom,
-  ];
-  
-  for (const group of groupsToProcess) {
+
+  // Process ALL field groups dynamically - iterate over all keys in fieldGroups
+  // This ensures we catch period_tracker, baseline, custom, category_specific, or any other group
+  for (const groupName in fieldGroups) {
+    const group = fieldGroups[groupName];
+
+    let fieldsToProcess = [];
+
     if (Array.isArray(group)) {
-      for (const field of group) {
-        if (!field) continue;
-        
+      // Already in field/option format
+      fieldsToProcess = group;
+    } else if (group && typeof group === "object") {
+      // Convert nested schema structure to field/option format
+      fieldsToProcess = convertSchemaToFields(group, groupName);
+      console.log(
+        `Converted ${groupName} schema to ${fieldsToProcess.length} fields`
+      );
+    }
+
+    if (fieldsToProcess.length > 0) {
+      console.log(
+        `Processing ${groupName} group with ${fieldsToProcess.length} fields`
+      );
+      for (const field of fieldsToProcess) {
+        if (!field) {
+          console.log(`  Skipping null/undefined field in ${groupName}`);
+          continue;
+        }
+
         // Use field_name as primary key (more reliable than id for deduplication)
         const key = field.field_name || field.id;
         if (key && !seenFieldNames.has(key)) {
           seenFieldNames.add(key);
           fieldMap.set(key, field);
+          console.log(
+            `  Added field: ${field.field_name || field.id} (${
+              field.display_label || "no label"
+            }) from ${groupName}`
+          );
+        } else if (key) {
+          console.log(`  Skipping duplicate field: ${key} from ${groupName}`);
         }
       }
     }
   }
-  
+
   const uniqueFields = Array.from(fieldMap.values());
+  console.log("Total unique fields to render:", uniqueFields.length);
 
   return (
     <View style={styles.container}>
@@ -502,11 +723,17 @@ export default function LogSymptomsScreen({ route, navigation }) {
         <View style={styles.placeholder} />
       </View>
 
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+      >
         {uniqueFields.map((field) => renderField(field))}
-        
+
         <TouchableOpacity
-          style={[styles.submitButton, submitting && styles.submitButtonDisabled]}
+          style={[
+            styles.submitButton,
+            submitting && styles.submitButtonDisabled,
+          ]}
           onPress={handleSubmit}
           disabled={submitting}
         >
@@ -721,4 +948,3 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
 });
-
