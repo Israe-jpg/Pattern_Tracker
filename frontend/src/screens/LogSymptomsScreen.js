@@ -137,29 +137,12 @@ export default function LogSymptomsScreen({ route, navigation }) {
   const loadFormSchema = async () => {
     try {
       setLoading(true);
-      const startTime = Date.now();
       const response = await trackerService.getFormSchema(trackerId);
-      console.log("API call took:", Date.now() - startTime, "ms");
 
       // Backend returns data merged at top level
       // Handle both 'field-groups' (hyphen) and 'field_groups' (underscore)
       const fieldGroups =
         response["field-groups"] || response.field_groups || {};
-
-      // Debug: Log field groups structure
-      console.log("Field groups received:", Object.keys(fieldGroups));
-      console.log("Baseline fields:", fieldGroups.baseline?.length || 0);
-      console.log(
-        "Period tracker fields:",
-        fieldGroups.period_tracker?.length || 0
-      );
-      console.log("Custom fields:", fieldGroups.custom?.length || 0);
-      console.log(
-        "Category specific fields:",
-        fieldGroups.category_specific?.length || 0
-      );
-
-      const processStartTime = Date.now();
       // Initialize form data structure - optimized
       const initialData = {};
 
@@ -189,9 +172,7 @@ export default function LogSymptomsScreen({ route, navigation }) {
         }
       }
 
-      console.log("Data processing took:", Date.now() - processStartTime, "ms");
-
-      // Calculate unique fields count for logging
+      // Calculate unique fields count
       const tempFieldMap = new Map();
       const tempSeenNames = new Set();
       for (const groupName in fieldGroups) {
@@ -220,9 +201,6 @@ export default function LogSymptomsScreen({ route, navigation }) {
         fieldGroups: fieldGroups,
       });
       setFormData(initialData);
-
-      console.log("Total load time:", Date.now() - startTime, "ms");
-      console.log("Fields loaded:", tempFieldMap.size, "unique fields");
       setLoading(false);
     } catch (error) {
       console.error("Error loading form schema:", error);
@@ -472,12 +450,6 @@ export default function LogSymptomsScreen({ route, navigation }) {
 
       case "multiple_choice":
         const choices = option.choices || [];
-        if (choices.length === 0) {
-          console.warn(
-            `Multiple choice option "${optionLabel}" has no choices:`,
-            option
-          );
-        }
         return (
           <View key={option.id} style={styles.optionContainer}>
             <Text style={styles.optionLabel}>{optionLabel}</Text>
@@ -675,18 +647,11 @@ export default function LogSymptomsScreen({ route, navigation }) {
     } else if (group && typeof group === "object") {
       // Convert nested schema structure to field/option format
       fieldsToProcess = convertSchemaToFields(group, groupName);
-      console.log(
-        `Converted ${groupName} schema to ${fieldsToProcess.length} fields`
-      );
     }
 
     if (fieldsToProcess.length > 0) {
-      console.log(
-        `Processing ${groupName} group with ${fieldsToProcess.length} fields`
-      );
       for (const field of fieldsToProcess) {
         if (!field) {
-          console.log(`  Skipping null/undefined field in ${groupName}`);
           continue;
         }
 
@@ -695,20 +660,12 @@ export default function LogSymptomsScreen({ route, navigation }) {
         if (key && !seenFieldNames.has(key)) {
           seenFieldNames.add(key);
           fieldMap.set(key, field);
-          console.log(
-            `  Added field: ${field.field_name || field.id} (${
-              field.display_label || "no label"
-            }) from ${groupName}`
-          );
-        } else if (key) {
-          console.log(`  Skipping duplicate field: ${key} from ${groupName}`);
         }
       }
     }
   }
 
   const uniqueFields = Array.from(fieldMap.values());
-  console.log("Total unique fields to render:", uniqueFields.length);
 
   return (
     <View style={styles.container}>

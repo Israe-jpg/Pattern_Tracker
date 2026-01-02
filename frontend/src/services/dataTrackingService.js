@@ -57,5 +57,17 @@ export const dataTrackingService = {
     const response = await api.get(API_ENDPOINTS.GET_INSIGHTS(trackerId));
     return response.data;
   },
+
+  // Get general tracker analysis (for normal trackers)
+  getGeneralAnalysis: async (trackerId) => {
+    const response = await api.get(API_ENDPOINTS.GENERAL_ANALYSIS(trackerId));
+    return response.data;
+  },
+
+  // Get cycle analysis (for period trackers)
+  getCycleAnalysis: async (trackerId) => {
+    const response = await api.get(API_ENDPOINTS.CYCLE_ANALYSIS(trackerId));
+    return response.data;
+  },
 };
 

@@ -76,6 +76,7 @@ export const API_ENDPOINTS = {
   GET_INSIGHTS: (id) => `/data-tracking/${id}/get-all-insights`,
   UNIFIED_ANALYSIS: (id) => `/data-tracking/${id}/analyze`,
   GENERAL_ANALYSIS: (id) => `/data-tracking/${id}/general-tracker-analysis`,
+  CYCLE_ANALYSIS: (id) => `/data-tracking/${id}/general-cycle-analysis`,
 
   // Comparisons
   COMPARE: (id) => `/data-tracking/${id}/compare`,

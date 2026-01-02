@@ -32,8 +32,9 @@ export default function HomeScreen({ navigation }) {
     new Date().toISOString().split("T")[0]
   );
   const [needsSetup, setNeedsSetup] = useState(null); // null = checking, true = needs setup, false = configured
-  const [insights, setInsights] = useState([]);
+  const [insights, setInsights] = useState(null);
   const [insightsLoading, setInsightsLoading] = useState(false);
+  const [isPeriodTracker, setIsPeriodTracker] = useState(false);
 
   const loadTrackers = async () => {
     try {
@@ -99,15 +100,9 @@ export default function HomeScreen({ navigation }) {
     try {
       // Check tracker settings directly from backend
       const response = await trackerService.getTrackerSettings(tracker.id);
-      console.log("Tracker settings response:", response);
 
       // The backend returns { settings: {...} } or { settings: {} } if null
       const settings = response.settings || {};
-      console.log("Settings from response:", settings);
-      console.log(
-        "Settings is null/empty?",
-        !settings || Object.keys(settings).length === 0
-      );
 
       // Check if settings is null, empty object, or missing required fields
       const isSettingsNull = !settings || Object.keys(settings).length === 0;
@@ -116,20 +111,9 @@ export default function HomeScreen({ navigation }) {
         settings.average_period_length &&
         settings.last_period_start_date;
 
-      console.log("Has required settings?", hasRequiredSettings);
-      console.log("Settings values:", {
-        average_cycle_length: settings.average_cycle_length,
-        average_period_length: settings.average_period_length,
-        last_period_start_date: settings.last_period_start_date,
-      });
-
       if (isSettingsNull || !hasRequiredSettings) {
-        console.log(
-          "Period Tracker needs setup - settings are null or missing required fields"
-        );
         setNeedsSetup(true);
       } else {
-        console.log("Period Tracker is configured:", settings);
         setNeedsSetup(false);
         loadCalendarData(tracker);
         loadInsights(tracker);
@@ -172,20 +156,26 @@ export default function HomeScreen({ navigation }) {
         response.days || response.calendar_grid?.days || {};
 
       if (isPeriodTracker && response.days) {
-        // For period tracker, mark different cycle phases
+        // For period tracker, mark different cycle phases with colored dots
         Object.keys(response.days).forEach((date) => {
           const dayData = response.days[date];
           if (dayData && dayData.phase) {
+            const phase = dayData.phase.phase || dayData.phase;
+            let dotColor = colors.primary;
+
+            if (phase === "menstrual" || phase === "period") {
+              dotColor = colors.menstrual;
+            } else if (phase === "ovulation") {
+              dotColor = colors.ovulation;
+            } else if (phase === "follicular") {
+              dotColor = colors.follicular;
+            } else if (phase === "luteal") {
+              dotColor = colors.luteal;
+            }
+
             markedDates[date] = {
               marked: true,
-              dotColor:
-                dayData.phase === "period"
-                  ? colors.period
-                  : dayData.phase === "ovulation"
-                  ? colors.ovulation
-                  : dayData.phase === "fertile"
-                  ? colors.fertile
-                  : colors.primary,
+              dotColor: dotColor,
             };
           }
         });
@@ -219,16 +209,154 @@ export default function HomeScreen({ navigation }) {
 
     try {
       setInsightsLoading(true);
-      const response = await dataTrackingService.getAllInsights(tracker.id);
-      // Backend returns { fields: [...], total_fields: ... }
-      setInsights(response.fields || []);
+      const isPeriod = tracker.category_name === "Period Tracker";
+      setIsPeriodTracker(isPeriod);
+
+      let response;
+      if (isPeriod) {
+        // Use cycle analysis for period trackers
+        response = await dataTrackingService.getCycleAnalysis(tracker.id);
+      } else {
+        // Use general tracker analysis for normal trackers
+        response = await dataTrackingService.getGeneralAnalysis(tracker.id);
+      }
+
+      // Backend returns { message: "...", data: {...} }
+      // Service returns response.data which is { message: "...", data: {...} }
+      // So we need to extract the nested data object
+      const insightsData = response.data || response;
+      setInsights(insightsData);
     } catch (error) {
       console.error("Error loading insights:", error);
       // Silently fail - don't block the UI
-      setInsights([]);
+      setInsights(null);
     } finally {
       setInsightsLoading(false);
     }
+  };
+
+  // Format insights for display based on tracker type
+  const formatInsights = (rawInsights, isPeriod) => {
+    if (!rawInsights) {
+      return [];
+    }
+
+    const formatted = [];
+
+    if (isPeriod) {
+      // Format cycle analysis insights - show all, even if no data
+
+      // Regularity
+      if (rawInsights.regularity) {
+        const regularity = rawInsights.regularity;
+        const message =
+          regularity.medical_note ||
+          `Regularity: ${regularity.regularity_level} (${
+            regularity.regularity_score?.toFixed(1) || "N/A"
+          } score)`;
+        formatted.push({
+          id: "regularity",
+          title: "Cycle Regularity",
+          message: message,
+          details: regularity,
+        });
+      }
+
+      // Prediction Accuracy
+      if (rawInsights.prediction_accuracy) {
+        const prediction = rawInsights.prediction_accuracy;
+        const message =
+          prediction.recommendation ||
+          `Accuracy: ${prediction.accuracy_level} (${
+            prediction.average_error_days?.toFixed(1) || "N/A"
+          } days avg error)`;
+        formatted.push({
+          id: "prediction",
+          title: "Prediction Accuracy",
+          message: message,
+          details: prediction,
+        });
+      }
+
+      // Comparison with Previous
+      if (rawInsights.comparison_with_previous?.has_comparison) {
+        const comparison = rawInsights.comparison_with_previous;
+        const message =
+          comparison.cycle_insights?.[0] ||
+          comparison.insights?.[0] ||
+          "Compared to previous cycle";
+        formatted.push({
+          id: "comparison_previous",
+          title: "Cycle Comparison",
+          message: message,
+          details: comparison,
+        });
+      }
+
+      // Comparison with Average
+      if (rawInsights.comparison_with_average?.has_comparison) {
+        const comparison = rawInsights.comparison_with_average;
+        const message =
+          comparison.interpretation?.[0] || "Compared to average cycle";
+        formatted.push({
+          id: "comparison_average",
+          title: "Average Comparison",
+          message: message,
+          details: comparison,
+        });
+      }
+
+      // Correlations - only show if has_correlations is true
+      if (
+        rawInsights.correlations?.has_correlations &&
+        rawInsights.correlations.top_correlations
+      ) {
+        formatted.push({
+          id: "correlations",
+          title: "Correlations",
+          message: `${rawInsights.correlations.top_correlations.length} correlation patterns found`,
+          details: rawInsights.correlations,
+        });
+      }
+    } else {
+      // Format general tracker analysis insights - only show what's available
+
+      // Tracking Summary
+      if (rawInsights.tracking_summary) {
+        formatted.push({
+          id: "summary",
+          title: "Tracking Summary",
+          message: `${rawInsights.tracking_summary.total_entries} entries over ${rawInsights.tracking_summary.tracking_days} days`,
+          details: rawInsights.tracking_summary,
+        });
+      }
+
+      // Comparison
+      if (rawInsights.comparison?.has_comparison) {
+        formatted.push({
+          id: "comparison",
+          title: "Comparison",
+          message:
+            rawInsights.comparison.message || "Comparison analysis available",
+          details: rawInsights.comparison,
+        });
+      }
+
+      // Correlations - only show if has_correlations is true
+      if (
+        rawInsights.correlations?.has_correlations &&
+        rawInsights.correlations.top_correlations
+      ) {
+        formatted.push({
+          id: "correlations",
+          title: "Correlations",
+          message: `${rawInsights.correlations.top_correlations.length} correlation patterns found`,
+          details: rawInsights.correlations,
+        });
+      }
+    }
+
+    return formatted;
   };
 
   // Reload trackers when screen comes into focus
@@ -410,6 +538,50 @@ export default function HomeScreen({ navigation }) {
                     style={styles.calendar}
                   />
                 </View>
+                {/* Cycle Phase Legend - Only for Period Tracker */}
+                {isPeriodTracker && (
+                  <View style={styles.legendContainer}>
+                    <Text style={styles.legendTitle}>Cycle Phases</Text>
+                    <View style={styles.legendRow}>
+                      <View style={styles.legendItem}>
+                        <View
+                          style={[
+                            styles.legendColor,
+                            { backgroundColor: colors.menstrual },
+                          ]}
+                        />
+                        <Text style={styles.legendText}>Menstrual</Text>
+                      </View>
+                      <View style={styles.legendItem}>
+                        <View
+                          style={[
+                            styles.legendColor,
+                            { backgroundColor: colors.follicular },
+                          ]}
+                        />
+                        <Text style={styles.legendText}>Follicular</Text>
+                      </View>
+                      <View style={styles.legendItem}>
+                        <View
+                          style={[
+                            styles.legendColor,
+                            { backgroundColor: colors.ovulation },
+                          ]}
+                        />
+                        <Text style={styles.legendText}>Ovulation</Text>
+                      </View>
+                      <View style={styles.legendItem}>
+                        <View
+                          style={[
+                            styles.legendColor,
+                            { backgroundColor: colors.luteal },
+                          ]}
+                        />
+                        <Text style={styles.legendText}>Luteal</Text>
+                      </View>
+                    </View>
+                  </View>
+                )}
                 <TouchableOpacity
                   style={styles.logButton}
                   onPress={() => {
@@ -437,45 +609,57 @@ export default function HomeScreen({ navigation }) {
             {needsSetup === false && (
               <View style={styles.insightsSection}>
                 <Text style={styles.insightsTitle}>Insights</Text>
-                {insights.length > 0 ? (
-                  <>
-                    {insights.slice(0, 3).map((insight, index) => (
-                      <View key={index} style={styles.insightCard}>
-                        <Text style={styles.insightFieldName}>
-                          {insight.field_name
-                            .split("_")
-                            .map(
-                              (word) =>
-                                word.charAt(0).toUpperCase() + word.slice(1)
-                            )
-                            .join(" ")}
-                        </Text>
-                        {insight.primary_insight && (
-                          <>
-                            <Text style={styles.insightMessage}>
-                              {insight.primary_insight.message}
+                {insights ? (
+                  (() => {
+                    const formattedInsights = formatInsights(
+                      insights,
+                      isPeriodTracker
+                    );
+                    return formattedInsights.length > 0 ? (
+                      <>
+                        {formattedInsights.map((insight) => (
+                          <View
+                            key={insight.id}
+                            style={[
+                              styles.insightCard,
+                              !insight.details && styles.insightCardEmpty,
+                            ]}
+                          >
+                            <Text style={styles.insightFieldName}>
+                              {insight.title}
                             </Text>
-                            <View style={styles.insightMeta}>
-                              <Text style={styles.insightMetaText}>
-                                {insight.entry_count} entries
-                              </Text>
-                              {insight.primary_insight.confidence && (
-                                <Text style={styles.insightMetaText}>
-                                  • {insight.primary_insight.confidence}{" "}
-                                  confidence
-                                </Text>
-                              )}
-                            </View>
-                          </>
-                        )}
+                            <Text
+                              style={[
+                                styles.insightMessage,
+                                !insight.details && styles.insightMessageEmpty,
+                              ]}
+                            >
+                              {insight.message}
+                            </Text>
+                          </View>
+                        ))}
+                      </>
+                    ) : (
+                      <View style={styles.noInsightsCard}>
+                        <Ionicons
+                          name="analytics-outline"
+                          size={48}
+                          color={colors.textLight}
+                        />
+                        <Text style={styles.noInsightsTitle}>
+                          No insights yet
+                        </Text>
+                        <Text style={styles.noInsightsText}>
+                          Log at least 4 entries to start seeing insights about
+                          your tracking patterns and trends.
+                        </Text>
+                        <Text style={styles.noInsightsSubtext}>
+                          Keep logging consistently to unlock more detailed
+                          analytics!
+                        </Text>
                       </View>
-                    ))}
-                    {insights.length > 3 && (
-                      <Text style={styles.moreInsightsText}>
-                        +{insights.length - 3} more insights
-                      </Text>
-                    )}
-                  </>
+                    );
+                  })()
                 ) : (
                   <View style={styles.noInsightsCard}>
                     <Ionicons
@@ -787,5 +971,47 @@ const styles = StyleSheet.create({
     color: colors.textLight,
     textAlign: "center",
     fontStyle: "italic",
+  },
+  insightCardEmpty: {
+    opacity: 0.7,
+    borderStyle: "dashed",
+  },
+  insightMessageEmpty: {
+    fontStyle: "italic",
+    color: colors.textLight,
+  },
+  legendContainer: {
+    padding: 16,
+    backgroundColor: colors.secondary,
+    borderRadius: 12,
+    marginTop: 12,
+  },
+  legendTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: colors.textOnSecondary,
+    marginBottom: 12,
+  },
+  legendRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+  },
+  legendItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 8,
+    minWidth: "45%",
+  },
+  legendColor: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    marginRight: 8,
+  },
+  legendText: {
+    fontSize: 12,
+    color: colors.textOnSecondary,
+    fontWeight: "500",
   },
 });
