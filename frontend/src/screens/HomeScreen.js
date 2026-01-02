@@ -7,11 +7,14 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
+  ScrollView,
 } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
+import { Calendar } from "react-native-calendars";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";
 import { trackerService } from "../services/trackerService";
+import { dataTrackingService } from "../services/dataTrackingService";
 import { colors } from "../constants/colors";
 import MenuDrawer from "../components/MenuDrawer";
 
@@ -20,6 +23,12 @@ export default function HomeScreen({ navigation }) {
   const [trackers, setTrackers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [menuVisible, setMenuVisible] = useState(false);
+  const [defaultTracker, setDefaultTracker] = useState(null);
+  const [calendarData, setCalendarData] = useState({});
+  const [selectedDate, setSelectedDate] = useState(
+    new Date().toISOString().split("T")[0]
+  );
+  const [calendarLoading, setCalendarLoading] = useState(false);
 
   const loadTrackers = async () => {
     try {
@@ -41,6 +50,16 @@ export default function HomeScreen({ navigation }) {
       }));
 
       setTrackers(formattedTrackers);
+
+      // Find default tracker
+      const defaultTracker =
+        formattedTrackers.find((t) => t.is_default) || formattedTrackers[0];
+      setDefaultTracker(defaultTracker);
+
+      // Load calendar data for default tracker
+      if (defaultTracker) {
+        loadCalendarData(defaultTracker);
+      }
     } catch (error) {
       console.error("Error loading trackers:", error);
       console.error("Error details:", error.response?.data);
@@ -50,12 +69,86 @@ export default function HomeScreen({ navigation }) {
     }
   };
 
+  const loadCalendarData = async (tracker) => {
+    if (!tracker) return;
+
+    try {
+      setCalendarLoading(true);
+      const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM format
+
+      // Check if it's a Period Tracker
+      const isPeriodTracker = tracker.category_name === "Period Tracker";
+
+      let response;
+      if (isPeriodTracker) {
+        response = await dataTrackingService.getCalendar(tracker.id, {
+          params: { month: currentMonth },
+        });
+      } else {
+        response = await dataTrackingService.getTrackerCalendar(tracker.id, {
+          params: { month: currentMonth },
+        });
+      }
+
+      // Format calendar data for react-native-calendars
+      // Backend returns data merged at top level (not nested)
+      const markedDates = {};
+      const calendarResponse =
+        response.days || response.calendar_grid?.days || {};
+
+      if (isPeriodTracker && response.days) {
+        // For period tracker, mark different cycle phases
+        Object.keys(response.days).forEach((date) => {
+          const dayData = response.days[date];
+          if (dayData && dayData.phase) {
+            markedDates[date] = {
+              marked: true,
+              dotColor:
+                dayData.phase === "period"
+                  ? colors.period
+                  : dayData.phase === "ovulation"
+                  ? colors.ovulation
+                  : dayData.phase === "fertile"
+                  ? colors.fertile
+                  : colors.primary,
+            };
+          }
+        });
+      } else if (response.days) {
+        // For regular trackers, mark days with entries
+        Object.keys(response.days).forEach((date) => {
+          const dayData = response.days[date];
+          if (dayData && dayData.has_entry) {
+            markedDates[date] = {
+              marked: true,
+              dotColor: colors.primary,
+            };
+          }
+        });
+      }
+
+      setCalendarData(markedDates);
+    } catch (error) {
+      console.error("Error loading calendar data:", error);
+      setCalendarData({});
+    } finally {
+      setCalendarLoading(false);
+    }
+  };
+
   // Reload trackers when screen comes into focus
   useFocusEffect(
     useCallback(() => {
       loadTrackers();
     }, [])
   );
+
+  const onDayPress = (day) => {
+    setSelectedDate(day.dateString);
+    if (defaultTracker) {
+      navigation.navigate("TrackerDetail", { trackerId: defaultTracker.id });
+    }
+  };
 
   const renderTracker = ({ item }) => (
     <TouchableOpacity
@@ -84,7 +177,7 @@ export default function HomeScreen({ navigation }) {
           style={styles.menuButton}
           onPress={() => setMenuVisible(true)}
         >
-          <Ionicons name="menu" size={28} color={colors.text} />
+          <Ionicons name="menu" size={28} color={colors.textOnPrimary} />
         </TouchableOpacity>
         <Text style={styles.title}>Trackt</Text>
         <TouchableOpacity
@@ -97,22 +190,63 @@ export default function HomeScreen({ navigation }) {
           <Ionicons
             name="person-circle-outline"
             size={28}
-            color={colors.text}
+            color={colors.textOnPrimary}
           />
         </TouchableOpacity>
       </View>
 
-      <FlatList
-        data={trackers}
-        renderItem={renderTracker}
-        keyExtractor={(item) => item.id.toString()}
-        contentContainerStyle={styles.list}
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>No trackers yet</Text>
-          </View>
-        }
-      />
+      <ScrollView style={styles.scrollView}>
+        {defaultTracker && (
+          <>
+            <View style={styles.titleSection}>
+              <Text style={styles.calendarTitle}>{defaultTracker.name}</Text>
+            </View>
+            <View style={styles.calendarSection}>
+              {calendarLoading ? (
+                <ActivityIndicator
+                  size="small"
+                  color={colors.primary}
+                  style={styles.calendarLoader}
+                />
+              ) : (
+                <Calendar
+                  current={selectedDate}
+                  onDayPress={onDayPress}
+                  markedDates={{
+                    ...calendarData,
+                    [selectedDate]: {
+                      ...calendarData[selectedDate],
+                      selected: true,
+                      selectedColor: colors.primary,
+                    },
+                  }}
+                  theme={{
+                    backgroundColor: colors.secondary,
+                    calendarBackground: colors.secondary,
+                    textSectionTitleColor: colors.textOnSecondary,
+                    selectedDayBackgroundColor: colors.primary,
+                    selectedDayTextColor: colors.textOnPrimary,
+                    todayTextColor: colors.primary,
+                    dayTextColor: colors.textOnSecondary,
+                    textDisabledColor: colors.textLight,
+                    dotColor: colors.primary,
+                    selectedDotColor: colors.textOnPrimary,
+                    arrowColor: colors.primary,
+                    monthTextColor: colors.textOnSecondary,
+                    textDayFontWeight: "500",
+                    textMonthFontWeight: "bold",
+                    textDayHeaderFontWeight: "600",
+                    textDayFontSize: 14,
+                    textMonthFontSize: 16,
+                    textDayHeaderFontSize: 13,
+                  }}
+                  style={styles.calendar}
+                />
+              )}
+            </View>
+          </>
+        )}
+      </ScrollView>
 
       <MenuDrawer
         visible={menuVisible}
@@ -150,9 +284,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: 20,
     paddingTop: 60,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.primary,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+    borderBottomColor: colors.primaryDark,
   },
   menuButton: {
     padding: 4,
@@ -160,12 +294,51 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: "bold",
-    color: colors.text,
+    color: colors.textOnPrimary,
     flex: 1,
     textAlign: "center",
   },
   profileButton: {
     padding: 4,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  titleSection: {
+    backgroundColor: colors.background,
+    paddingVertical: 20,
+    paddingHorizontal: 20,
+    alignItems: "center",
+  },
+  calendarTitle: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: colors.text,
+    textAlign: "center",
+  },
+  calendarSection: {
+    backgroundColor: colors.secondary,
+    padding: 20,
+    marginBottom: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.secondaryDark,
+  },
+  calendarLoader: {
+    padding: 20,
+  },
+  calendar: {
+    borderRadius: 12,
+    overflow: "hidden",
+  },
+  trackersSection: {
+    padding: 20,
+    paddingTop: 0,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: colors.text,
+    marginBottom: 16,
   },
   list: {
     padding: 20,

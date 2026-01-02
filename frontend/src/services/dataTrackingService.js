@@ -29,20 +29,26 @@ export const dataTrackingService = {
   },
 
   // Get calendar data (for period tracker)
-  getCalendar: async (trackerId) => {
-    const response = await api.get(API_ENDPOINTS.CALENDAR(trackerId));
+  getCalendar: async (trackerId, options = {}) => {
+    const response = await api.get(API_ENDPOINTS.CALENDAR(trackerId), {
+      params: options.params || {},
+    });
     return response.data;
   },
 
   // Get calendar overview
-  getCalendarOverview: async (trackerId) => {
-    const response = await api.get(API_ENDPOINTS.CALENDAR_OVERVIEW(trackerId));
+  getCalendarOverview: async (trackerId, options = {}) => {
+    const response = await api.get(API_ENDPOINTS.CALENDAR_OVERVIEW(trackerId), {
+      params: options.params || {},
+    });
     return response.data;
   },
 
   // Get tracker calendar (for regular trackers)
-  getTrackerCalendar: async (trackerId) => {
-    const response = await api.get(API_ENDPOINTS.TRACKER_CALENDAR(trackerId));
+  getTrackerCalendar: async (trackerId, options = {}) => {
+    const response = await api.get(API_ENDPOINTS.TRACKER_CALENDAR(trackerId), {
+      params: options.params || {},
+    });
     return response.data;
   },
 };
