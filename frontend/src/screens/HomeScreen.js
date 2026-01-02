@@ -29,6 +29,7 @@ export default function HomeScreen({ navigation }) {
     new Date().toISOString().split("T")[0]
   );
   const [calendarLoading, setCalendarLoading] = useState(false);
+  const [needsSetup, setNeedsSetup] = useState(null); // null = checking, true = needs setup, false = configured
 
   const loadTrackers = async () => {
     try {
@@ -56,9 +57,16 @@ export default function HomeScreen({ navigation }) {
         formattedTrackers.find((t) => t.is_default) || formattedTrackers[0];
       setDefaultTracker(defaultTracker);
 
-      // Load calendar data for default tracker
-      if (defaultTracker) {
+      // Check if Period Tracker needs setup
+      if (defaultTracker && defaultTracker.category_name === "Period Tracker") {
+        // Don't load calendar until we confirm settings exist
+        checkPeriodTrackerSetup(defaultTracker);
+      } else if (defaultTracker) {
+        // Load calendar data for non-period trackers
         loadCalendarData(defaultTracker);
+        setNeedsSetup(false);
+      } else {
+        setNeedsSetup(false);
       }
     } catch (error) {
       console.error("Error loading trackers:", error);
@@ -66,6 +74,64 @@ export default function HomeScreen({ navigation }) {
       setTrackers([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const checkPeriodTrackerSetup = async (tracker) => {
+    // Only check setup for Period Trackers
+    if (!tracker || tracker.category_name !== "Period Tracker") {
+      setNeedsSetup(false);
+      if (tracker) {
+        loadCalendarData(tracker);
+      }
+      return;
+    }
+
+    try {
+      // Check tracker settings directly from backend
+      const response = await trackerService.getTrackerSettings(tracker.id);
+      console.log("Tracker settings response:", response);
+
+      // The backend returns { settings: {...} } or { settings: {} } if null
+      const settings = response.settings || {};
+      console.log("Settings from response:", settings);
+      console.log(
+        "Settings is null/empty?",
+        !settings || Object.keys(settings).length === 0
+      );
+
+      // Check if settings is null, empty object, or missing required fields
+      const isSettingsNull = !settings || Object.keys(settings).length === 0;
+      const hasRequiredSettings =
+        settings.average_cycle_length &&
+        settings.average_period_length &&
+        settings.last_period_start_date;
+
+      console.log("Has required settings?", hasRequiredSettings);
+      console.log("Settings values:", {
+        average_cycle_length: settings.average_cycle_length,
+        average_period_length: settings.average_period_length,
+        last_period_start_date: settings.last_period_start_date,
+      });
+
+      if (isSettingsNull || !hasRequiredSettings) {
+        console.log(
+          "Period Tracker needs setup - settings are null or missing required fields"
+        );
+        setNeedsSetup(true);
+      } else {
+        console.log("Period Tracker is configured:", settings);
+        setNeedsSetup(false);
+        loadCalendarData(tracker);
+      }
+    } catch (error) {
+      console.error("Error checking tracker setup:", error);
+      console.error("Error details:", {
+        status: error.response?.status,
+        data: error.response?.data,
+      });
+      // If error, assume setup is needed for Period Tracker
+      setNeedsSetup(true);
     }
   };
 
@@ -130,6 +196,11 @@ export default function HomeScreen({ navigation }) {
       setCalendarData(markedDates);
     } catch (error) {
       console.error("Error loading calendar data:", error);
+      console.error("Calendar error details:", {
+        status: error.response?.status,
+        data: error.response?.data,
+      });
+      // Silently fail for calendar - don't block the UI
       setCalendarData({});
     } finally {
       setCalendarLoading(false);
@@ -201,61 +272,101 @@ export default function HomeScreen({ navigation }) {
             <View style={styles.titleSection}>
               <Text style={styles.calendarTitle}>{defaultTracker.name}</Text>
             </View>
-            <View style={styles.calendarSection}>
-              {calendarLoading ? (
+            {needsSetup === true ? (
+              // Show configure button when setup is needed
+              <View style={styles.calendarSection}>
+                <View style={styles.setupPrompt}>
+                  <Ionicons
+                    name="settings-outline"
+                    size={48}
+                    color={colors.primary}
+                  />
+                  <Text style={styles.setupTitle}>Setup Required</Text>
+                  <Text style={styles.setupText}>
+                    Configure your Period Tracker to start logging your symptoms
+                    and tracking your cycle.
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.configureButton}
+                    onPress={() => {
+                      navigation.navigate("ConfigurePeriodTracker", {
+                        trackerId: defaultTracker.id,
+                      });
+                    }}
+                  >
+                    <Text style={styles.configureButtonText}>
+                      Configure Tracker
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : needsSetup === false ? (
+              // Show calendar and log button when configured
+              <View style={styles.calendarSection}>
+                {calendarLoading ? (
+                  <ActivityIndicator
+                    size="small"
+                    color={colors.primary}
+                    style={styles.calendarLoader}
+                  />
+                ) : (
+                  <Calendar
+                    current={selectedDate}
+                    onDayPress={onDayPress}
+                    markedDates={{
+                      ...calendarData,
+                      [selectedDate]: {
+                        ...calendarData[selectedDate],
+                        selected: true,
+                        selectedColor: colors.primary,
+                      },
+                    }}
+                    theme={{
+                      backgroundColor: colors.secondary,
+                      calendarBackground: colors.secondary,
+                      textSectionTitleColor: colors.textOnSecondary,
+                      selectedDayBackgroundColor: colors.primary,
+                      selectedDayTextColor: colors.textOnPrimary,
+                      todayTextColor: colors.primary,
+                      dayTextColor: colors.textOnSecondary,
+                      textDisabledColor: colors.textLight,
+                      dotColor: colors.primary,
+                      selectedDotColor: colors.textOnPrimary,
+                      arrowColor: colors.primary,
+                      monthTextColor: colors.textOnSecondary,
+                      textDayFontWeight: "500",
+                      textMonthFontWeight: "bold",
+                      textDayHeaderFontWeight: "600",
+                      textDayFontSize: 14,
+                      textMonthFontSize: 16,
+                      textDayHeaderFontSize: 13,
+                    }}
+                    style={styles.calendar}
+                  />
+                )}
+                <TouchableOpacity
+                  style={styles.logButton}
+                  onPress={() => {
+                    if (defaultTracker) {
+                      navigation.navigate("LogSymptoms", {
+                        trackerId: defaultTracker.id,
+                      });
+                    }
+                  }}
+                >
+                  <Text style={styles.logButtonText}>Log Symptoms</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              // Show loading while checking setup status
+              <View style={styles.calendarSection}>
                 <ActivityIndicator
                   size="small"
                   color={colors.primary}
                   style={styles.calendarLoader}
                 />
-              ) : (
-                <Calendar
-                  current={selectedDate}
-                  onDayPress={onDayPress}
-                  markedDates={{
-                    ...calendarData,
-                    [selectedDate]: {
-                      ...calendarData[selectedDate],
-                      selected: true,
-                      selectedColor: colors.primary,
-                    },
-                  }}
-                  theme={{
-                    backgroundColor: colors.secondary,
-                    calendarBackground: colors.secondary,
-                    textSectionTitleColor: colors.textOnSecondary,
-                    selectedDayBackgroundColor: colors.primary,
-                    selectedDayTextColor: colors.textOnPrimary,
-                    todayTextColor: colors.primary,
-                    dayTextColor: colors.textOnSecondary,
-                    textDisabledColor: colors.textLight,
-                    dotColor: colors.primary,
-                    selectedDotColor: colors.textOnPrimary,
-                    arrowColor: colors.primary,
-                    monthTextColor: colors.textOnSecondary,
-                    textDayFontWeight: "500",
-                    textMonthFontWeight: "bold",
-                    textDayHeaderFontWeight: "600",
-                    textDayFontSize: 14,
-                    textMonthFontSize: 16,
-                    textDayHeaderFontSize: 13,
-                  }}
-                  style={styles.calendar}
-                />
-              )}
-              <TouchableOpacity
-                style={styles.logButton}
-                onPress={() => {
-                  if (defaultTracker) {
-                    navigation.navigate("TrackerDetail", {
-                      trackerId: defaultTracker.id,
-                    });
-                  }
-                }}
-              >
-                <Text style={styles.logButtonText}>Log Symptoms</Text>
-              </TouchableOpacity>
-            </View>
+              </View>
+            )}
           </>
         )}
       </ScrollView>
@@ -354,6 +465,38 @@ const styles = StyleSheet.create({
     color: colors.textOnPrimary,
     fontSize: 16,
     fontWeight: "600",
+  },
+  setupPrompt: {
+    alignItems: "center",
+    padding: 32,
+  },
+  setupTitle: {
+    fontSize: 22,
+    fontWeight: "bold",
+    color: colors.textOnSecondary,
+    marginTop: 16,
+    marginBottom: 12,
+  },
+  setupText: {
+    fontSize: 16,
+    color: colors.textOnSecondary,
+    textAlign: "center",
+    marginBottom: 24,
+    lineHeight: 24,
+    paddingHorizontal: 20,
+  },
+  configureButton: {
+    backgroundColor: colors.primary,
+    paddingVertical: 16,
+    paddingHorizontal: 32,
+    borderRadius: 8,
+    minWidth: 200,
+  },
+  configureButtonText: {
+    color: colors.textOnPrimary,
+    fontSize: 16,
+    fontWeight: "600",
+    textAlign: "center",
   },
   trackersSection: {
     padding: 20,

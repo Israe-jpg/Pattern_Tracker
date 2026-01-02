@@ -28,4 +28,18 @@ export const trackerService = {
     );
     return response.data;
   },
+
+  // Get tracker settings
+  getTrackerSettings: async (trackerId) => {
+    const response = await api.get(API_ENDPOINTS.TRACKER_SETTINGS(trackerId));
+    return response.data;
+  },
+
+  // Update tracker settings
+  updateTrackerSettings: async (trackerId, settings) => {
+    const response = await api.put(API_ENDPOINTS.TRACKER_SETTINGS(trackerId), {
+      settings,
+    });
+    return response.data;
+  },
 };

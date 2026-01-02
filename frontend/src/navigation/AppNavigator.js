@@ -11,6 +11,8 @@ import UserInfoScreen from "../screens/auth/UserInfoScreen";
 import HomeScreen from "../screens/HomeScreen";
 import CalendarScreen from "../screens/CalendarScreen";
 import TrackerDetailScreen from "../screens/TrackerDetailScreen";
+import LogSymptomsScreen from "../screens/LogSymptomsScreen";
+import ConfigurePeriodTrackerScreen from "../screens/ConfigurePeriodTrackerScreen";
 
 const Stack = createNativeStackNavigator();
 
@@ -42,6 +44,11 @@ export default function AppNavigator() {
           <Stack.Screen name="UserInfo" component={UserInfoScreen} />
           <Stack.Screen name="Calendar" component={CalendarScreen} />
           <Stack.Screen name="TrackerDetail" component={TrackerDetailScreen} />
+          <Stack.Screen name="LogSymptoms" component={LogSymptomsScreen} />
+          <Stack.Screen
+            name="ConfigurePeriodTracker"
+            component={ConfigurePeriodTrackerScreen}
+          />
         </>
       )}
     </Stack.Navigator>

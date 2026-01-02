@@ -60,6 +60,7 @@ export const API_ENDPOINTS = {
   TRACKER_DETAILS: (id) => `/trackers/${id}/tracker-details`,
   FORM_SCHEMA: (id) => `/trackers/${id}/form-schema`,
   CREATE_CUSTOM_TRACKER: "/trackers/create-custom-category",
+  TRACKER_SETTINGS: (id) => `/trackers/${id}/tracker-settings`,
 
   // Data Tracking
   SAVE_DATA: (id) => `/data-tracking/${id}/save-tracking-data`,

@@ -287,8 +287,13 @@ def update_tracker_settings(tracker_id: int):
     
     try:
         from sqlalchemy.orm.attributes import flag_modified
+        import logging
         
-        settings = request.json.get('settings', {})
+        request_data = request.json or {}
+        settings = request_data.get('settings', {})
+        
+        logging.info(f"Updating tracker {tracker_id} settings. Received: {request_data}")
+        logging.info(f"Settings to update: {settings}")
         
         # Validate settings based on tracker type if needed
         category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
@@ -300,12 +305,19 @@ def update_tracker_settings(tracker_id: int):
                 settings_schema = MenstruationTrackerSetupSchema()
                 validated_data = settings_schema.load(settings)
                 settings = validated_data
+                logging.info(f"Validated settings: {settings}")
             except ValidationError as err:
+                logging.error(f"Validation error for Period Tracker settings: {err.messages}")
+                logging.error(f"Received settings: {settings}")
                 return error_response("Validation failed", 400, err.messages)
-            
+        
+        # Update tracker settings
+        old_settings = tracker.settings
         tracker.settings = settings
         flag_modified(tracker, 'settings')
         db.session.commit()
+        
+        logging.info(f"Successfully updated tracker {tracker_id} settings. Old: {old_settings}, New: {tracker.settings}")
         
         return success_response(
             "Tracker settings updated successfully",
@@ -313,6 +325,10 @@ def update_tracker_settings(tracker_id: int):
         )
     
     except Exception as e:
+        import logging
+        import traceback
+        logging.error(f"Error updating tracker settings: {str(e)}")
+        logging.error(f"Traceback: {traceback.format_exc()}")
         db.session.rollback()
         return error_response(f"Failed to update tracker settings: {str(e)}", 500)
 
