@@ -226,7 +226,10 @@ export default function LogSymptomsScreen({ route, navigation }) {
                   styles.choiceButton,
                   currentValue === true && styles.choiceButtonSelected,
                 ]}
-                onPress={() => updateFieldValue(field.field_name, option.option_name, true)}
+                onPress={() => {
+                  // Toggle: if already true, set to null to unselect
+                  updateFieldValue(field.field_name, option.option_name, currentValue === true ? null : true);
+                }}
               >
                 <Text
                   style={[
@@ -242,7 +245,10 @@ export default function LogSymptomsScreen({ route, navigation }) {
                   styles.choiceButton,
                   currentValue === false && styles.choiceButtonSelected,
                 ]}
-                onPress={() => updateFieldValue(field.field_name, option.option_name, false)}
+                onPress={() => {
+                  // Toggle: if already false, set to null to unselect
+                  updateFieldValue(field.field_name, option.option_name, currentValue === false ? null : false);
+                }}
               >
                 <Text
                   style={[
@@ -271,7 +277,10 @@ export default function LogSymptomsScreen({ route, navigation }) {
                       styles.choiceButton,
                       isSelected && styles.choiceButtonSelected,
                     ]}
-                    onPress={() => updateFieldValue(field.field_name, option.option_name, choice)}
+                    onPress={() => {
+                      // Toggle: if already selected, unselect by setting to null
+                      updateFieldValue(field.field_name, option.option_name, isSelected ? null : choice);
+                    }}
                   >
                     <Text
                       style={[
