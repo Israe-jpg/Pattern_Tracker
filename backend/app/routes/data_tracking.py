@@ -1596,24 +1596,85 @@ def get_general_cycle_analysis(tracker_id: int):
             return error_response("This endpoint is only for Period Trackers", 400)
         
         #get cycle regularity
-        regularity = PeriodAnalyticsService.analyze_cycle_regularity(tracker_id)
-        if not regularity:
-            return error_response("Failed to get cycle regularity", 500)
+        try:
+            regularity = PeriodAnalyticsService.analyze_cycle_regularity(tracker_id)
+            if not regularity:
+                regularity = {
+                    'message': 'Insufficient data to analyze cycle regularity',
+                    'cycles_found': 0
+                }
+        except Exception as e:
+            regularity = {
+                'message': f'Could not analyze cycle regularity: {str(e)}',
+                'cycles_found': 0
+            }
 
-        #get comparisons
-        cycle_to_compare = PeriodCycleService.get_last_finished_cycle(tracker_id)
-        if not cycle_to_compare:
-            return error_response("Failed to get last finished cycle", 500)
-        comparison_with_previous = ComparisonService.compare_cycle_with_previous(tracker_id, cycle_to_compare.id)
-        if not comparison_with_previous:
-            return error_response("Failed to compare cycle with previous", 500)
-        comparison_with_average = ComparisonService.compare_cycle_with_average(tracker_id, cycle_to_compare.id)
-        if not comparison_with_average:
-            return error_response("Failed to compare cycle with average", 500)
+        #get comparisons (only if we have finished cycles)
+        cycle_to_compare = None
+        comparison_with_previous = None
+        comparison_with_average = None
+        
+        try:
+            cycle_to_compare = PeriodCycleService.get_last_finished_cycle(tracker_id)
+            if cycle_to_compare:
+                try:
+                    comparison_with_previous = ComparisonService.compare_cycle_with_previous(tracker_id, cycle_to_compare.id)
+                    if not comparison_with_previous:
+                        comparison_with_previous = {
+                            'has_comparison': False,
+                            'message': 'Insufficient data to compare with previous cycle'
+                        }
+                except Exception as e:
+                    comparison_with_previous = {
+                        'has_comparison': False,
+                        'message': f'Could not compare with previous cycle: {str(e)}'
+                    }
+                
+                try:
+                    comparison_with_average = ComparisonService.compare_cycle_with_average(tracker_id, cycle_to_compare.id)
+                    if not comparison_with_average:
+                        comparison_with_average = {
+                            'has_comparison': False,
+                            'message': 'Insufficient data to compare with average cycle'
+                        }
+                except Exception as e:
+                    comparison_with_average = {
+                        'has_comparison': False,
+                        'message': f'Could not compare with average cycle: {str(e)}'
+                    }
+            else:
+                # No finished cycles yet
+                comparison_with_previous = {
+                    'has_comparison': False,
+                    'message': 'No finished cycles available for comparison. Complete at least one cycle to see comparisons.'
+                }
+                comparison_with_average = {
+                    'has_comparison': False,
+                    'message': 'No finished cycles available for comparison. Complete at least one cycle to see comparisons.'
+                }
+        except Exception as e:
+            comparison_with_previous = {
+                'has_comparison': False,
+                'message': f'Could not get cycle comparisons: {str(e)}'
+            }
+            comparison_with_average = {
+                'has_comparison': False,
+                'message': f'Could not get cycle comparisons: {str(e)}'
+            }
+        
         #get prediction accuracy
-        prediction_accuracy = PeriodAnalyticsService.analyze_prediction_accuracy(tracker_id)
-        if not prediction_accuracy:
-            return error_response("Failed to get prediction accuracy", 500)
+        try:
+            prediction_accuracy = PeriodAnalyticsService.analyze_prediction_accuracy(tracker_id)
+            if not prediction_accuracy:
+                prediction_accuracy = {
+                    'message': 'No prediction history available',
+                    'note': 'Predictions are made when you log entries'
+                }
+        except Exception as e:
+            prediction_accuracy = {
+                'message': f'Could not analyze prediction accuracy: {str(e)}',
+                'note': 'Predictions are made when you log entries'
+            }
         
         # Get correlations (top 3 patterns)
         try:
