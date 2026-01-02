@@ -243,6 +243,18 @@ export default function HomeScreen({ navigation }) {
                   style={styles.calendar}
                 />
               )}
+              <TouchableOpacity
+                style={styles.logButton}
+                onPress={() => {
+                  if (defaultTracker) {
+                    navigation.navigate("TrackerDetail", {
+                      trackerId: defaultTracker.id,
+                    });
+                  }
+                }}
+              >
+                <Text style={styles.logButtonText}>Log Symptoms</Text>
+              </TouchableOpacity>
             </View>
           </>
         )}
@@ -329,6 +341,19 @@ const styles = StyleSheet.create({
   calendar: {
     borderRadius: 12,
     overflow: "hidden",
+  },
+  logButton: {
+    backgroundColor: colors.primary,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    alignItems: "center",
+    marginTop: 20,
+  },
+  logButtonText: {
+    color: colors.textOnPrimary,
+    fontSize: 16,
+    fontWeight: "600",
   },
   trackersSection: {
     padding: 20,
