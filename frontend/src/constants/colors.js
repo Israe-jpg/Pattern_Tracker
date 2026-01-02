@@ -29,9 +29,13 @@ export const colors = {
   error: "#EF4444",
   info: "#3C507D",           // Using primary for info
 
-  // Health Tracker Specific
+  // Health Tracker Specific - Cycle Phases
+  menstrual: "#8B1538",       // Red burgundy for period
+  ovulation: "#A8D8EA",      // Blue pastel for ovulation
+  follicular: "#B8E6B8",     // Green pastel for follicular phase
+  luteal: "#D4B3E8",         // Purple pastel for luteal phase
+  // Legacy support
   period: "#EF4444",
-  ovulation: "#E0C58F",      // Using accent color
   fertile: "#F59E0B",
 
   // Chart Colors (using main palette)
