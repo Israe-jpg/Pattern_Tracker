@@ -32,6 +32,8 @@ export default function HomeScreen({ navigation }) {
     new Date().toISOString().split("T")[0]
   );
   const [needsSetup, setNeedsSetup] = useState(null); // null = checking, true = needs setup, false = configured
+  const [insights, setInsights] = useState([]);
+  const [insightsLoading, setInsightsLoading] = useState(false);
 
   const loadTrackers = async () => {
     try {
@@ -69,6 +71,7 @@ export default function HomeScreen({ navigation }) {
       } else if (defaultTracker) {
         // Load calendar data for non-period trackers
         loadCalendarData(defaultTracker);
+        loadInsights(defaultTracker);
         setNeedsSetup(false);
       } else {
         setNeedsSetup(false);
@@ -129,6 +132,7 @@ export default function HomeScreen({ navigation }) {
         console.log("Period Tracker is configured:", settings);
         setNeedsSetup(false);
         loadCalendarData(tracker);
+        loadInsights(tracker);
       }
     } catch (error) {
       console.error("Error checking tracker setup:", error);
@@ -207,6 +211,23 @@ export default function HomeScreen({ navigation }) {
       });
       // Silently fail for calendar - don't block the UI
       setCalendarData({});
+    }
+  };
+
+  const loadInsights = async (tracker) => {
+    if (!tracker) return;
+
+    try {
+      setInsightsLoading(true);
+      const response = await dataTrackingService.getAllInsights(tracker.id);
+      // Backend returns { fields: [...], total_fields: ... }
+      setInsights(response.fields || []);
+    } catch (error) {
+      console.error("Error loading insights:", error);
+      // Silently fail - don't block the UI
+      setInsights([]);
+    } finally {
+      setInsightsLoading(false);
     }
   };
 
@@ -410,6 +431,69 @@ export default function HomeScreen({ navigation }) {
                   color={colors.primary}
                   style={styles.calendarLoader}
                 />
+              </View>
+            )}
+            {/* Insights Section - Show for all configured trackers */}
+            {needsSetup === false && (
+              <View style={styles.insightsSection}>
+                <Text style={styles.insightsTitle}>Insights</Text>
+                {insights.length > 0 ? (
+                  <>
+                    {insights.slice(0, 3).map((insight, index) => (
+                      <View key={index} style={styles.insightCard}>
+                        <Text style={styles.insightFieldName}>
+                          {insight.field_name
+                            .split("_")
+                            .map(
+                              (word) =>
+                                word.charAt(0).toUpperCase() + word.slice(1)
+                            )
+                            .join(" ")}
+                        </Text>
+                        {insight.primary_insight && (
+                          <>
+                            <Text style={styles.insightMessage}>
+                              {insight.primary_insight.message}
+                            </Text>
+                            <View style={styles.insightMeta}>
+                              <Text style={styles.insightMetaText}>
+                                {insight.entry_count} entries
+                              </Text>
+                              {insight.primary_insight.confidence && (
+                                <Text style={styles.insightMetaText}>
+                                  • {insight.primary_insight.confidence}{" "}
+                                  confidence
+                                </Text>
+                              )}
+                            </View>
+                          </>
+                        )}
+                      </View>
+                    ))}
+                    {insights.length > 3 && (
+                      <Text style={styles.moreInsightsText}>
+                        +{insights.length - 3} more insights
+                      </Text>
+                    )}
+                  </>
+                ) : (
+                  <View style={styles.noInsightsCard}>
+                    <Ionicons
+                      name="analytics-outline"
+                      size={48}
+                      color={colors.textLight}
+                    />
+                    <Text style={styles.noInsightsTitle}>No insights yet</Text>
+                    <Text style={styles.noInsightsText}>
+                      Log at least 4 entries to start seeing insights about your
+                      tracking patterns and trends.
+                    </Text>
+                    <Text style={styles.noInsightsSubtext}>
+                      Keep logging consistently to unlock more detailed
+                      analytics!
+                    </Text>
+                  </View>
+                )}
               </View>
             )}
           </>
@@ -629,5 +713,79 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 16,
     color: colors.textSecondary,
+  },
+  insightsSection: {
+    padding: 20,
+    backgroundColor: colors.background,
+  },
+  insightsTitle: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: colors.text,
+    marginBottom: 16,
+  },
+  insightCard: {
+    backgroundColor: colors.secondary,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  insightFieldName: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: colors.textOnSecondary,
+    marginBottom: 8,
+  },
+  insightMessage: {
+    fontSize: 14,
+    color: colors.textOnSecondary,
+    marginBottom: 8,
+    lineHeight: 20,
+  },
+  insightMeta: {
+    flexDirection: "row",
+    marginTop: 8,
+  },
+  insightMetaText: {
+    fontSize: 12,
+    color: colors.textLight,
+  },
+  moreInsightsText: {
+    fontSize: 14,
+    color: colors.primary,
+    textAlign: "center",
+    marginTop: 8,
+    fontWeight: "500",
+  },
+  noInsightsCard: {
+    backgroundColor: colors.secondary,
+    borderRadius: 12,
+    padding: 24,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderStyle: "dashed",
+  },
+  noInsightsTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: colors.textOnSecondary,
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  noInsightsText: {
+    fontSize: 14,
+    color: colors.textOnSecondary,
+    textAlign: "center",
+    lineHeight: 20,
+    marginBottom: 8,
+  },
+  noInsightsSubtext: {
+    fontSize: 12,
+    color: colors.textLight,
+    textAlign: "center",
+    fontStyle: "italic",
   },
 });

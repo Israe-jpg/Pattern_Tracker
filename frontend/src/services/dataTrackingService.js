@@ -51,5 +51,11 @@ export const dataTrackingService = {
     });
     return response.data;
   },
+
+  // Get all insights for a tracker
+  getAllInsights: async (trackerId) => {
+    const response = await api.get(API_ENDPOINTS.GET_INSIGHTS(trackerId));
+    return response.data;
+  },
 };
 
