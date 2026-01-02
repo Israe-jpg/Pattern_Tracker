@@ -1,38 +1,43 @@
 // App Color Palette
+// Main Colors: #3C507D, #112250, #E0C58F, #F5F0E9, #D9CBC2
 export const colors = {
   // Primary Colors
-  primary: "#6366F1",
-  primaryDark: "#4F46E5",
-  primaryLight: "#818CF8",
+  primary: "#3C507D",        // Main dark blue
+  primaryDark: "#112250",    // Darker blue
+  primaryLight: "#5A6B8F",   // Lighter variation of primary
 
-  // Secondary Colors
-  secondary: "#EC4899",
-  secondaryDark: "#DB2777",
-  secondaryLight: "#F472B6",
+  // Secondary/Accent Colors
+  secondary: "#E0C58F",      // Beige/gold accent
+  secondaryDark: "#C9B078",   // Darker variation
+  secondaryLight: "#E8D1A5", // Lighter variation
 
-  // Status Colors
+  // Background & Surface Colors
+  background: "#F5F0E9",      // Light beige/cream background
+  surface: "#D9CBC2",        // Light tan surface
+  border: "#D9CBC2",         // Light tan border
+
+  // Text Colors
+  text: "#112250",           // Dark blue for primary text
+  textSecondary: "#3C507D",  // Medium blue for secondary text
+  textLight: "#6B7280",      // Gray for light text
+  textOnPrimary: "#FFFFFF",  // White text on primary background
+  textOnSecondary: "#112250", // Dark text on secondary background
+
+  // Status Colors (kept for consistency)
   success: "#10B981",
-  warning: "#F59E0B",
+  warning: "#E0C58F",        // Using accent color for warning
   error: "#EF4444",
-  info: "#3B82F6",
+  info: "#3C507D",           // Using primary for info
 
-  // Neutral Colors
-  background: "#FFFFFF",
-  surface: "#F9FAFB",
-  text: "#111827",
-  textSecondary: "#6B7280",
-  textLight: "#9CA3AF",
-  border: "#E5E7EB",
-
-  // Period Tracker Specific
+  // Health Tracker Specific
   period: "#EF4444",
-  ovulation: "#EC4899",
+  ovulation: "#E0C58F",      // Using accent color
   fertile: "#F59E0B",
 
-  // Chart Colors
-  chart1: "#6366F1",
-  chart2: "#EC4899",
-  chart3: "#10B981",
-  chart4: "#F59E0B",
-  chart5: "#3B82F6",
+  // Chart Colors (using main palette)
+  chart1: "#3C507D",         // Primary blue
+  chart2: "#E0C58F",         // Accent beige
+  chart3: "#112250",         // Dark blue
+  chart4: "#D9CBC2",         // Light tan
+  chart5: "#5A6B8F",         // Light blue variation
 };
