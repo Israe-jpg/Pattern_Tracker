@@ -6,16 +6,20 @@ import {
   FlatList,
   TouchableOpacity,
   ActivityIndicator,
+  Alert,
 } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
+import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";
 import { trackerService } from "../services/trackerService";
 import { colors } from "../constants/colors";
+import MenuDrawer from "../components/MenuDrawer";
 
 export default function HomeScreen({ navigation }) {
   const { user, logout } = useAuth();
   const [trackers, setTrackers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [menuVisible, setMenuVisible] = useState(false);
 
   const loadTrackers = async () => {
     try {
@@ -76,9 +80,25 @@ export default function HomeScreen({ navigation }) {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
+        <TouchableOpacity
+          style={styles.menuButton}
+          onPress={() => setMenuVisible(true)}
+        >
+          <Ionicons name="menu" size={28} color={colors.text} />
+        </TouchableOpacity>
         <Text style={styles.title}>Trackt</Text>
-        <TouchableOpacity onPress={logout}>
-          <Text style={styles.logoutText}>Logout</Text>
+        <TouchableOpacity
+          style={styles.profileButton}
+          onPress={() => {
+            // Navigate to profile/user info screen
+            navigation.navigate("UserInfo");
+          }}
+        >
+          <Ionicons
+            name="person-circle-outline"
+            size={28}
+            color={colors.text}
+          />
         </TouchableOpacity>
       </View>
 
@@ -92,6 +112,23 @@ export default function HomeScreen({ navigation }) {
             <Text style={styles.emptyText}>No trackers yet</Text>
           </View>
         }
+      />
+
+      <MenuDrawer
+        visible={menuVisible}
+        onClose={() => setMenuVisible(false)}
+        trackers={trackers}
+        onTrackerPress={(tracker) => {
+          navigation.navigate("TrackerDetail", { trackerId: tracker.id });
+        }}
+        onCreateCustomTracker={() => {
+          // TODO: Navigate to create custom tracker screen
+          Alert.alert(
+            "Create Custom Tracker",
+            "This feature will be implemented soon. You'll be able to create your own custom tracker with custom fields.",
+            [{ text: "OK" }]
+          );
+        }}
       />
     </View>
   );
@@ -117,14 +154,18 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
+  menuButton: {
+    padding: 4,
+  },
   title: {
     fontSize: 24,
     fontWeight: "bold",
     color: colors.text,
+    flex: 1,
+    textAlign: "center",
   },
-  logoutText: {
-    color: colors.primary,
-    fontSize: 16,
+  profileButton: {
+    padding: 4,
   },
   list: {
     padding: 20,

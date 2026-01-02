@@ -1,5 +1,5 @@
-import api from './api';
-import { API_ENDPOINTS } from '../constants/config';
+import api from "./api";
+import { API_ENDPOINTS } from "../constants/config";
 
 export const trackerService = {
   // Get all user's trackers
@@ -19,5 +19,13 @@ export const trackerService = {
     const response = await api.get(API_ENDPOINTS.FORM_SCHEMA(trackerId));
     return response.data;
   },
-};
 
+  // Create custom tracker
+  createCustomTracker: async (trackerData) => {
+    const response = await api.post(
+      API_ENDPOINTS.CREATE_CUSTOM_TRACKER,
+      trackerData
+    );
+    return response.data;
+  },
+};
