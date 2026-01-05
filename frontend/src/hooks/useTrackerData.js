@@ -118,7 +118,11 @@ export const useTrackerData = () => {
       const insightsData = response.data || response;
       setInsights(insightsData);
     } catch (error) {
-      console.error("Error loading insights:", error);
+      // 404 is expected when there's not enough data for insights yet
+      // Only log non-404 errors
+      if (error.response?.status !== 404) {
+        console.error("Error loading insights:", error);
+      }
       // Silently fail - don't block the UI
       setInsights(null);
     } finally {
