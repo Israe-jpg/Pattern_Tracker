@@ -7,6 +7,7 @@ import {
   Animated,
   FlatList,
   Dimensions,
+  Platform,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { colors } from "../constants/colors";
@@ -37,7 +38,7 @@ export default function MenuDrawer({
         useNativeDriver: true,
       }).start();
     }
-  }, [visible]);
+  }, [visible, slideAnim]);
 
   if (!visible) return null;
 
@@ -132,14 +133,20 @@ const styles = StyleSheet.create({
     width: DRAWER_WIDTH,
     backgroundColor: colors.surface,
     zIndex: 999,
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 2,
-      height: 0,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
+    ...(Platform.OS === "web"
+      ? {
+          boxShadow: "2px 0px 3.84px rgba(0, 0, 0, 0.25)",
+        }
+      : {
+          shadowColor: "#000",
+          shadowOffset: {
+            width: 2,
+            height: 0,
+          },
+          shadowOpacity: 0.25,
+          shadowRadius: 3.84,
+          elevation: 5,
+        }),
   },
   drawerHeader: {
     flexDirection: "row",
