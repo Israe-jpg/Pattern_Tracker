@@ -29,13 +29,13 @@ export default function MenuDrawer({
       Animated.timing(slideAnim, {
         toValue: 0,
         duration: 300,
-        useNativeDriver: true,
+        useNativeDriver: false, // Set to false to avoid native module warning
       }).start();
     } else {
       Animated.timing(slideAnim, {
         toValue: -DRAWER_WIDTH,
         duration: 300,
-        useNativeDriver: true,
+        useNativeDriver: false, // Set to false to avoid native module warning
       }).start();
     }
   }, [visible, slideAnim]);

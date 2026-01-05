@@ -9,7 +9,7 @@ import {
   TextInput,
   Alert,
 } from "react-native";
-import Slider from "@react-native-community/slider";
+import { ReanimatedSlider } from "../components/ReanimatedSlider";
 import { Ionicons } from "@expo/vector-icons";
 import { trackerService } from "../services/trackerService";
 import { dataTrackingService } from "../services/dataTrackingService";
@@ -259,12 +259,7 @@ export default function LogSymptomsScreen({ route, navigation }) {
         ? currentValue
         : minValue
     );
-    const displayValue =
-      currentValue !== null && currentValue !== undefined
-        ? currentValue
-        : minValue;
 
-    // Update local value when currentValue changes externally
     useEffect(() => {
       if (currentValue !== null && currentValue !== undefined) {
         setLocalValue(currentValue);
@@ -279,17 +274,15 @@ export default function LogSymptomsScreen({ route, navigation }) {
     return (
       <View style={styles.sliderContainer}>
         <Text style={styles.sliderValueDisplay}>{localValue}</Text>
-        <Slider
-          style={styles.slider}
-          minimumValue={minValue}
-          maximumValue={maxValue}
+        <ReanimatedSlider
+          minValue={minValue}
+          maxValue={maxValue}
           value={localValue}
           onValueChange={handleValueChange}
           step={1}
           minimumTrackTintColor={colors.primary}
           maximumTrackTintColor={colors.background}
           thumbTintColor={colors.primary}
-          animateTransitions={true}
         />
         <View style={styles.sliderLabels}>
           <Text style={styles.sliderLabel}>{minValue}</Text>
