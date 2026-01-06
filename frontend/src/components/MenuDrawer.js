@@ -44,6 +44,7 @@ export default function MenuDrawer({
 }) {
   const slideAnim = useRef(new Animated.Value(-DRAWER_WIDTH)).current;
   const [showDropdown, setShowDropdown] = useState(false);
+  const [hidePrebuilt, setHidePrebuilt] = useState(false);
 
   useEffect(() => {
     if (visible) {
@@ -187,27 +188,56 @@ export default function MenuDrawer({
           </View>
 
           {/* Prebuilt Section */}
-          <View style={styles.sectionContainer}>
-            <Text style={styles.sectionSubtitle}>Prebuilt</Text>
-            {prebuiltTrackers.length === 0 ? (
-              <Text style={styles.emptyText}>No trackers yet</Text>
-            ) : (
-              <FlatList
-                data={prebuiltTrackers}
-                renderItem={renderTracker}
-                keyExtractor={(item) => item.id.toString()}
-                style={styles.trackersList}
-                contentContainerStyle={styles.trackersListContent}
-                showsVerticalScrollIndicator={false}
-                scrollEnabled={false}
-              />
-            )}
-          </View>
+          {!hidePrebuilt && (
+            <View style={styles.sectionContainer}>
+              <View style={styles.sectionSubtitleContainer}>
+                <Text style={styles.sectionSubtitle}>Prebuilt</Text>
+                {editMode && (
+                  <TouchableOpacity
+                    style={styles.hideButton}
+                    onPress={() => setHidePrebuilt(true)}
+                  >
+                    <Text style={styles.hideButtonText}>Hide</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+              {prebuiltTrackers.length === 0 ? (
+                <Text style={styles.emptyText}>No trackers yet</Text>
+              ) : (
+                <FlatList
+                  data={prebuiltTrackers}
+                  renderItem={renderTracker}
+                  keyExtractor={(item) => item.id.toString()}
+                  style={styles.trackersList}
+                  contentContainerStyle={styles.trackersListContent}
+                  showsVerticalScrollIndicator={false}
+                  scrollEnabled={false}
+                />
+              )}
+            </View>
+          )}
+
+          {/* Show button when prebuilt is hidden */}
+          {hidePrebuilt && editMode && (
+            <View style={styles.sectionContainer}>
+              <View style={styles.sectionSubtitleContainer}>
+                <Text style={styles.sectionSubtitle}>Prebuilt</Text>
+                <TouchableOpacity
+                  style={styles.hideButton}
+                  onPress={() => setHidePrebuilt(false)}
+                >
+                  <Text style={styles.hideButtonText}>Show</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
 
           {/* User-created Section - Only show if there are custom trackers */}
           {customTrackers.length > 0 && (
             <View style={styles.sectionContainer}>
-              <Text style={styles.sectionSubtitle}>User-created</Text>
+              <View style={styles.sectionSubtitleContainer}>
+                <Text style={styles.sectionSubtitle}>User-created</Text>
+              </View>
               <FlatList
                 data={customTrackers}
                 renderItem={renderTracker}
@@ -360,12 +390,28 @@ const styles = StyleSheet.create({
   sectionContainer: {
     marginBottom: 20,
   },
+  sectionSubtitleContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+    marginTop: 4,
+  },
   sectionSubtitle: {
     fontSize: 16,
     fontWeight: "600",
     color: "rgba(255, 255, 255, 0.7)", // White/greyish color
-    marginBottom: 12,
-    marginTop: 4,
+  },
+  hideButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 4,
+    backgroundColor: colors.primaryLight,
+  },
+  hideButtonText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: colors.textOnPrimary,
   },
   trackersList: {
     marginBottom: 0,
