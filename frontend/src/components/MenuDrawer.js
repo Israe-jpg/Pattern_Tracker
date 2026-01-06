@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -34,8 +34,10 @@ export default function MenuDrawer({
   trackers,
   onTrackerPress,
   onCreateCustomTracker,
+  onEditTrackersList,
 }) {
   const slideAnim = useRef(new Animated.Value(-DRAWER_WIDTH)).current;
+  const [showDropdown, setShowDropdown] = useState(false);
 
   useEffect(() => {
     if (visible) {
@@ -50,6 +52,8 @@ export default function MenuDrawer({
         duration: 300,
         useNativeDriver: false, // Set to false to avoid native module warning
       }).start();
+      // Close dropdown when drawer closes
+      setShowDropdown(false);
     }
   }, [visible, slideAnim]);
 
@@ -136,16 +140,59 @@ export default function MenuDrawer({
           )}
         </View>
 
-        {/* Floating Plus Button - Bottom Right */}
+        {/* Floating edit Button - Bottom Right */}
         <TouchableOpacity
-          style={styles.createButton}
-          onPress={() => {
-            onCreateCustomTracker();
-            onClose();
-          }}
+          style={styles.editButton}
+          onPress={() => setShowDropdown(!showDropdown)}
         >
-          <Ionicons name="add-circle" size={32} color={colors.textOnPrimary} />
+          <Ionicons name="pencil" size={32} color={colors.textOnPrimary} />
         </TouchableOpacity>
+
+        {/* Dropdown Menu - Left Side */}
+        {showDropdown && (
+          <>
+            <TouchableOpacity
+              style={styles.dropdownBackdrop}
+              activeOpacity={1}
+              onPress={() => setShowDropdown(false)}
+            />
+            <View style={styles.dropdown}>
+              <TouchableOpacity
+                style={styles.dropdownItem}
+                onPress={() => {
+                  onEditTrackersList();
+                  setShowDropdown(false);
+                  onClose();
+                }}
+              >
+                <Ionicons
+                  name="list"
+                  size={20}
+                  color={colors.textOnPrimary}
+                  style={styles.dropdownIcon}
+                />
+                <Text style={styles.dropdownText}>Edit trackers list</Text>
+              </TouchableOpacity>
+              <View style={styles.dropdownDivider} />
+              <TouchableOpacity
+                style={styles.dropdownItem}
+                onPress={() => {
+                  onCreateCustomTracker();
+                  setShowDropdown(false);
+                  onClose();
+                }}
+              >
+                <Ionicons
+                  name="add-circle"
+                  size={20}
+                  color={colors.textOnPrimary}
+                  style={styles.dropdownIcon}
+                />
+                <Text style={styles.dropdownText}>Add a custom tracker</Text>
+              </TouchableOpacity>
+            </View>
+          </>
+        )}
       </Animated.View>
     </>
   );
@@ -249,7 +296,7 @@ const styles = StyleSheet.create({
     fontStyle: "italic",
     marginBottom: 20,
   },
-  createButton: {
+  editButton: {
     position: "absolute",
     bottom: 30,
     right: 20,
@@ -259,6 +306,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primaryDark,
     justifyContent: "center",
     alignItems: "center",
+    zIndex: 1000,
     ...(Platform.OS === "web"
       ? {
           boxShadow: "0px 4px 8px rgba(0, 0, 0, 0.3)",
@@ -273,5 +321,60 @@ const styles = StyleSheet.create({
           shadowRadius: 4,
           elevation: 8,
         }),
+  },
+  dropdownBackdrop: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 1001,
+  },
+  dropdown: {
+    position: "absolute",
+    right: 20,
+    bottom: 96, // Just above the edit button (30 + 56 button height + 10 gap)
+    backgroundColor: colors.primaryDark,
+    borderRadius: 12,
+    minWidth: 220,
+    zIndex: 1002,
+    borderWidth: 1,
+    borderColor: colors.primaryLight,
+    overflow: "hidden",
+    ...(Platform.OS === "web"
+      ? {
+          boxShadow: "0px 4px 12px rgba(0, 0, 0, 0.4)",
+        }
+      : {
+          shadowColor: "#000",
+          shadowOffset: {
+            width: 0,
+            height: 4,
+          },
+          shadowOpacity: 0.4,
+          shadowRadius: 8,
+          elevation: 10,
+        }),
+  },
+  dropdownItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 16,
+    paddingHorizontal: 18,
+    backgroundColor: "transparent",
+  },
+  dropdownIcon: {
+    marginRight: 12,
+  },
+  dropdownText: {
+    fontSize: 16,
+    fontWeight: "500",
+    color: colors.textOnPrimary,
+    flex: 1,
+  },
+  dropdownDivider: {
+    height: 1,
+    backgroundColor: colors.primaryLight,
+    marginHorizontal: 16,
   },
 });
