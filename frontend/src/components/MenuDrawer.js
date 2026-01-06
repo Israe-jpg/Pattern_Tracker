@@ -55,8 +55,10 @@ export default function MenuDrawer({
 
   if (!visible) return null;
 
-  const customTrackers = trackers?.filter((tracker) => !isPrebuiltTracker(tracker)) || [];
-  const prebuiltTrackers = trackers?.filter((tracker) => isPrebuiltTracker(tracker)) || [];
+  const customTrackers =
+    trackers?.filter((tracker) => !isPrebuiltTracker(tracker)) || [];
+  const prebuiltTrackers =
+    trackers?.filter((tracker) => isPrebuiltTracker(tracker)) || [];
 
   const renderTracker = ({ item }) => (
     <TouchableOpacity
@@ -132,22 +134,18 @@ export default function MenuDrawer({
               />
             </View>
           )}
-
-          <TouchableOpacity
-            style={styles.createButton}
-            onPress={() => {
-              onCreateCustomTracker();
-              onClose();
-            }}
-          >
-            <Ionicons
-              name="add-circle-outline"
-              size={24}
-              color={colors.primary}
-            />
-            <Text style={styles.createButtonText}>+ create custom tracker</Text>
-          </TouchableOpacity>
         </View>
+
+        {/* Floating Plus Button - Bottom Right */}
+        <TouchableOpacity
+          style={styles.createButton}
+          onPress={() => {
+            onCreateCustomTracker();
+            onClose();
+          }}
+        >
+          <Ionicons name="add-circle" size={32} color={colors.textOnPrimary} />
+        </TouchableOpacity>
       </Animated.View>
     </>
   );
@@ -252,19 +250,28 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   createButton: {
-    flexDirection: "row",
+    position: "absolute",
+    bottom: 30,
+    right: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.primaryDark,
+    justifyContent: "center",
     alignItems: "center",
-    backgroundColor: colors.background,
-    padding: 16,
-    borderRadius: 8,
-    borderWidth: 2,
-    borderColor: colors.primary,
-    borderStyle: "dashed",
-  },
-  createButtonText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: colors.primary,
-    marginLeft: 8,
+    ...(Platform.OS === "web"
+      ? {
+          boxShadow: "0px 4px 8px rgba(0, 0, 0, 0.3)",
+        }
+      : {
+          shadowColor: "#000",
+          shadowOffset: {
+            width: 0,
+            height: 4,
+          },
+          shadowOpacity: 0.3,
+          shadowRadius: 4,
+          elevation: 8,
+        }),
   },
 });
