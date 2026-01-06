@@ -95,18 +95,22 @@ export default function MenuDrawer({
   const handleToggleDefault = (tracker) => {
     const isCurrentlyDefault = defaultTrackerId === tracker.id;
 
+    // If it's already the default, do nothing
+    if (isCurrentlyDefault) {
+      return;
+    }
+
+    // Only show alert if it's not the default
     Alert.alert(
-      isCurrentlyDefault ? "Remove Default Tracker" : "Set Default Tracker",
-      isCurrentlyDefault
-        ? `Remove "${tracker.name}" as your default tracker?`
-        : `Set "${tracker.name}" as your default tracker?`,
+      "Set Default Tracker",
+      `Set "${tracker.name}" as your default tracker?`,
       [
         {
           text: "Cancel",
           style: "cancel",
         },
         {
-          text: isCurrentlyDefault ? "Remove" : "Set",
+          text: "Set",
           onPress: () => {
             if (onToggleDefault) {
               onToggleDefault(tracker.id);
