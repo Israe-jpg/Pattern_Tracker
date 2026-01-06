@@ -42,4 +42,10 @@ export const trackerService = {
     });
     return response.data;
   },
+
+  // Set tracker as default
+  setDefaultTracker: async (trackerId) => {
+    const response = await api.put(API_ENDPOINTS.UPDATE_DEFAULT_TRACKER(trackerId));
+    return response.data;
+  },
 };

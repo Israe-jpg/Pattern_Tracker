@@ -100,25 +100,10 @@ export default function MenuDrawer({
       return;
     }
 
-    // Only show alert if it's not the default
-    Alert.alert(
-      "Set Default Tracker",
-      `Set "${tracker.name}" as your default tracker?`,
-      [
-        {
-          text: "Cancel",
-          style: "cancel",
-        },
-        {
-          text: "Set",
-          onPress: () => {
-            if (onToggleDefault) {
-              onToggleDefault(tracker.id);
-            }
-          },
-        },
-      ]
-    );
+    // Call the parent handler which will show the alert
+    if (onToggleDefault) {
+      onToggleDefault(tracker.id);
+    }
   };
 
   const renderTracker = ({ item }) => (

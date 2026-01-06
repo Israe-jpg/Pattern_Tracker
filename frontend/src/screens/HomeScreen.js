@@ -16,6 +16,7 @@ import SetupPrompt from "../components/SetupPrompt";
 import CalendarSection from "../components/CalendarSection";
 import InsightsSection from "../components/InsightsSection";
 import { useTrackerData } from "../hooks/useTrackerData";
+import { trackerService } from "../services/trackerService";
 
 export default function HomeScreen({ navigation }) {
   const { logout } = useAuth();
@@ -183,8 +184,8 @@ export default function HomeScreen({ navigation }) {
         }}
         onToggleDefault={async (trackerId) => {
           Alert.alert(
-            "Toggle Default Tracker",
-            `Are you sure you want to toggle the default status for tracker ID: ${trackerId}?`,
+            "Set Default Tracker",
+            "Are you sure you want to set this tracker as your default?",
             [
               {
                 text: "Cancel",
@@ -194,14 +195,14 @@ export default function HomeScreen({ navigation }) {
                 text: "Confirm",
                 onPress: async () => {
                   try {
-                    // TODO: Implement toggle default tracker API call
-                    // await trackerService.toggleDefaultTracker(trackerId);
-                    Alert.alert("Success", "Default tracker status updated.");
+                    await trackerService.setDefaultTracker(trackerId);
                     loadTrackers(); // Reload trackers after update
                   } catch (error) {
+                    console.error("Error updating default tracker:", error);
                     Alert.alert(
                       "Error",
-                      "Failed to update default tracker status. Please try again."
+                      error.response?.data?.message ||
+                        "Failed to update default tracker. Please try again."
                     );
                   }
                 },
