@@ -10,7 +10,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
-import { colors } from '../../constants/colors';
+import { colors, APP_NAME } from '../../constants/colors';
 
 export default function LoginScreen({ navigation }) {
   const [email, setEmail] = useState('');
@@ -84,7 +84,7 @@ export default function LoginScreen({ navigation }) {
       contentContainerStyle={styles.contentContainer}
     >
       <View style={styles.content}>
-        <Text style={styles.title}>Trackt</Text>
+        <Text style={styles.title}>{APP_NAME}</Text>
         <Text style={styles.subtitle}>Sign in to continue</Text>
 
         <View style={styles.form}>

@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Alert, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { colors } from "../constants/colors";
+import { colors, APP_NAME } from "../constants/colors";
 
 export default function HomeHeader({ onMenuPress }) {
 
@@ -11,7 +11,7 @@ export default function HomeHeader({ onMenuPress }) {
         <TouchableOpacity style={styles.menuButton} onPress={onMenuPress}>
           <Ionicons name="menu" size={28} color={colors.textOnPrimary} />
         </TouchableOpacity>
-        <Text style={styles.title}>Trackt</Text>
+        <Text style={styles.title}>{APP_NAME}</Text>
         <View style={styles.placeholder} />
       </View>
 

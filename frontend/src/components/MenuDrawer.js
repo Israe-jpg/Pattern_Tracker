@@ -11,7 +11,7 @@ import {
   Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { colors } from "../constants/colors";
+import { colors, APP_NAME } from "../constants/colors";
 import { useAuth } from "../context/AuthContext";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
@@ -181,7 +181,7 @@ export default function MenuDrawer({
         ]}
       >
         <View style={styles.drawerHeader}>
-          <Text style={styles.drawerTitle}>Trackt</Text>
+          <Text style={styles.drawerTitle}>{APP_NAME}</Text>
           <TouchableOpacity onPress={onClose} style={styles.closeButton}>
             <Ionicons name="close" size={24} color={colors.text} />
           </TouchableOpacity>
@@ -270,7 +270,7 @@ export default function MenuDrawer({
                 color={colors.textOnPrimary}
               />
               {user && (
-                <Text style={styles.userName} numberOfLines={1}>
+                <Text style={styles.userNameLabel} numberOfLines={1}>
                   {user.first_name && user.last_name
                     ? `${user.first_name} ${user.last_name}`
                     : user.first_name || user.username || user.email || "User"}
@@ -568,24 +568,38 @@ const styles = StyleSheet.create({
   },
   profileSection: {
     position: "relative",
-    flex: 1,
     marginRight: 12,
   },
   profileButton: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     backgroundColor: colors.primaryDark,
+    borderRadius: 28,
     paddingHorizontal: 12,
     paddingVertical: 8,
-    borderRadius: 20,
-    maxWidth: "100%",
+    minHeight: 56,
+    alignSelf: "flex-start",
+    ...(Platform.OS === "web"
+      ? {
+          boxShadow: "0px 4px 8px rgba(0, 0, 0, 0.3)",
+        }
+      : {
+          shadowColor: "#000",
+          shadowOffset: {
+            width: 0,
+            height: 4,
+          },
+          shadowOpacity: 0.3,
+          shadowRadius: 4,
+          elevation: 8,
+        }),
   },
-  userName: {
+  userNameLabel: {
     fontSize: 14,
     fontWeight: "600",
     color: colors.textOnPrimary,
     marginLeft: 8,
-    flex: 1,
   },
   profileDropdown: {
     position: "absolute",
