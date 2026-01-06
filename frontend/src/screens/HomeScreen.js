@@ -20,6 +20,7 @@ import { useTrackerData } from "../hooks/useTrackerData";
 export default function HomeScreen({ navigation }) {
   const { logout } = useAuth();
   const [menuVisible, setMenuVisible] = useState(false);
+  const [editMode, setEditMode] = useState(false);
 
   const {
     trackers,
@@ -128,10 +129,15 @@ export default function HomeScreen({ navigation }) {
 
       <MenuDrawer
         visible={menuVisible}
-        onClose={() => setMenuVisible(false)}
+        onClose={() => {
+          setMenuVisible(false);
+          setEditMode(false); // Reset edit mode when closing drawer
+        }}
         trackers={trackers}
         onTrackerPress={(tracker) => {
-          navigation.navigate("TrackerDetail", { trackerId: tracker.id });
+          if (!editMode) {
+            navigation.navigate("TrackerDetail", { trackerId: tracker.id });
+          }
         }}
         onCreateCustomTracker={() => {
           // TODO: Navigate to create custom tracker screen
@@ -141,6 +147,69 @@ export default function HomeScreen({ navigation }) {
             [{ text: "OK" }]
           );
         }}
+        onEditTrackersList={() => {
+          // This is handled by setEditMode in the dropdown
+        }}
+        editMode={editMode}
+        setEditMode={setEditMode}
+        onDeleteTracker={async (tracker) => {
+          Alert.alert(
+            "Delete Tracker",
+            `Are you sure you want to delete "${tracker.name}"? This action cannot be undone.`,
+            [
+              {
+                text: "Cancel",
+                style: "cancel",
+              },
+              {
+                text: "Delete",
+                style: "destructive",
+                onPress: async () => {
+                  try {
+                    // TODO: Implement delete tracker API call
+                    // await trackerService.deleteTracker(tracker.id);
+                    Alert.alert("Success", "Tracker deleted successfully");
+                    loadTrackers(); // Reload trackers after deletion
+                  } catch (error) {
+                    Alert.alert(
+                      "Error",
+                      "Failed to delete tracker. Please try again."
+                    );
+                  }
+                },
+              },
+            ]
+          );
+        }}
+        onToggleDefault={async (trackerId) => {
+          Alert.alert(
+            "Toggle Default Tracker",
+            `Are you sure you want to toggle the default status for tracker ID: ${trackerId}?`,
+            [
+              {
+                text: "Cancel",
+                style: "cancel",
+              },
+              {
+                text: "Confirm",
+                onPress: async () => {
+                  try {
+                    // TODO: Implement toggle default tracker API call
+                    // await trackerService.toggleDefaultTracker(trackerId);
+                    Alert.alert("Success", "Default tracker status updated.");
+                    loadTrackers(); // Reload trackers after update
+                  } catch (error) {
+                    Alert.alert(
+                      "Error",
+                      "Failed to update default tracker status. Please try again."
+                    );
+                  }
+                },
+              },
+            ]
+          );
+        }}
+        defaultTrackerId={defaultTracker?.id}
       />
     </View>
   );

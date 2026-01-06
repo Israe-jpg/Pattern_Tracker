@@ -8,6 +8,7 @@ import {
   FlatList,
   Dimensions,
   Platform,
+  Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { colors } from "../constants/colors";
@@ -35,6 +36,11 @@ export default function MenuDrawer({
   onTrackerPress,
   onCreateCustomTracker,
   onEditTrackersList,
+  editMode,
+  setEditMode,
+  onDeleteTracker,
+  onToggleDefault,
+  defaultTrackerId,
 }) {
   const slideAnim = useRef(new Animated.Value(-DRAWER_WIDTH)).current;
   const [showDropdown, setShowDropdown] = useState(false);
@@ -44,13 +50,13 @@ export default function MenuDrawer({
       Animated.timing(slideAnim, {
         toValue: 0,
         duration: 300,
-        useNativeDriver: false, // Set to false to avoid native module warning
+        useNativeDriver: false,
       }).start();
     } else {
       Animated.timing(slideAnim, {
         toValue: -DRAWER_WIDTH,
         duration: 300,
-        useNativeDriver: false, // Set to false to avoid native module warning
+        useNativeDriver: false,
       }).start();
       // Close dropdown when drawer closes
       setShowDropdown(false);
@@ -64,17 +70,99 @@ export default function MenuDrawer({
   const prebuiltTrackers =
     trackers?.filter((tracker) => isPrebuiltTracker(tracker)) || [];
 
+  const handleDelete = (tracker) => {
+    Alert.alert(
+      "Delete Tracker",
+      `Are you sure you want to delete "${tracker.name}"? This action cannot be undone.`,
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            if (onDeleteTracker) {
+              onDeleteTracker(tracker.id);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleToggleDefault = (tracker) => {
+    const isCurrentlyDefault = defaultTrackerId === tracker.id;
+
+    Alert.alert(
+      isCurrentlyDefault ? "Remove Default Tracker" : "Set Default Tracker",
+      isCurrentlyDefault
+        ? `Remove "${tracker.name}" as your default tracker?`
+        : `Set "${tracker.name}" as your default tracker?`,
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: isCurrentlyDefault ? "Remove" : "Set",
+          onPress: () => {
+            if (onToggleDefault) {
+              onToggleDefault(tracker.id);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const renderTracker = ({ item }) => (
-    <TouchableOpacity
-      style={styles.trackerItem}
-      onPress={() => {
-        onTrackerPress(item);
-        onClose();
-      }}
-    >
-      <Text style={styles.trackerItemName}>{item.name}</Text>
-      <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
-    </TouchableOpacity>
+    <View style={styles.trackerItemWrapper}>
+      {editMode && (
+        <View style={styles.editIcons}>
+          <TouchableOpacity
+            style={styles.deleteButton}
+            onPress={() => handleDelete(item)}
+          >
+            <View style={styles.deleteIconContainer}>
+              <Ionicons name="remove" size={14} color="white" />
+            </View>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.starButton}
+            onPress={() => handleToggleDefault(item)}
+          >
+            <Ionicons
+              name={defaultTrackerId === item.id ? "star" : "star-outline"}
+              size={24}
+              color={
+                defaultTrackerId === item.id ? "#FFD700" : colors.textOnPrimary
+              }
+            />
+          </TouchableOpacity>
+        </View>
+      )}
+      <TouchableOpacity
+        style={styles.trackerItem}
+        onPress={() => {
+          if (!editMode) {
+            onTrackerPress(item);
+            onClose();
+          }
+        }}
+        disabled={editMode}
+      >
+        <Text style={styles.trackerItemName}>{item.name}</Text>
+        {!editMode && (
+          <Ionicons
+            name="chevron-forward"
+            size={20}
+            color={colors.textSecondary}
+          />
+        )}
+      </TouchableOpacity>
+    </View>
   );
 
   return (
@@ -103,7 +191,9 @@ export default function MenuDrawer({
         </View>
 
         <View style={styles.drawerContent}>
-          <Text style={styles.sectionTitle}>My trackers:</Text>
+          <View style={styles.sectionTitleContainer}>
+            <Text style={styles.sectionTitle}>My trackers:</Text>
+          </View>
 
           {/* Prebuilt Section */}
           <View style={styles.sectionContainer}>
@@ -140,13 +230,22 @@ export default function MenuDrawer({
           )}
         </View>
 
-        {/* Floating edit Button - Bottom Right */}
-        <TouchableOpacity
-          style={styles.editButton}
-          onPress={() => setShowDropdown(!showDropdown)}
-        >
-          <Ionicons name="pencil" size={32} color={colors.textOnPrimary} />
-        </TouchableOpacity>
+        {/* Floating edit/Done Button - Bottom Right */}
+        {editMode ? (
+          <TouchableOpacity
+            style={styles.editButton}
+            onPress={() => setEditMode(false)}
+          >
+            <Text style={styles.doneButtonText}>Done</Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity
+            style={styles.editButton}
+            onPress={() => setShowDropdown(!showDropdown)}
+          >
+            <Ionicons name="pencil" size={32} color={colors.textOnPrimary} />
+          </TouchableOpacity>
+        )}
 
         {/* Dropdown Menu - Left Side */}
         {showDropdown && (
@@ -160,9 +259,8 @@ export default function MenuDrawer({
               <TouchableOpacity
                 style={styles.dropdownItem}
                 onPress={() => {
-                  onEditTrackersList();
+                  setEditMode(true);
                   setShowDropdown(false);
-                  onClose();
                 }}
               >
                 <Ionicons
@@ -252,11 +350,21 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 20,
   },
+  sectionTitleContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 16,
+  },
   sectionTitle: {
     fontSize: 18,
     fontWeight: "600",
     color: colors.textOnPrimary,
-    marginBottom: 16,
+  },
+  doneButtonText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: colors.textOnPrimary,
   },
   sectionContainer: {
     marginBottom: 20,
@@ -264,7 +372,7 @@ const styles = StyleSheet.create({
   sectionSubtitle: {
     fontSize: 16,
     fontWeight: "600",
-    color: colors.textOnPrimary,
+    color: "rgba(255, 255, 255, 0.7)", // White/greyish color
     marginBottom: 12,
     marginTop: 4,
   },
@@ -274,14 +382,19 @@ const styles = StyleSheet.create({
   trackersListContent: {
     paddingBottom: 0,
   },
+  trackerItemWrapper: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 12,
+  },
   trackerItem: {
+    flex: 1,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     backgroundColor: colors.background,
     padding: 16,
     borderRadius: 8,
-    marginBottom: 12,
     borderWidth: 1,
     borderColor: colors.border,
   },
@@ -289,6 +402,26 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: colors.text,
     flex: 1,
+  },
+  editIcons: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginRight: 12,
+  },
+  deleteButton: {
+    padding: 2,
+    marginRight: 12,
+  },
+  deleteIconContainer: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: "#FF4444",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  starButton: {
+    padding: 2,
   },
   emptyText: {
     fontSize: 14,
@@ -333,7 +466,7 @@ const styles = StyleSheet.create({
   dropdown: {
     position: "absolute",
     right: 20,
-    bottom: 96, // Just above the edit button (30 + 56 button height + 10 gap)
+    bottom: 96,
     backgroundColor: colors.primaryDark,
     borderRadius: 12,
     minWidth: 220,
