@@ -49,6 +49,11 @@ export default function MenuDrawer({
   const [showDropdown, setShowDropdown] = useState(false);
   const [hidePrebuilt, setHidePrebuilt] = useState(false);
   const [profileDropdownVisible, setProfileDropdownVisible] = useState(false);
+  const [editButtonLayout, setEditButtonLayout] = useState({ y: 0, height: 0 });
+  const [profileButtonLayout, setProfileButtonLayout] = useState({
+    y: 0,
+    height: 0,
+  });
   const { user } = useAuth();
 
   useEffect(() => {
@@ -190,6 +195,30 @@ export default function MenuDrawer({
         <View style={styles.drawerContent}>
           <View style={styles.sectionTitleContainer}>
             <Text style={styles.sectionTitle}>My trackers:</Text>
+            {/* Edit/Done Button - Right */}
+            {editMode ? (
+              <TouchableOpacity
+                style={styles.editButtonTop}
+                onPress={() => setEditMode(false)}
+              >
+                <Text style={styles.doneButtonText}>Done</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={styles.editButtonTop}
+                onPress={() => setShowDropdown(!showDropdown)}
+                onLayout={(event) => {
+                  const { y, height } = event.nativeEvent.layout;
+                  setEditButtonLayout({ y, height });
+                }}
+              >
+                <Ionicons
+                  name="pencil"
+                  size={20}
+                  color={colors.textOnPrimary}
+                />
+              </TouchableOpacity>
+            )}
           </View>
 
           {/* Prebuilt Section */}
@@ -256,13 +285,17 @@ export default function MenuDrawer({
           )}
         </View>
 
-        {/* Bottom Bar - Profile on left, Edit/Done on right */}
+        {/* Bottom Bar - Profile on left */}
         <View style={styles.bottomBar}>
           {/* Profile Section - Left */}
           <View style={styles.profileSection}>
             <TouchableOpacity
               style={styles.profileButton}
               onPress={() => setProfileDropdownVisible(!profileDropdownVisible)}
+              onLayout={(event) => {
+                const { y, height } = event.nativeEvent.layout;
+                setProfileButtonLayout({ y, height });
+              }}
             >
               <Ionicons
                 name="person-circle-outline"
@@ -279,7 +312,17 @@ export default function MenuDrawer({
             </TouchableOpacity>
 
             {profileDropdownVisible && (
-              <View style={styles.profileDropdown}>
+              <View
+                style={[
+                  styles.profileDropdown,
+                  {
+                    bottom:
+                      profileButtonLayout.height > 0
+                        ? profileButtonLayout.height + 8
+                        : 50,
+                  },
+                ]}
+              >
                 <TouchableOpacity
                   style={styles.profileDropdownItem}
                   onPress={() => {
@@ -330,23 +373,6 @@ export default function MenuDrawer({
               </View>
             )}
           </View>
-
-          {/* Edit/Done Button - Right */}
-          {editMode ? (
-            <TouchableOpacity
-              style={styles.editButton}
-              onPress={() => setEditMode(false)}
-            >
-              <Text style={styles.doneButtonText}>Done</Text>
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity
-              style={styles.editButton}
-              onPress={() => setShowDropdown(!showDropdown)}
-            >
-              <Ionicons name="pencil" size={32} color={colors.textOnPrimary} />
-            </TouchableOpacity>
-          )}
         </View>
 
         {/* Profile Dropdown Backdrop */}
@@ -366,7 +392,22 @@ export default function MenuDrawer({
               activeOpacity={1}
               onPress={() => setShowDropdown(false)}
             />
-            <View style={styles.dropdown}>
+            <View
+              style={[
+                styles.dropdown,
+                {
+                  top:
+                    editButtonLayout.height > 0
+                      ? // drawerHeader height (~110) + drawerContent padding (20) + button y (0) + button height (40) + spacing (8)
+                        110 +
+                        20 +
+                        editButtonLayout.y +
+                        editButtonLayout.height +
+                        8
+                      : 180,
+                },
+              ]}
+            >
               <TouchableOpacity
                 style={styles.dropdownItem}
                 onPress={() => {
@@ -656,6 +697,28 @@ const styles = StyleSheet.create({
     bottom: 0,
     zIndex: 1002,
   },
+  editButtonTop: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.primaryDark,
+    justifyContent: "center",
+    alignItems: "center",
+    ...(Platform.OS === "web"
+      ? {
+          boxShadow: "0px 2px 4px rgba(0, 0, 0, 0.3)",
+        }
+      : {
+          shadowColor: "#000",
+          shadowOffset: {
+            width: 0,
+            height: 2,
+          },
+          shadowOpacity: 0.3,
+          shadowRadius: 2,
+          elevation: 4,
+        }),
+  },
   editButton: {
     width: 56,
     height: 56,
@@ -689,7 +752,6 @@ const styles = StyleSheet.create({
   dropdown: {
     position: "absolute",
     right: 20,
-    bottom: 96,
     backgroundColor: colors.primaryDark,
     borderRadius: 12,
     minWidth: 220,
