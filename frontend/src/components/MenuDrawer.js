@@ -13,7 +13,20 @@ import { Ionicons } from "@expo/vector-icons";
 import { colors } from "../constants/colors";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
-const DRAWER_WIDTH = (SCREEN_WIDTH * 3) / 4; // 3/4 of screen width
+const DRAWER_WIDTH = (SCREEN_WIDTH * 5) / 6; // 5/6 of screen width
+
+// Prebuilt tracker category names (matches backend)
+const PREBUILT_CATEGORIES = [
+  "Workout Tracker",
+  "Symptom Tracker",
+  "Period Tracker",
+];
+
+// Helper function to check if a tracker is prebuilt
+const isPrebuiltTracker = (tracker) => {
+  const categoryName = tracker.category_name || tracker.name;
+  return PREBUILT_CATEGORIES.includes(categoryName);
+};
 
 export default function MenuDrawer({
   visible,
@@ -41,6 +54,9 @@ export default function MenuDrawer({
   }, [visible, slideAnim]);
 
   if (!visible) return null;
+
+  const customTrackers = trackers?.filter((tracker) => !isPrebuiltTracker(tracker)) || [];
+  const prebuiltTrackers = trackers?.filter((tracker) => isPrebuiltTracker(tracker)) || [];
 
   const renderTracker = ({ item }) => (
     <TouchableOpacity
@@ -74,7 +90,7 @@ export default function MenuDrawer({
         ]}
       >
         <View style={styles.drawerHeader}>
-          <Text style={styles.drawerTitle}>Menu</Text>
+          <Text style={styles.drawerTitle}>Trackt</Text>
           <TouchableOpacity onPress={onClose} style={styles.closeButton}>
             <Ionicons name="close" size={24} color={colors.text} />
           </TouchableOpacity>
@@ -83,16 +99,38 @@ export default function MenuDrawer({
         <View style={styles.drawerContent}>
           <Text style={styles.sectionTitle}>My trackers:</Text>
 
-          {trackers.length === 0 ? (
-            <Text style={styles.emptyText}>No trackers yet</Text>
-          ) : (
-            <FlatList
-              data={trackers}
-              renderItem={renderTracker}
-              keyExtractor={(item) => item.id.toString()}
-              style={styles.trackersList}
-              showsVerticalScrollIndicator={false}
-            />
+          {/* Prebuilt Section */}
+          <View style={styles.sectionContainer}>
+            <Text style={styles.sectionSubtitle}>Prebuilt</Text>
+            {prebuiltTrackers.length === 0 ? (
+              <Text style={styles.emptyText}>No trackers yet</Text>
+            ) : (
+              <FlatList
+                data={prebuiltTrackers}
+                renderItem={renderTracker}
+                keyExtractor={(item) => item.id.toString()}
+                style={styles.trackersList}
+                contentContainerStyle={styles.trackersListContent}
+                showsVerticalScrollIndicator={false}
+                scrollEnabled={false}
+              />
+            )}
+          </View>
+
+          {/* User-created Section - Only show if there are custom trackers */}
+          {customTrackers.length > 0 && (
+            <View style={styles.sectionContainer}>
+              <Text style={styles.sectionSubtitle}>User-created</Text>
+              <FlatList
+                data={customTrackers}
+                renderItem={renderTracker}
+                keyExtractor={(item) => item.id.toString()}
+                style={styles.trackersList}
+                contentContainerStyle={styles.trackersListContent}
+                showsVerticalScrollIndicator={false}
+                scrollEnabled={false}
+              />
+            </View>
           )}
 
           <TouchableOpacity
@@ -131,7 +169,7 @@ const styles = StyleSheet.create({
     top: 0,
     bottom: 0,
     width: DRAWER_WIDTH,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.primary,
     zIndex: 999,
     ...(Platform.OS === "web"
       ? {
@@ -155,12 +193,12 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingTop: 60,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+    borderBottomColor: colors.primaryDark,
   },
   drawerTitle: {
     fontSize: 24,
     fontWeight: "bold",
-    color: colors.text,
+    color: colors.textOnPrimary,
   },
   closeButton: {
     padding: 4,
@@ -172,12 +210,24 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: "600",
-    color: colors.text,
+    color: colors.textOnPrimary,
     marginBottom: 16,
   },
-  trackersList: {
-    flex: 1,
+  sectionContainer: {
     marginBottom: 20,
+  },
+  sectionSubtitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: colors.textOnPrimary,
+    marginBottom: 12,
+    marginTop: 4,
+  },
+  trackersList: {
+    marginBottom: 0,
+  },
+  trackersListContent: {
+    paddingBottom: 0,
   },
   trackerItem: {
     flexDirection: "row",
