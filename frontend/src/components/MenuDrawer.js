@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { colors } from "../constants/colors";
+import { useAuth } from "../context/AuthContext";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const DRAWER_WIDTH = (SCREEN_WIDTH * 5) / 6; // 5/6 of screen width
@@ -41,10 +42,14 @@ export default function MenuDrawer({
   onDeleteTracker,
   onToggleDefault,
   defaultTrackerId,
+  onProfilePress,
+  onLogout,
 }) {
   const slideAnim = useRef(new Animated.Value(-DRAWER_WIDTH)).current;
   const [showDropdown, setShowDropdown] = useState(false);
   const [hidePrebuilt, setHidePrebuilt] = useState(false);
+  const [profileDropdownVisible, setProfileDropdownVisible] = useState(false);
+  const { user } = useAuth();
 
   useEffect(() => {
     if (visible) {
@@ -251,21 +256,106 @@ export default function MenuDrawer({
           )}
         </View>
 
-        {/* Floating edit/Done Button - Bottom Right */}
-        {editMode ? (
+        {/* Bottom Bar - Profile on left, Edit/Done on right */}
+        <View style={styles.bottomBar}>
+          {/* Profile Section - Left */}
+          <View style={styles.profileSection}>
+            <TouchableOpacity
+              style={styles.profileButton}
+              onPress={() => setProfileDropdownVisible(!profileDropdownVisible)}
+            >
+              <Ionicons
+                name="person-circle-outline"
+                size={24}
+                color={colors.textOnPrimary}
+              />
+              {user && (
+                <Text style={styles.userName} numberOfLines={1}>
+                  {user.first_name && user.last_name
+                    ? `${user.first_name} ${user.last_name}`
+                    : user.first_name || user.username || user.email || "User"}
+                </Text>
+              )}
+            </TouchableOpacity>
+
+            {profileDropdownVisible && (
+              <View style={styles.profileDropdown}>
+                <TouchableOpacity
+                  style={styles.profileDropdownItem}
+                  onPress={() => {
+                    setProfileDropdownVisible(false);
+                    if (onProfilePress) {
+                      onProfilePress();
+                    }
+                  }}
+                >
+                  <Ionicons
+                    name="person-outline"
+                    size={20}
+                    color={colors.textOnPrimary}
+                    style={styles.profileDropdownIcon}
+                  />
+                  <Text style={styles.profileDropdownText}>Profile</Text>
+                </TouchableOpacity>
+                <View style={styles.profileDropdownDivider} />
+                <TouchableOpacity
+                  style={styles.profileDropdownItem}
+                  onPress={() => {
+                    setProfileDropdownVisible(false);
+                    Alert.alert("Logout", "Are you sure you want to logout?", [
+                      {
+                        text: "Cancel",
+                        style: "cancel",
+                      },
+                      {
+                        text: "Logout",
+                        style: "destructive",
+                        onPress: () => {
+                          if (onLogout) {
+                            onLogout();
+                          }
+                        },
+                      },
+                    ]);
+                  }}
+                >
+                  <Ionicons
+                    name="log-out-outline"
+                    size={20}
+                    color={colors.textOnPrimary}
+                    style={styles.profileDropdownIcon}
+                  />
+                  <Text style={styles.profileDropdownText}>Logout</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+
+          {/* Edit/Done Button - Right */}
+          {editMode ? (
+            <TouchableOpacity
+              style={styles.editButton}
+              onPress={() => setEditMode(false)}
+            >
+              <Text style={styles.doneButtonText}>Done</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={styles.editButton}
+              onPress={() => setShowDropdown(!showDropdown)}
+            >
+              <Ionicons name="pencil" size={32} color={colors.textOnPrimary} />
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {/* Profile Dropdown Backdrop */}
+        {profileDropdownVisible && (
           <TouchableOpacity
-            style={styles.editButton}
-            onPress={() => setEditMode(false)}
-          >
-            <Text style={styles.doneButtonText}>Done</Text>
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity
-            style={styles.editButton}
-            onPress={() => setShowDropdown(!showDropdown)}
-          >
-            <Ionicons name="pencil" size={32} color={colors.textOnPrimary} />
-          </TouchableOpacity>
+            style={styles.profileDropdownBackdrop}
+            activeOpacity={1}
+            onPress={() => setProfileDropdownVisible(false)}
+          />
         )}
 
         {/* Dropdown Menu - Left Side */}
@@ -466,17 +556,99 @@ const styles = StyleSheet.create({
     fontStyle: "italic",
     marginBottom: 20,
   },
-  editButton: {
+  bottomBar: {
     position: "absolute",
     bottom: 30,
+    left: 20,
     right: 20,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    zIndex: 1000,
+  },
+  profileSection: {
+    position: "relative",
+    flex: 1,
+    marginRight: 12,
+  },
+  profileButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.primaryDark,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    maxWidth: "100%",
+  },
+  userName: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: colors.textOnPrimary,
+    marginLeft: 8,
+    flex: 1,
+  },
+  profileDropdown: {
+    position: "absolute",
+    bottom: 50,
+    left: 0,
+    backgroundColor: colors.primaryDark,
+    borderRadius: 12,
+    minWidth: 180,
+    zIndex: 1003,
+    borderWidth: 1,
+    borderColor: colors.primaryLight,
+    overflow: "hidden",
+    ...(Platform.OS === "web"
+      ? {
+          boxShadow: "0px 4px 12px rgba(0, 0, 0, 0.4)",
+        }
+      : {
+          shadowColor: "#000",
+          shadowOffset: {
+            width: 0,
+            height: 4,
+          },
+          shadowOpacity: 0.4,
+          shadowRadius: 8,
+          elevation: 10,
+        }),
+  },
+  profileDropdownItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 16,
+    paddingHorizontal: 18,
+    backgroundColor: "transparent",
+  },
+  profileDropdownIcon: {
+    marginRight: 12,
+  },
+  profileDropdownText: {
+    fontSize: 16,
+    fontWeight: "500",
+    color: colors.textOnPrimary,
+    flex: 1,
+  },
+  profileDropdownDivider: {
+    height: 1,
+    backgroundColor: colors.primaryLight,
+    marginHorizontal: 16,
+  },
+  profileDropdownBackdrop: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 1002,
+  },
+  editButton: {
     width: 56,
     height: 56,
     borderRadius: 28,
     backgroundColor: colors.primaryDark,
     justifyContent: "center",
     alignItems: "center",
-    zIndex: 1000,
     ...(Platform.OS === "web"
       ? {
           boxShadow: "0px 4px 8px rgba(0, 0, 0, 0.3)",

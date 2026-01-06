@@ -79,11 +79,7 @@ export default function HomeScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      <HomeHeader
-        onMenuPress={() => setMenuVisible(true)}
-        onProfilePress={() => navigation.navigate("UserInfo")}
-        logout={logout}
-      />
+      <HomeHeader onMenuPress={() => setMenuVisible(true)} />
 
       <ScrollView style={styles.scrollView}>
         {defaultTracker && (
@@ -211,6 +207,8 @@ export default function HomeScreen({ navigation }) {
           );
         }}
         defaultTrackerId={defaultTracker?.id}
+        onProfilePress={() => navigation.navigate("UserInfo")}
+        onLogout={logout}
       />
     </View>
   );
