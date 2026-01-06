@@ -1,168 +1,162 @@
-import React, { useState, useEffect } from "react";
-import { View, Text, StyleSheet } from "react-native";
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withSpring,
-  runOnJS,
-} from "react-native-reanimated";
-import {
-  GestureDetector,
-  Gesture,
-  GestureHandlerRootView,
-} from "react-native-gesture-handler";
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import { View, StyleSheet, Platform } from "react-native";
+import Slider from "@react-native-community/slider";
 
-const SLIDER_WIDTH = 300; // Adjust based on your needs
-const THUMB_SIZE = 24;
+let instanceCounter = 0;
 
-export const ReanimatedSlider = ({
-  minValue = 0,
-  maxValue = 10,
-  value = 0,
-  onValueChange,
-  step = 1,
-  minimumTrackTintColor = "#007AFF",
-  maximumTrackTintColor = "#E5E5EA",
-  thumbTintColor = "#007AFF",
-}) => {
-  const [sliderWidth, setSliderWidth] = useState(SLIDER_WIDTH);
-  const sliderWidthShared = useSharedValue(SLIDER_WIDTH);
+export const ReanimatedSlider = React.memo(
+  ({
+    minValue = 0,
+    maxValue = 10,
+    value = 0,
+    onValueChange,
+    step = 1,
+    minimumTrackTintColor = "#007AFF",
+    maximumTrackTintColor = "#E5E5EA",
+    thumbTintColor = "#007AFF",
+  }) => {
+    const instanceIdRef = useRef(`slider-${instanceCounter++}`);
 
-  // Calculate initial position - inline calculation
-  const getInitialPosition = () => {
-    if (sliderWidth === 0) return 0;
-    return ((value - minValue) / (maxValue - minValue)) * sliderWidth;
-  };
-
-  const translationX = useSharedValue(getInitialPosition());
-
-  // Update position when value changes externally
-  useEffect(() => {
-    if (sliderWidth > 0) {
-      const newPosition =
-        ((value - minValue) / (maxValue - minValue)) * sliderWidth;
-      translationX.value = withSpring(newPosition);
-    }
-  }, [value, sliderWidth]);
-
-  // Update slider width shared value when layout changes
-  useEffect(() => {
-    sliderWidthShared.value = sliderWidth;
-  }, [sliderWidth]);
-
-  const startX = useSharedValue(0);
-
-  const pan = Gesture.Pan()
-    .onStart(() => {
-      "worklet";
-      startX.value = translationX.value;
-    })
-    .onUpdate((event) => {
-      "worklet";
-      const width = sliderWidthShared.value;
-      if (width === 0) return;
-      const newValue = startX.value + event.translationX;
-      translationX.value = Math.max(0, Math.min(width, newValue));
-    })
-    .onEnd(() => {
-      "worklet";
-      const width = sliderWidthShared.value;
-      if (width === 0) return;
-
-      // Calculate value from position (inline in worklet)
-      const percentage = translationX.value / width;
-      const rawValue = minValue + percentage * (maxValue - minValue);
-      const newValue = Math.round(rawValue / step) * step;
-
-      // Calculate position from value (inline in worklet)
-      const newPosition =
-        ((newValue - minValue) / (maxValue - minValue)) * width;
-      translationX.value = withSpring(newPosition);
-
-      if (onValueChange) {
-        runOnJS(onValueChange)(newValue);
-      }
+    // ✅ FIX #1: Round initial value to step
+    const [currentValue, setCurrentValue] = useState(() => {
+      const initialValue =
+        typeof value === "number" && !isNaN(value) ? value : minValue;
+      return Math.round(initialValue / step) * step;
     });
 
-  const thumbStyle = useAnimatedStyle(() => {
-    return {
-      transform: [{ translateX: translationX.value }],
-    };
-  });
+    const isDraggingRef = useRef(false);
+    const lastExternalValueRef = useRef(value);
+    const isGesturingRef = useRef(false);
 
-  const activeTrackStyle = useAnimatedStyle(() => {
-    return {
-      width: translationX.value,
-    };
-  });
+    // Initialize on mount
+    useEffect(() => {
+      const initialValue =
+        typeof value === "number" && !isNaN(value) ? value : minValue;
+      const roundedValue = Math.round(initialValue / step) * step;
+      setCurrentValue(roundedValue);
+      lastExternalValueRef.current = roundedValue;
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
-  return (
-    <GestureHandlerRootView style={styles.container}>
+    useEffect(() => {
+      if (isGesturingRef.current) return;
+
+      const numValue =
+        typeof value === "number" && !isNaN(value) ? value : minValue;
+      const roundedValue = Math.round(numValue / step) * step;
+
+      if (Math.abs(lastExternalValueRef.current - roundedValue) >= step / 2) {
+        setCurrentValue(roundedValue);
+        lastExternalValueRef.current = roundedValue;
+      }
+    }, [value, minValue, step]);
+
+    const onValueChangeRef = useRef(onValueChange);
+    useEffect(() => {
+      onValueChangeRef.current = onValueChange;
+    }, [onValueChange]);
+
+    const handleValueChange = useCallback(
+      (newValue) => {
+        const roundedValue = Math.round(newValue / step) * step;
+        setCurrentValue(roundedValue);
+        lastExternalValueRef.current = roundedValue;
+
+        if (onValueChangeRef.current) {
+          onValueChangeRef.current(roundedValue);
+        }
+      },
+      [step]
+    );
+
+    const handleSlidingStart = useCallback(() => {
+      isGesturingRef.current = true;
+      isDraggingRef.current = true;
+    }, []);
+
+    const handleSlidingComplete = useCallback(
+      (newValue) => {
+        const roundedValue = Math.round(newValue / step) * step;
+        lastExternalValueRef.current = roundedValue;
+
+        isDraggingRef.current = false;
+        isGesturingRef.current = false;
+
+        setCurrentValue(roundedValue);
+
+        if (onValueChangeRef.current) {
+          onValueChangeRef.current(roundedValue);
+        }
+      },
+      [step]
+    );
+
+    return (
       <View
-        onLayout={(event) => {
-          const { width } = event.nativeEvent.layout;
-          setSliderWidth(width - THUMB_SIZE);
-        }}
-        style={{ flex: 1 }}
+        style={styles.wrapper}
+        collapsable={false}
+        // ✅ iOS FIX: Prevent parent ScrollView from intercepting touches
+        onStartShouldSetResponder={() => true}
+        onMoveShouldSetResponder={() => true}
+        onResponderTerminationRequest={() => false}
       >
-        <View style={styles.sliderContainer}>
-          <View
-            style={[styles.track, { backgroundColor: maximumTrackTintColor }]}
-          />
-          <Animated.View
-            style={[
-              styles.activeTrack,
-              { backgroundColor: minimumTrackTintColor },
-              activeTrackStyle,
-            ]}
-          />
-          <GestureDetector gesture={pan}>
-            <Animated.View
-              style={[
-                styles.thumb,
-                { backgroundColor: thumbTintColor },
-                thumbStyle,
-              ]}
-            />
-          </GestureDetector>
-        </View>
+        <Slider
+          style={styles.slider}
+          minimumValue={minValue}
+          maximumValue={maxValue}
+          value={Math.max(minValue, Math.min(maxValue, currentValue))}
+          step={step}
+          onValueChange={handleValueChange}
+          onSlidingStart={handleSlidingStart}
+          onSlidingComplete={handleSlidingComplete}
+          minimumTrackTintColor={minimumTrackTintColor}
+          maximumTrackTintColor={maximumTrackTintColor}
+          thumbTintColor={thumbTintColor}
+          disabled={false}
+          // ✅ iOS FIX: Critical iOS-specific props
+          {...(Platform.OS === "ios" && {
+            tapToSeek: true,
+          })}
+        />
       </View>
-    </GestureHandlerRootView>
-  );
-};
+    );
+  },
+  (prevProps, nextProps) => {
+    const prevRounded =
+      Math.round((prevProps.value ?? 0) / (prevProps.step || 1)) *
+      (prevProps.step || 1);
+    const nextRounded =
+      Math.round((nextProps.value ?? 0) / (nextProps.step || 1)) *
+      (nextProps.step || 1);
+
+    if (Math.abs(prevRounded - nextRounded) >= (prevProps.step || 1) / 2) {
+      return false;
+    }
+
+    return (
+      prevProps.minValue === nextProps.minValue &&
+      prevProps.maxValue === nextProps.maxValue &&
+      prevProps.step === nextProps.step &&
+      prevProps.onValueChange === nextProps.onValueChange &&
+      prevProps.minimumTrackTintColor === nextProps.minimumTrackTintColor &&
+      prevProps.maximumTrackTintColor === nextProps.maximumTrackTintColor &&
+      prevProps.thumbTintColor === nextProps.thumbTintColor
+    );
+  }
+);
 
 const styles = StyleSheet.create({
-  container: {
+  wrapper: {
+    width: "100%",
+    justifyContent: "center",
+    alignItems: "center",
+    minHeight: 50,
+    paddingHorizontal: 5,
+    paddingVertical: 5,
+  },
+  slider: {
     width: "100%",
     height: 40,
-    justifyContent: "center",
-  },
-  sliderContainer: {
-    height: 4,
-    position: "relative",
-    justifyContent: "center",
-  },
-  track: {
-    height: 4,
-    borderRadius: 2,
-    width: "100%",
-  },
-  activeTrack: {
-    height: 4,
-    borderRadius: 2,
-    position: "absolute",
-    left: 0,
-  },
-  thumb: {
-    width: THUMB_SIZE,
-    height: THUMB_SIZE,
-    borderRadius: THUMB_SIZE / 2,
-    position: "absolute",
-    top: -10,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
+    minHeight: 40,
   },
 });

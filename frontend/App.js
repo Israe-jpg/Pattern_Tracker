@@ -3,6 +3,7 @@ import React, { useRef, useEffect } from "react";
 import { NavigationContainer } from "@react-navigation/native";
 import { CommonActions } from "@react-navigation/native";
 import { StatusBar } from "expo-status-bar";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import AppNavigator from "./src/navigation/AppNavigator";
 import { AuthProvider, useAuth } from "./src/context/AuthContext";
 
@@ -35,8 +36,10 @@ function NavigationWrapper() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <NavigationWrapper />
-    </AuthProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <AuthProvider>
+        <NavigationWrapper />
+      </AuthProvider>
+    </GestureHandlerRootView>
   );
 }

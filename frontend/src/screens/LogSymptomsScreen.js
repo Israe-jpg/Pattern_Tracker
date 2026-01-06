@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   View,
   Text,
@@ -6,21 +6,23 @@ import {
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
-  TextInput,
   Alert,
+  Platform,
 } from "react-native";
-import { ReanimatedSlider } from "../components/ReanimatedSlider";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import FormField from "../components/form/FormField";
 import { Ionicons } from "@expo/vector-icons";
 import { trackerService } from "../services/trackerService";
 import { dataTrackingService } from "../services/dataTrackingService";
 import { colors } from "../constants/colors";
+import { buildZodSchema } from "../utils/formSchemaBuilder";
 
 export default function LogSymptomsScreen({ route, navigation }) {
   const { trackerId, selectedDate } = route.params || {};
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [formSchema, setFormSchema] = useState(null);
-  const [formData, setFormData] = useState({});
 
   useEffect(() => {
     loadFormSchema();
@@ -200,7 +202,6 @@ export default function LogSymptomsScreen({ route, navigation }) {
         ...response,
         fieldGroups: fieldGroups,
       });
-      setFormData(initialData);
       setLoading(false);
     } catch (error) {
       console.error("Error loading form schema:", error);
@@ -236,70 +237,70 @@ export default function LogSymptomsScreen({ route, navigation }) {
     }
   };
 
-  const updateFieldValue = (fieldName, optionName, value) => {
-    setFormData((prev) => ({
-      ...prev,
-      [fieldName]: {
-        ...prev[fieldName],
-        [optionName]: value,
-      },
-    }));
-  };
+  // Build Zod schema and initialize react-hook-form
+  // Rule A: Memoize schema creation strictly - only rebuild when formSchema changes
+  const zodSchema = useMemo(() => {
+    if (!formSchema) return null;
+    return buildZodSchema(formSchema);
+  }, [formSchema]); // Only depends on formSchema, not any other state
 
-  const SliderComponent = ({
-    field,
-    option,
-    minValue,
-    maxValue,
-    currentValue,
-    onValueChange,
-  }) => {
-    const [localValue, setLocalValue] = useState(
-      currentValue !== null && currentValue !== undefined
-        ? currentValue
-        : minValue
-    );
+  // Build default values for the form
+  const defaultValues = useMemo(() => {
+    if (!formSchema?.fieldGroups) return {};
 
-    useEffect(() => {
-      if (currentValue !== null && currentValue !== undefined) {
-        setLocalValue(currentValue);
+    const defaults = {};
+    for (const groupName in formSchema.fieldGroups) {
+      const group = formSchema.fieldGroups[groupName];
+      let fieldsToProcess = [];
+
+      if (Array.isArray(group)) {
+        fieldsToProcess = group;
+      } else if (group && typeof group === "object") {
+        fieldsToProcess = convertSchemaToFields(group, groupName);
       }
-    }, [currentValue]);
 
-    const handleValueChange = (value) => {
-      setLocalValue(value);
-      onValueChange(value);
-    };
+      for (const field of fieldsToProcess) {
+        if (!field.options || field.options.length === 0) continue;
 
-    return (
-      <View style={styles.sliderContainer}>
-        <Text style={styles.sliderValueDisplay}>{localValue}</Text>
-        <ReanimatedSlider
-          minValue={minValue}
-          maxValue={maxValue}
-          value={localValue}
-          onValueChange={handleValueChange}
-          step={1}
-          minimumTrackTintColor={colors.primary}
-          maximumTrackTintColor={colors.background}
-          thumbTintColor={colors.primary}
-        />
-        <View style={styles.sliderLabels}>
-          <Text style={styles.sliderLabel}>{minValue}</Text>
-          <Text style={styles.sliderLabel}>{maxValue}</Text>
-        </View>
-      </View>
-    );
-  };
+        const fieldDefaults = {};
+        for (const option of field.options) {
+          if (option.option_type === "multiple_choice") {
+            fieldDefaults[option.option_name] = [];
+          } else if (option.option_type === "yes_no") {
+            fieldDefaults[option.option_name] = false;
+          } else {
+            fieldDefaults[option.option_name] = null;
+          }
+        }
+        defaults[field.field_name] = fieldDefaults;
+      }
+    }
+    return defaults;
+  }, [formSchema]);
 
-  const handleSubmit = async () => {
+  // Initialize react-hook-form
+  // Use "onBlur" mode to reduce re-renders during typing/dragging
+  const {
+    control,
+    handleSubmit: rhfHandleSubmit,
+    formState: { errors },
+  } = useForm({
+    resolver: zodSchema ? zodResolver(zodSchema) : undefined,
+    defaultValues,
+    mode: "onBlur", // Changed from "onChange" to reduce re-renders
+    reValidateMode: "onBlur",
+  });
+
+  const onSubmit = async (data) => {
     try {
       setSubmitting(true);
 
-      // Format data for backend
+      // Format data for backend (same structure as before)
       const formattedData = {};
-      Object.keys(formData).forEach((fieldName) => {
-        const fieldData = formData[fieldName];
+      Object.keys(data).forEach((fieldName) => {
+        const fieldData = data[fieldName];
+        if (!fieldData || typeof fieldData !== "object") return;
+
         Object.keys(fieldData).forEach((optionName) => {
           const value = fieldData[optionName];
           if (value !== null && value !== undefined && value !== "") {
@@ -343,229 +344,36 @@ export default function LogSymptomsScreen({ route, navigation }) {
     }
   };
 
-  const renderOption = (field, option) => {
-    const optionLabel = option.display_label || option.option_name;
-    const currentValue = formData[field.field_name]?.[option.option_name];
+  // Memoize the unique fields list to prevent recalculation on every render
+  const uniqueFields = useMemo(() => {
+    if (!formSchema?.fieldGroups) return [];
 
-    switch (option.option_type) {
-      case "yes_no":
-        return (
-          <View key={option.id} style={styles.optionContainer}>
-            <Text style={styles.optionLabel}>{optionLabel}</Text>
-            <View style={styles.choiceButtons}>
-              <TouchableOpacity
-                style={[
-                  styles.choiceButton,
-                  currentValue === true && styles.choiceButtonSelected,
-                ]}
-                onPress={() => {
-                  // Toggle: if already true, set to null to unselect
-                  updateFieldValue(
-                    field.field_name,
-                    option.option_name,
-                    currentValue === true ? null : true
-                  );
-                }}
-              >
-                <Text
-                  style={[
-                    styles.choiceButtonText,
-                    currentValue === true && styles.choiceButtonTextSelected,
-                  ]}
-                >
-                  Yes
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.choiceButton,
-                  currentValue === false && styles.choiceButtonSelected,
-                ]}
-                onPress={() => {
-                  // Toggle: if already false, set to null to unselect
-                  updateFieldValue(
-                    field.field_name,
-                    option.option_name,
-                    currentValue === false ? null : false
-                  );
-                }}
-              >
-                <Text
-                  style={[
-                    styles.choiceButtonText,
-                    currentValue === false && styles.choiceButtonTextSelected,
-                  ]}
-                >
-                  No
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        );
+    const fieldMap = new Map();
+    const seenFieldNames = new Set();
 
-      case "single_choice":
-        return (
-          <View key={option.id} style={styles.optionContainer}>
-            <Text style={styles.optionLabel}>{optionLabel}</Text>
-            <View style={styles.choiceButtons}>
-              {option.choices?.map((choice) => {
-                const isSelected = currentValue === choice;
-                return (
-                  <TouchableOpacity
-                    key={choice}
-                    style={[
-                      styles.choiceButton,
-                      isSelected && styles.choiceButtonSelected,
-                    ]}
-                    onPress={() => {
-                      // Toggle: if already selected, unselect by setting to null
-                      updateFieldValue(
-                        field.field_name,
-                        option.option_name,
-                        isSelected ? null : choice
-                      );
-                    }}
-                  >
-                    <Text
-                      style={[
-                        styles.choiceButtonText,
-                        isSelected && styles.choiceButtonTextSelected,
-                      ]}
-                    >
-                      {option.choice_labels?.[choice] || choice}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </View>
-        );
+    for (const groupName in formSchema.fieldGroups) {
+      const group = formSchema.fieldGroups[groupName];
+      let fieldsToProcess = [];
 
-      case "multiple_choice":
-        const choices = option.choices || [];
-        return (
-          <View key={option.id} style={styles.optionContainer}>
-            <Text style={styles.optionLabel}>{optionLabel}</Text>
-            {choices.length > 0 ? (
-              <View style={styles.choiceButtons}>
-                {choices.map((choice) => {
-                  const selectedChoices = currentValue || [];
-                  const isSelected = selectedChoices.includes(choice);
-                  return (
-                    <TouchableOpacity
-                      key={choice}
-                      style={[
-                        styles.choiceButton,
-                        isSelected && styles.choiceButtonSelected,
-                      ]}
-                      onPress={() => {
-                        const newChoices = isSelected
-                          ? selectedChoices.filter((c) => c !== choice)
-                          : [...selectedChoices, choice];
-                        updateFieldValue(
-                          field.field_name,
-                          option.option_name,
-                          newChoices
-                        );
-                      }}
-                    >
-                      <Text
-                        style={[
-                          styles.choiceButtonText,
-                          isSelected && styles.choiceButtonTextSelected,
-                        ]}
-                      >
-                        {option.choice_labels?.[choice] || choice}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            ) : (
-              <Text style={styles.emptyChoicesText}>
-                No choices available for this option
-              </Text>
-            )}
-          </View>
-        );
+      if (Array.isArray(group)) {
+        fieldsToProcess = group;
+      } else if (group && typeof group === "object") {
+        fieldsToProcess = convertSchemaToFields(group, groupName);
+      }
 
-      case "rating":
-        return (
-          <View key={option.id} style={styles.optionContainer}>
-            <Text style={styles.optionLabel}>{optionLabel}</Text>
-            <SliderComponent
-              field={field}
-              option={option}
-              minValue={option.min_value || 0}
-              maxValue={option.max_value || 10}
-              currentValue={currentValue}
-              onValueChange={(value) =>
-                updateFieldValue(field.field_name, option.option_name, value)
-              }
-            />
-          </View>
-        );
-
-      case "number_input":
-        return (
-          <View key={option.id} style={styles.optionContainer}>
-            <Text style={styles.optionLabel}>{optionLabel}</Text>
-            <TextInput
-              style={styles.numberInput}
-              keyboardType="numeric"
-              placeholder={option.placeholder || `Enter ${optionLabel}`}
-              value={currentValue?.toString() || ""}
-              onChangeText={(text) => {
-                const numValue = text ? parseFloat(text) : null;
-                updateFieldValue(
-                  field.field_name,
-                  option.option_name,
-                  numValue
-                );
-              }}
-            />
-          </View>
-        );
-
-      case "text":
-      case "notes":
-        return (
-          <View key={option.id} style={styles.optionContainer}>
-            <Text style={styles.optionLabel}>{optionLabel}</Text>
-            <TextInput
-              style={styles.textInput}
-              multiline={option.option_type === "notes"}
-              numberOfLines={option.option_type === "notes" ? 4 : 1}
-              placeholder={option.placeholder || `Enter ${optionLabel}`}
-              value={currentValue || ""}
-              onChangeText={(text) =>
-                updateFieldValue(field.field_name, option.option_name, text)
-              }
-              maxLength={option.max_length}
-            />
-          </View>
-        );
-
-      default:
-        return null;
+      for (const field of fieldsToProcess) {
+        if (field) {
+          const key = field.field_name || field.id;
+          if (key && !seenFieldNames.has(key)) {
+            seenFieldNames.add(key);
+            fieldMap.set(key, field);
+          }
+        }
+      }
     }
-  };
 
-  const renderField = (field) => {
-    if (!field.options || field.options.length === 0) return null;
-
-    return (
-      <View key={field.id} style={styles.fieldContainer}>
-        {field.display_label && (
-          <Text style={styles.fieldLabel}>{field.display_label}</Text>
-        )}
-
-        {field.options
-          .sort((a, b) => (a.option_order || 0) - (b.option_order || 0))
-          .map((option) => renderOption(field, option))}
-      </View>
-    );
-  };
+    return Array.from(fieldMap.values());
+  }, [formSchema]);
 
   if (loading) {
     return (
@@ -620,46 +428,6 @@ export default function LogSymptomsScreen({ route, navigation }) {
     );
   }
 
-  const fieldGroups = formSchema.fieldGroups || {};
-
-  // Handle both period_tracker (for Period Tracker) and category_specific (for other trackers)
-  // Use Map for faster deduplication - key by both id and field_name to catch all duplicates
-  const fieldMap = new Map();
-  const seenFieldNames = new Set();
-
-  // Process ALL field groups dynamically - iterate over all keys in fieldGroups
-  // This ensures we catch period_tracker, baseline, custom, category_specific, or any other group
-  for (const groupName in fieldGroups) {
-    const group = fieldGroups[groupName];
-
-    let fieldsToProcess = [];
-
-    if (Array.isArray(group)) {
-      // Already in field/option format
-      fieldsToProcess = group;
-    } else if (group && typeof group === "object") {
-      // Convert nested schema structure to field/option format
-      fieldsToProcess = convertSchemaToFields(group, groupName);
-    }
-
-    if (fieldsToProcess.length > 0) {
-      for (const field of fieldsToProcess) {
-        if (!field) {
-          continue;
-        }
-
-        // Use field_name as primary key (more reliable than id for deduplication)
-        const key = field.field_name || field.id;
-        if (key && !seenFieldNames.has(key)) {
-          seenFieldNames.add(key);
-          fieldMap.set(key, field);
-        }
-      }
-    }
-  }
-
-  const uniqueFields = Array.from(fieldMap.values());
-
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -676,15 +444,37 @@ export default function LogSymptomsScreen({ route, navigation }) {
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
+        // ✅ iOS FIX: Disable scroll when slider is being touched
+        scrollEnabled={true}
+        // ✅ iOS FIX: Keyboard handling
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        // ✅ iOS FIX: Reduce over-scroll to prevent gesture conflicts
+        bounces={true}
+        bouncesZoom={false}
+        // ✅ iOS FIX: Indicator configuration
+        showsVerticalScrollIndicator={true}
+        showsHorizontalScrollIndicator={false}
+        // ✅ iOS FIX: Content inset for iOS safe areas
+        {...(Platform.OS === "ios" && {
+          automaticallyAdjustContentInsets: false,
+          contentInsetAdjustmentBehavior: "automatic",
+        })}
       >
-        {uniqueFields.map((field) => renderField(field))}
+        {uniqueFields.map((field) => (
+          <FormField
+            key={field.id || field.field_name}
+            field={field}
+            control={control}
+          />
+        ))}
 
         <TouchableOpacity
           style={[
             styles.submitButton,
             submitting && styles.submitButtonDisabled,
           ]}
-          onPress={handleSubmit}
+          onPress={rhfHandleSubmit(onSubmit)}
           disabled={submitting}
         >
           {submitting ? (
