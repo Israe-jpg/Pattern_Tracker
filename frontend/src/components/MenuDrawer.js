@@ -195,15 +195,8 @@ export default function MenuDrawer({
         <View style={styles.drawerContent}>
           <View style={styles.sectionTitleContainer}>
             <Text style={styles.sectionTitle}>My trackers:</Text>
-            {/* Edit/Done Button - Right */}
-            {editMode ? (
-              <TouchableOpacity
-                style={styles.editButtonTop}
-                onPress={() => setEditMode(false)}
-              >
-                <Text style={styles.doneButtonText}>Done</Text>
-              </TouchableOpacity>
-            ) : (
+            {/* Edit Button - Right */}
+            {!editMode && (
               <TouchableOpacity
                 style={styles.editButtonTop}
                 onPress={() => setShowDropdown(!showDropdown)}
@@ -285,7 +278,7 @@ export default function MenuDrawer({
           )}
         </View>
 
-        {/* Bottom Bar - Profile on left */}
+        {/* Bottom Bar - Profile on left, Edit/Done on right */}
         <View style={styles.bottomBar}>
           {/* Profile Section - Left */}
           <View style={styles.profileSection}>
@@ -373,6 +366,16 @@ export default function MenuDrawer({
               </View>
             )}
           </View>
+
+          {/* Done Button - Right (only in edit mode) */}
+          {editMode && (
+            <TouchableOpacity
+              style={styles.editButton}
+              onPress={() => setEditMode(false)}
+            >
+              <Text style={styles.doneButtonText}>Done</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Profile Dropdown Backdrop */}
