@@ -125,14 +125,16 @@ export default function MenuDrawer({
     <View style={styles.trackerItemWrapper}>
       {editMode && (
         <View style={styles.editIcons}>
-          <TouchableOpacity
-            style={styles.deleteButton}
-            onPress={() => handleDelete(item)}
-          >
-            <View style={styles.deleteIconContainer}>
-              <Ionicons name="remove" size={14} color="white" />
-            </View>
-          </TouchableOpacity>
+          {!isPrebuiltTracker(item) && (
+            <TouchableOpacity
+              style={styles.deleteButton}
+              onPress={() => handleDelete(item)}
+            >
+              <View style={styles.deleteIconContainer}>
+                <Ionicons name="remove" size={14} color="white" />
+              </View>
+            </TouchableOpacity>
+          )}
           <TouchableOpacity
             style={styles.starButton}
             onPress={() => handleToggleDefault(item)}
