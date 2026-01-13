@@ -48,12 +48,7 @@ export default function MenuDrawer({
   const slideAnim = useRef(new Animated.Value(-DRAWER_WIDTH)).current;
   const [showDropdown, setShowDropdown] = useState(false);
   const [hidePrebuilt, setHidePrebuilt] = useState(false);
-  const [profileDropdownVisible, setProfileDropdownVisible] = useState(false);
   const [editButtonLayout, setEditButtonLayout] = useState({ y: 0, height: 0 });
-  const [profileButtonLayout, setProfileButtonLayout] = useState({
-    y: 0,
-    height: 0,
-  });
   const { user } = useAuth();
 
   useEffect(() => {
@@ -194,7 +189,7 @@ export default function MenuDrawer({
 
         <View style={styles.drawerContent}>
           <View style={styles.sectionTitleContainer}>
-            <Text style={styles.sectionTitle}>My trackers:</Text>
+            <Text style={styles.sectionTitle}>My Collection:</Text>
             {/* Edit Button - Right */}
             {!editMode && (
               <TouchableOpacity
@@ -284,10 +279,11 @@ export default function MenuDrawer({
           <View style={styles.profileSection}>
             <TouchableOpacity
               style={styles.profileButton}
-              onPress={() => setProfileDropdownVisible(!profileDropdownVisible)}
-              onLayout={(event) => {
-                const { y, height } = event.nativeEvent.layout;
-                setProfileButtonLayout({ y, height });
+              onPress={() => {
+                if (onProfilePress) {
+                  onProfilePress();
+                }
+                onClose();
               }}
             >
               <Ionicons
@@ -303,68 +299,6 @@ export default function MenuDrawer({
                 </Text>
               )}
             </TouchableOpacity>
-
-            {profileDropdownVisible && (
-              <View
-                style={[
-                  styles.profileDropdown,
-                  {
-                    bottom:
-                      profileButtonLayout.height > 0
-                        ? profileButtonLayout.height + 8
-                        : 50,
-                  },
-                ]}
-              >
-                <TouchableOpacity
-                  style={styles.profileDropdownItem}
-                  onPress={() => {
-                    setProfileDropdownVisible(false);
-                    if (onProfilePress) {
-                      onProfilePress();
-                    }
-                  }}
-                >
-                  <Ionicons
-                    name="person-outline"
-                    size={20}
-                    color={colors.textOnPrimary}
-                    style={styles.profileDropdownIcon}
-                  />
-                  <Text style={styles.profileDropdownText}>Profile</Text>
-                </TouchableOpacity>
-                <View style={styles.profileDropdownDivider} />
-                <TouchableOpacity
-                  style={styles.profileDropdownItem}
-                  onPress={() => {
-                    setProfileDropdownVisible(false);
-                    Alert.alert("Logout", "Are you sure you want to logout?", [
-                      {
-                        text: "Cancel",
-                        style: "cancel",
-                      },
-                      {
-                        text: "Logout",
-                        style: "destructive",
-                        onPress: () => {
-                          if (onLogout) {
-                            onLogout();
-                          }
-                        },
-                      },
-                    ]);
-                  }}
-                >
-                  <Ionicons
-                    name="log-out-outline"
-                    size={20}
-                    color={colors.textOnPrimary}
-                    style={styles.profileDropdownIcon}
-                  />
-                  <Text style={styles.profileDropdownText}>Logout</Text>
-                </TouchableOpacity>
-              </View>
-            )}
           </View>
 
           {/* Done Button - Right (only in edit mode) */}
@@ -377,15 +311,6 @@ export default function MenuDrawer({
             </TouchableOpacity>
           )}
         </View>
-
-        {/* Profile Dropdown Backdrop */}
-        {profileDropdownVisible && (
-          <TouchableOpacity
-            style={styles.profileDropdownBackdrop}
-            activeOpacity={1}
-            onPress={() => setProfileDropdownVisible(false)}
-          />
-        )}
 
         {/* Dropdown Menu - Left Side */}
         {showDropdown && (
@@ -645,61 +570,6 @@ const styles = StyleSheet.create({
     color: colors.textOnPrimary,
     marginLeft: 8,
   },
-  profileDropdown: {
-    position: "absolute",
-    bottom: 50,
-    left: 0,
-    backgroundColor: colors.primaryDark,
-    borderRadius: 12,
-    minWidth: 180,
-    zIndex: 1003,
-    borderWidth: 1,
-    borderColor: colors.primaryLight,
-    overflow: "hidden",
-    ...(Platform.OS === "web"
-      ? {
-          boxShadow: "0px 4px 12px rgba(0, 0, 0, 0.4)",
-        }
-      : {
-          shadowColor: "#000",
-          shadowOffset: {
-            width: 0,
-            height: 4,
-          },
-          shadowOpacity: 0.4,
-          shadowRadius: 8,
-          elevation: 10,
-        }),
-  },
-  profileDropdownItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 16,
-    paddingHorizontal: 18,
-    backgroundColor: "transparent",
-  },
-  profileDropdownIcon: {
-    marginRight: 12,
-  },
-  profileDropdownText: {
-    fontSize: 16,
-    fontWeight: "500",
-    color: colors.textOnPrimary,
-    flex: 1,
-  },
-  profileDropdownDivider: {
-    height: 1,
-    backgroundColor: colors.primaryLight,
-    marginHorizontal: 16,
-  },
-  profileDropdownBackdrop: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    zIndex: 1002,
-  },
   editButtonTop: {
     width: 40,
     height: 40,
@@ -799,3 +669,4 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
   },
 });
+

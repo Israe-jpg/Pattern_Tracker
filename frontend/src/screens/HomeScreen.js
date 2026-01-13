@@ -207,7 +207,7 @@ export default function HomeScreen({ navigation }) {
           );
         }}
         defaultTrackerId={defaultTracker?.id}
-        onProfilePress={() => navigation.navigate("UserInfo")}
+        onProfilePress={() => navigation.navigate("Profile")}
         onLogout={logout}
       />
     </View>

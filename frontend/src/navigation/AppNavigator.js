@@ -8,6 +8,7 @@ import LoginScreen from "../screens/auth/LoginScreen";
 import RegisterScreen from "../screens/auth/RegisterScreen";
 import GenderScreen from "../screens/auth/GenderScreen";
 import UserInfoScreen from "../screens/auth/UserInfoScreen";
+import ProfileScreen from "../screens/ProfileScreen";
 import HomeScreen from "../screens/HomeScreen";
 import CalendarScreen from "../screens/CalendarScreen";
 import TrackerDetailScreen from "../screens/TrackerDetailScreen";
@@ -42,6 +43,7 @@ export default function AppNavigator() {
         <>
           <Stack.Screen name="Home" component={HomeScreen} />
           <Stack.Screen name="UserInfo" component={UserInfoScreen} />
+          <Stack.Screen name="Profile" component={ProfileScreen} />
           <Stack.Screen name="Calendar" component={CalendarScreen} />
           <Stack.Screen name="TrackerDetail" component={TrackerDetailScreen} />
           <Stack.Screen name="LogSymptoms" component={LogSymptomsScreen} />
