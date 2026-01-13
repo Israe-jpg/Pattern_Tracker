@@ -264,6 +264,8 @@ export default function RegisterScreen({ navigation }) {
     <ScrollView
       style={styles.container}
       contentContainerStyle={styles.contentContainer}
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="on-drag"
     >
       <View style={styles.content}>
         <Text style={styles.title}>Create Account</Text>
@@ -288,6 +290,8 @@ export default function RegisterScreen({ navigation }) {
               }}
               onBlur={() => validateField("username", formData.username)}
               autoCapitalize="none"
+              returnKeyType="next"
+              blurOnSubmit={false}
             />
             {errors.username && (
               <Text style={styles.errorText}>{errors.username}</Text>
@@ -307,6 +311,8 @@ export default function RegisterScreen({ navigation }) {
               onBlur={() => validateField("email", formData.email)}
               keyboardType="email-address"
               autoCapitalize="none"
+              returnKeyType="next"
+              blurOnSubmit={false}
             />
             {errors.email && (
               <Text style={styles.errorText}>{errors.email}</Text>
@@ -325,6 +331,8 @@ export default function RegisterScreen({ navigation }) {
               }}
               onBlur={() => validateField("password", formData.password)}
               secureTextEntry
+              returnKeyType="next"
+              blurOnSubmit={false}
             />
             {errors.password && (
               <Text style={styles.errorText}>{errors.password}</Text>
@@ -344,6 +352,8 @@ export default function RegisterScreen({ navigation }) {
                 updateField("confirmPassword", value);
                 if (value) validateField("confirmPassword", value);
               }}
+              returnKeyType="next"
+              blurOnSubmit={false}
               onBlur={() =>
                 validateField("confirmPassword", formData.confirmPassword)
               }
@@ -365,6 +375,8 @@ export default function RegisterScreen({ navigation }) {
                 if (value && errors.first_name)
                   validateField("first_name", value);
               }}
+              returnKeyType="next"
+              blurOnSubmit={false}
               onBlur={() => {
                 if (formData.first_name && errors.first_name) {
                   validateField("first_name", formData.first_name);
@@ -387,6 +399,8 @@ export default function RegisterScreen({ navigation }) {
                 if (value && errors.last_name)
                   validateField("last_name", value);
               }}
+              returnKeyType="done"
+              blurOnSubmit={true}
               onBlur={() => {
                 if (formData.last_name && errors.last_name) {
                   validateField("last_name", formData.last_name);

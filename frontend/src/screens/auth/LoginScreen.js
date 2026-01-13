@@ -82,6 +82,8 @@ export default function LoginScreen({ navigation }) {
     <ScrollView 
       style={styles.container}
       contentContainerStyle={styles.contentContainer}
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="on-drag"
     >
       <View style={styles.content}>
         <Text style={styles.title}>{APP_NAME}</Text>
@@ -120,6 +122,8 @@ export default function LoginScreen({ navigation }) {
               }}
               keyboardType="email-address"
               autoCapitalize="none"
+              returnKeyType="next"
+              blurOnSubmit={false}
             />
             {errors.email && <Text style={styles.errorText}>{errors.email}</Text>}
           </View>
@@ -141,6 +145,9 @@ export default function LoginScreen({ navigation }) {
                 }
               }}
               secureTextEntry
+              returnKeyType="done"
+              onSubmitEditing={handleLogin}
+              blurOnSubmit={true}
             />
             {errors.password && <Text style={styles.errorText}>{errors.password}</Text>}
           </View>

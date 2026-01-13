@@ -106,12 +106,14 @@ export const AuthProvider = ({ children }) => {
 
   const submitUserInfo = async (userInfo) => {
     try {
-      await authService.submitUserInfo(userInfo);
+      const response = await authService.submitUserInfo(userInfo);
+      
       // Refresh profile to get updated user data
       const profile = await authService.getProfile();
       setUser(profile);
       return { success: true };
     } catch (error) {
+      console.error("Error submitting user info:", error);
       const errorMessage = error.response?.data?.error 
         || error.response?.data?.message 
         || error.message 

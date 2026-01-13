@@ -9,6 +9,7 @@ import {
   Alert,
   ActivityIndicator,
   Platform,
+  KeyboardAvoidingView,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { colors, APP_NAME } from "../constants/colors";
@@ -69,14 +70,14 @@ export default function ProfileScreen({ navigation }) {
         email: user.email || "",
         date_of_birth: user.date_of_birth || "",
         height: user.height
-          ? user.unit_system === "imperial"
-            ? user.height_imperial
-            : user.height_metric
+          ? String(user.unit_system === "imperial"
+              ? user.height_imperial
+              : user.height_metric)
           : "",
         weight: user.weight
-          ? user.unit_system === "imperial"
-            ? user.weight_imperial
-            : user.weight_metric
+          ? String(user.unit_system === "imperial"
+              ? user.weight_imperial
+              : user.weight_metric)
           : "",
         unit_system: user.unit_system || "metric",
       });
@@ -84,7 +85,8 @@ export default function ProfileScreen({ navigation }) {
   }, [user]);
 
   const handleInputChange = (field, value) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
+    // Always store as string to ensure consistency
+    setFormData((prev) => ({ ...prev, [field]: String(value || "") }));
     if (errors[field]) {
       setErrors((prev) => ({ ...prev, [field]: null }));
     }
@@ -129,15 +131,33 @@ export default function ProfileScreen({ navigation }) {
         unit_system: formData.unit_system,
       };
 
+      // Convert all values to strings first, then process
+      const username = String(formData.username || "").trim();
+      const dob = String(formData.date_of_birth || "").trim();
+      const heightStr = String(formData.height || "").trim();
+      const weightStr = String(formData.weight || "").trim();
+
       // Only include fields that have values
-      if (formData.date_of_birth && formData.date_of_birth.trim()) {
-        userInfoData.date_of_birth = formData.date_of_birth.trim();
+      if (username) {
+        userInfoData.username = username;
       }
-      if (formData.height && formData.height.trim()) {
-        userInfoData.height = parseFloat(formData.height);
+      
+      if (dob) {
+        userInfoData.date_of_birth = dob;
       }
-      if (formData.weight && formData.weight.trim()) {
-        userInfoData.weight = parseFloat(formData.weight);
+      
+      if (heightStr) {
+        const heightValue = parseFloat(heightStr);
+        if (!isNaN(heightValue) && heightValue > 0) {
+          userInfoData.height = heightValue;
+        }
+      }
+      
+      if (weightStr) {
+        const weightValue = parseFloat(weightStr);
+        if (!isNaN(weightValue) && weightValue > 0) {
+          userInfoData.weight = weightValue;
+        }
       }
 
       const result = await submitUserInfo(userInfoData);
@@ -225,12 +245,14 @@ export default function ProfileScreen({ navigation }) {
       {isEditing && editable ? (
         <TextInput
           style={[styles.input, errors[field] && styles.inputError]}
-          value={formData[field]}
+          value={String(formData[field] || "")}
           onChangeText={(value) => handleInputChange(field, value)}
           placeholder={placeholder}
           placeholderTextColor={colors.textLight}
           editable={!loading}
           keyboardType={keyboardType}
+          returnKeyType="done"
+          blurOnSubmit={true}
         />
       ) : (
         <Text style={styles.fieldValue}>{formData[field] || "Not set"}</Text>
@@ -240,7 +262,11 @@ export default function ProfileScreen({ navigation }) {
   );
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView 
+      style={styles.container}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+    >
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
@@ -259,34 +285,15 @@ export default function ProfileScreen({ navigation }) {
           </TouchableOpacity>
         ) : (
           <TouchableOpacity
-            style={styles.cancelButton}
-            onPress={() => {
-              setIsEditing(false);
-              setErrors({});
-              // Reset form data
-              if (user) {
-                setFormData({
-                  first_name: user.first_name || "",
-                  last_name: user.last_name || "",
-                  username: user.username || "",
-                  email: user.email || "",
-                  date_of_birth: user.date_of_birth || "",
-                  height: user.height
-                    ? user.unit_system === "imperial"
-                      ? user.height_imperial
-                      : user.height_metric
-                    : "",
-                  weight: user.weight
-                    ? user.unit_system === "imperial"
-                      ? user.weight_imperial
-                      : user.weight_metric
-                    : "",
-                  unit_system: user.unit_system || "metric",
-                });
-              }
-            }}
+            style={styles.saveButton}
+            onPress={handleSave}
+            disabled={loading}
           >
-            <Text style={styles.cancelButtonText}>Cancel</Text>
+            {loading ? (
+              <ActivityIndicator size="small" color={colors.textOnPrimary} />
+            ) : (
+              <Ionicons name="checkmark" size={24} color={colors.textOnPrimary} />
+            )}
           </TouchableOpacity>
         )}
       </View>
@@ -294,6 +301,8 @@ export default function ProfileScreen({ navigation }) {
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
       >
         {/* Profile Header */}
         <View style={styles.profileHeader}>
@@ -513,18 +522,38 @@ export default function ProfileScreen({ navigation }) {
           </View>
         </View>
 
-        {/* Save Button (only when editing) */}
+        {/* Cancel Button (only when editing) */}
         {isEditing && (
           <TouchableOpacity
-            style={[styles.saveButton, loading && styles.saveButtonDisabled]}
-            onPress={handleSave}
+            style={styles.cancelButtonBottom}
+            onPress={() => {
+              setIsEditing(false);
+              setErrors({});
+              // Reset form data
+              if (user) {
+                setFormData({
+                  first_name: user.first_name || "",
+                  last_name: user.last_name || "",
+                  username: user.username || "",
+                  email: user.email || "",
+                  date_of_birth: user.date_of_birth || "",
+                  height: user.height
+                    ? String(user.unit_system === "imperial"
+                        ? user.height_imperial
+                        : user.height_metric)
+                    : "",
+                  weight: user.weight
+                    ? String(user.unit_system === "imperial"
+                        ? user.weight_imperial
+                        : user.weight_metric)
+                    : "",
+                  unit_system: user.unit_system || "metric",
+                });
+              }
+            }}
             disabled={loading}
           >
-            {loading ? (
-              <ActivityIndicator size="small" color={colors.textOnPrimary} />
-            ) : (
-              <Text style={styles.saveButtonText}>Save Changes</Text>
-            )}
+            <Text style={styles.cancelButtonBottomText}>Cancel</Text>
           </TouchableOpacity>
         )}
 
@@ -590,7 +619,7 @@ export default function ProfileScreen({ navigation }) {
         columns={getWeightPickerColumns(formData.unit_system)}
         selectedValue={selectedWeight}
       />
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -622,13 +651,23 @@ const styles = StyleSheet.create({
   editButton: {
     padding: 4,
   },
-  cancelButton: {
+  saveButton: {
     padding: 4,
   },
-  cancelButtonText: {
-    fontSize: 16,
-    color: colors.textOnPrimary,
+  cancelButtonBottom: {
+    backgroundColor: colors.background,
+    borderRadius: 12,
+    paddingVertical: 16,
+    alignItems: "center",
+    marginTop: 10,
+    marginBottom: 20,
+    borderWidth: 2,
+    borderColor: colors.border,
+  },
+  cancelButtonBottomText: {
+    fontSize: 18,
     fontWeight: "600",
+    color: colors.text,
   },
   scrollView: {
     flex: 1,
@@ -745,36 +784,6 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   unitButtonTextActive: {
-    color: colors.textOnPrimary,
-  },
-  saveButton: {
-    backgroundColor: colors.primary,
-    borderRadius: 12,
-    paddingVertical: 16,
-    alignItems: "center",
-    marginTop: 10,
-    marginBottom: 20,
-    ...(Platform.OS === "web"
-      ? {
-          boxShadow: "0px 4px 8px rgba(0, 0, 0, 0.3)",
-        }
-      : {
-          shadowColor: "#000",
-          shadowOffset: {
-            width: 0,
-            height: 4,
-          },
-          shadowOpacity: 0.3,
-          shadowRadius: 4,
-          elevation: 8,
-        }),
-  },
-  saveButtonDisabled: {
-    opacity: 0.6,
-  },
-  saveButtonText: {
-    fontSize: 18,
-    fontWeight: "600",
     color: colors.textOnPrimary,
   },
   logoutButton: {
