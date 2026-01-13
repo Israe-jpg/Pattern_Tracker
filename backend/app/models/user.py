@@ -65,7 +65,12 @@ class User(db.Model):
                 'height': convert_height_from_metric(self.height, unit_system),
                 'unit_system': unit_system,
                 'weight_unit': get_weight_unit(unit_system),
-                'height_unit': get_height_unit(unit_system)
+                'height_unit': get_height_unit(unit_system),
+                # Also include both metric and imperial values for convenience
+                'weight_metric': self.weight,
+                'weight_imperial': convert_weight_from_metric(self.weight, 'imperial'),
+                'height_metric': self.height,
+                'height_imperial': convert_height_from_metric(self.height, 'imperial')
             })
         
         return base_dict
