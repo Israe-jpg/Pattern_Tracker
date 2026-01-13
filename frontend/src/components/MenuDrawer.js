@@ -10,6 +10,7 @@ import {
   Platform,
   Alert,
 } from "react-native";
+import { PanGestureHandler, State } from "react-native-gesture-handler";
 import { Ionicons } from "@expo/vector-icons";
 import { colors, APP_NAME } from "../constants/colors";
 import { useAuth } from "../context/AuthContext";
@@ -48,26 +49,33 @@ export default function MenuDrawer({
   const slideAnim = useRef(new Animated.Value(-DRAWER_WIDTH)).current;
   const [showDropdown, setShowDropdown] = useState(false);
   const [hidePrebuilt, setHidePrebuilt] = useState(false);
+  const dragX = useRef(new Animated.Value(0)).current;
   const [editButtonLayout, setEditButtonLayout] = useState({ y: 0, height: 0 });
   const { user } = useAuth();
 
   useEffect(() => {
     if (visible) {
-      Animated.timing(slideAnim, {
+      setShowDropdown(false); // Close dropdown when drawer opens
+      dragX.setValue(0); // Reset drag position
+      Animated.spring(slideAnim, {
         toValue: 0,
-        duration: 300,
         useNativeDriver: false,
+        damping: 25,
+        stiffness: 200,
+        mass: 0.5,
       }).start();
     } else {
       Animated.timing(slideAnim, {
         toValue: -DRAWER_WIDTH,
-        duration: 300,
+        duration: 250,
         useNativeDriver: false,
-      }).start();
+      }).start(() => {
+        dragX.setValue(0);
+      });
       // Close dropdown when drawer closes
       setShowDropdown(false);
     }
-  }, [visible, slideAnim]);
+  }, [visible, slideAnim, dragX]);
 
   if (!visible) return null;
 
@@ -112,6 +120,51 @@ export default function MenuDrawer({
     }
   };
 
+  // Handle drawer swipe to close
+  const onGestureEvent = Animated.event(
+    [{ nativeEvent: { translationX: dragX } }],
+    { useNativeDriver: false }
+  );
+
+  const onHandlerStateChange = (event) => {
+    if (event.nativeEvent.oldState === State.ACTIVE) {
+      const { translationX, velocityX } = event.nativeEvent;
+
+      // If swiped left (negative translationX) more than threshold or fast velocity, close
+      const shouldClose = translationX < -DRAWER_WIDTH / 3 || velocityX < -500;
+
+      if (shouldClose) {
+        // Smoothly animate to closed position
+        Animated.timing(slideAnim, {
+          toValue: -DRAWER_WIDTH,
+          duration: 250,
+          useNativeDriver: false,
+        }).start(() => {
+          dragX.setValue(0);
+          onClose();
+        });
+      } else {
+        // Snap back to open position with smooth spring
+        Animated.parallel([
+          Animated.spring(dragX, {
+            toValue: 0,
+            useNativeDriver: false,
+            damping: 20,
+            stiffness: 200,
+            mass: 0.5,
+          }),
+          Animated.spring(slideAnim, {
+            toValue: 0,
+            useNativeDriver: false,
+            damping: 25,
+            stiffness: 200,
+            mass: 0.5,
+          }),
+        ]).start();
+      }
+    }
+  };
+
   const renderTracker = ({ item }) => (
     <View style={styles.trackerItemWrapper}>
       {editMode && (
@@ -150,84 +203,129 @@ export default function MenuDrawer({
         }}
         disabled={editMode}
       >
+        <Ionicons name="calendar" size={20} color={colors.textOnPrimary} />
         <Text style={styles.trackerItemName}>{item.name}</Text>
-        {!editMode && (
-          <Ionicons
-            name="chevron-forward"
-            size={20}
-            color={colors.textSecondary}
-          />
-        )}
       </TouchableOpacity>
     </View>
   );
 
   return (
-    <>
-      {/* Backdrop */}
-      <TouchableOpacity
-        style={styles.backdrop}
-        activeOpacity={1}
-        onPress={onClose}
-      />
+    <PanGestureHandler
+      onGestureEvent={onGestureEvent}
+      onHandlerStateChange={onHandlerStateChange}
+      activeOffsetX={[-10, 10000]} // Only respond to left swipes
+      failOffsetY={[-10, 10]} // Prevent conflicts with vertical scrolling
+    >
+      <Animated.View style={StyleSheet.absoluteFill}>
+        {/* Backdrop */}
+        <TouchableOpacity
+          style={styles.backdrop}
+          activeOpacity={1}
+          onPress={onClose}
+        />
 
-      {/* Drawer */}
-      <Animated.View
-        style={[
-          styles.drawer,
-          {
-            transform: [{ translateX: slideAnim }],
-          },
-        ]}
-      >
-        <View style={styles.drawerHeader}>
-          <Text style={styles.drawerTitle}>{APP_NAME}</Text>
-          <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-            <Ionicons name="close" size={24} color={colors.text} />
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.drawerContent}>
-          <View style={styles.sectionTitleContainer}>
-            <Text style={styles.sectionTitle}>My Collection:</Text>
-            {/* Edit Button - Right */}
-            {!editMode && (
-              <TouchableOpacity
-                style={styles.editButtonTop}
-                onPress={() => setShowDropdown(!showDropdown)}
-                onLayout={(event) => {
-                  const { y, height } = event.nativeEvent.layout;
-                  setEditButtonLayout({ y, height });
-                }}
-              >
-                <Ionicons
-                  name="pencil"
-                  size={20}
-                  color={colors.textOnPrimary}
-                />
-              </TouchableOpacity>
-            )}
+        {/* Drawer */}
+        <Animated.View
+          style={[
+            styles.drawer,
+            {
+              transform: [
+                {
+                  translateX: Animated.add(
+                    slideAnim,
+                    dragX.interpolate({
+                      inputRange: [-DRAWER_WIDTH, 0],
+                      outputRange: [-DRAWER_WIDTH, 0],
+                      extrapolate: "clamp",
+                    })
+                  ),
+                },
+              ],
+            },
+          ]}
+        >
+          <View style={styles.drawerHeader}>
+            <Text style={styles.drawerTitle}>{APP_NAME}</Text>
+            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+              <Ionicons name="close" size={24} color={colors.text} />
+            </TouchableOpacity>
           </View>
 
-          {/* Prebuilt Section */}
-          {!hidePrebuilt && (
-            <View style={styles.sectionContainer}>
-              <View style={styles.sectionSubtitleContainer}>
-                <Text style={styles.sectionSubtitle}>Prebuilt</Text>
-                {editMode && (
-                  <TouchableOpacity
-                    style={styles.hideButton}
-                    onPress={() => setHidePrebuilt(true)}
-                  >
-                    <Text style={styles.hideButtonText}>Hide</Text>
-                  </TouchableOpacity>
+          <View style={styles.drawerContent}>
+            <View style={styles.sectionTitleContainer}>
+              <Text style={styles.sectionTitle}>Trackers</Text>
+              {/* Edit Button - Right */}
+              {!editMode && (
+                <TouchableOpacity
+                  style={styles.editButtonTop}
+                  onPress={() => setShowDropdown(!showDropdown)}
+                  onLayout={(event) => {
+                    const { y, height } = event.nativeEvent.layout;
+                    setEditButtonLayout({ y, height });
+                  }}
+                >
+                  <Ionicons
+                    name="pencil"
+                    size={20}
+                    color={colors.textOnPrimary}
+                  />
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {/* Featured/Templates Section */}
+            {!hidePrebuilt && (
+              <View style={styles.sectionContainer}>
+                <View style={styles.sectionSubtitleContainer}>
+                  <Text style={styles.sectionSubtitle}>Featured</Text>
+                  {editMode && (
+                    <TouchableOpacity
+                      style={styles.hideButton}
+                      onPress={() => setHidePrebuilt(true)}
+                    >
+                      <Text style={styles.hideButtonText}>Hide</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+                {prebuiltTrackers.length === 0 ? (
+                  <Text style={styles.emptyText}>No trackers yet</Text>
+                ) : (
+                  <FlatList
+                    data={prebuiltTrackers}
+                    renderItem={renderTracker}
+                    keyExtractor={(item) => item.id.toString()}
+                    style={styles.trackersList}
+                    contentContainerStyle={styles.trackersListContent}
+                    showsVerticalScrollIndicator={false}
+                    scrollEnabled={false}
+                  />
                 )}
               </View>
-              {prebuiltTrackers.length === 0 ? (
-                <Text style={styles.emptyText}>No trackers yet</Text>
-              ) : (
+            )}
+
+            {/* Show button when featured is hidden */}
+            {hidePrebuilt && editMode && (
+              <View style={styles.sectionContainer}>
+                <View style={styles.sectionSubtitleContainer}>
+                  <Text style={styles.sectionSubtitle}>Featured</Text>
+                  <TouchableOpacity
+                    style={styles.hideButton}
+                    onPress={() => setHidePrebuilt(false)}
+                  >
+                    <Text style={styles.hideButtonText}>Show</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+
+            {/* Custom Trackers Section - Only show if there are custom trackers */}
+            {customTrackers.length > 0 && (
+              <View style={styles.sectionContainer}>
+                <View style={styles.sectionSubtitleContainer}>
+                  <Text style={styles.sectionSubtitle}>Custom</Text>
+                </View>
                 <FlatList
-                  data={prebuiltTrackers}
+                  data={customTrackers}
                   renderItem={renderTracker}
                   keyExtractor={(item) => item.id.toString()}
                   style={styles.trackersList}
@@ -235,144 +333,114 @@ export default function MenuDrawer({
                   showsVerticalScrollIndicator={false}
                   scrollEnabled={false}
                 />
-              )}
-            </View>
-          )}
-
-          {/* Show button when prebuilt is hidden */}
-          {hidePrebuilt && editMode && (
-            <View style={styles.sectionContainer}>
-              <View style={styles.sectionSubtitleContainer}>
-                <Text style={styles.sectionSubtitle}>Prebuilt</Text>
-                <TouchableOpacity
-                  style={styles.hideButton}
-                  onPress={() => setHidePrebuilt(false)}
-                >
-                  <Text style={styles.hideButtonText}>Show</Text>
-                </TouchableOpacity>
               </View>
-            </View>
-          )}
-
-          {/* User-created Section - Only show if there are custom trackers */}
-          {customTrackers.length > 0 && (
-            <View style={styles.sectionContainer}>
-              <View style={styles.sectionSubtitleContainer}>
-                <Text style={styles.sectionSubtitle}>User-created</Text>
-              </View>
-              <FlatList
-                data={customTrackers}
-                renderItem={renderTracker}
-                keyExtractor={(item) => item.id.toString()}
-                style={styles.trackersList}
-                contentContainerStyle={styles.trackersListContent}
-                showsVerticalScrollIndicator={false}
-                scrollEnabled={false}
-              />
-            </View>
-          )}
-        </View>
-
-        {/* Bottom Bar - Profile on left, Edit/Done on right */}
-        <View style={styles.bottomBar}>
-          {/* Profile Section - Left */}
-          <View style={styles.profileSection}>
-            <TouchableOpacity
-              style={styles.profileButton}
-              onPress={() => {
-                if (onProfilePress) {
-                  onProfilePress();
-                }
-                onClose();
-              }}
-            >
-              <Ionicons
-                name="person-circle-outline"
-                size={24}
-                color={colors.textOnPrimary}
-              />
-              {user && (
-                <Text style={styles.userNameLabel} numberOfLines={1}>
-                  {user.first_name && user.last_name
-                    ? `${user.first_name} ${user.last_name}`
-                    : user.first_name || user.username || user.email || "User"}
-                </Text>
-              )}
-            </TouchableOpacity>
+            )}
           </View>
 
-          {/* Done Button - Right (only in edit mode) */}
-          {editMode && (
-            <TouchableOpacity
-              style={styles.editButton}
-              onPress={() => setEditMode(false)}
-            >
-              <Text style={styles.doneButtonText}>Done</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-
-        {/* Dropdown Menu - Left Side */}
-        {showDropdown && (
-          <>
-            <TouchableOpacity
-              style={styles.dropdownBackdrop}
-              activeOpacity={1}
-              onPress={() => setShowDropdown(false)}
-            />
-            <View
-              style={[
-                styles.dropdown,
-                {
-                  top:
-                    editButtonLayout.height > 0
-                      ? // drawerHeader height (~110) + drawerContent padding (20) + button y (0) + button height (40) + spacing (8)
-                        110 +
-                        20 +
-                        editButtonLayout.y +
-                        editButtonLayout.height +
-                        8
-                      : 180,
-                },
-              ]}
-            >
+          {/* Bottom Bar - Profile on left, Edit/Done on right */}
+          <View style={styles.bottomBar}>
+            {/* Profile Section - Left */}
+            <View style={styles.profileSection}>
               <TouchableOpacity
-                style={styles.dropdownItem}
+                style={styles.profileButton}
                 onPress={() => {
-                  setEditMode(true);
-                  setShowDropdown(false);
-                }}
-              >
-                <Ionicons
-                  name="list"
-                  size={20}
-                  color={colors.textOnPrimary}
-                  style={styles.dropdownIcon}
-                />
-                <Text style={styles.dropdownText}>Edit trackers list</Text>
-              </TouchableOpacity>
-              <View style={styles.dropdownDivider} />
-              <TouchableOpacity
-                style={styles.dropdownItem}
-                onPress={() => {
-                  onCreateCustomTracker();
-                  setShowDropdown(false);
+                  if (onProfilePress) {
+                    onProfilePress();
+                  }
                   onClose();
                 }}
               >
                 <Ionicons
-                  name="add-circle"
-                  size={20}
+                  name="person-circle-outline"
+                  size={24}
                   color={colors.textOnPrimary}
-                  style={styles.dropdownIcon}
                 />
-                <Text style={styles.dropdownText}>Add a custom tracker</Text>
+                {user && (
+                  <Text style={styles.userNameLabel} numberOfLines={1}>
+                    {user.first_name && user.last_name
+                      ? `${user.first_name} ${user.last_name}`
+                      : user.first_name ||
+                        user.username ||
+                        user.email ||
+                        "User"}
+                  </Text>
+                )}
               </TouchableOpacity>
             </View>
-          </>
-        )}
+
+            {/* Done Button - Right (only in edit mode) */}
+            {editMode && (
+              <TouchableOpacity
+                style={styles.editButton}
+                onPress={() => setEditMode(false)}
+              >
+                <Text style={styles.doneButtonText}>Done</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Dropdown Menu - Left Side */}
+          {showDropdown && (
+            <>
+              <TouchableOpacity
+                style={styles.dropdownBackdrop}
+                activeOpacity={1}
+                onPress={() => setShowDropdown(false)}
+              />
+              <View
+                style={[
+                  styles.dropdown,
+                  {
+                    top:
+                      editButtonLayout.height > 0
+                        ? // drawerHeader height (~110) + drawerContent padding (20) + button y (0) + button height (40) + spacing (8)
+                          110 +
+                          20 +
+                          editButtonLayout.y +
+                          editButtonLayout.height +
+                          8
+                        : 180,
+                  },
+                ]}
+              >
+                <TouchableOpacity
+                  style={styles.dropdownItem}
+                  onPress={() => {
+                    setEditMode(true);
+                    setShowDropdown(false);
+                  }}
+                >
+                  <Ionicons
+                    name="list"
+                    size={20}
+                    color={colors.textOnPrimary}
+                    style={styles.dropdownIcon}
+                  />
+                  <Text style={styles.dropdownText}>Edit trackers list</Text>
+                </TouchableOpacity>
+                <View style={styles.dropdownDivider} />
+                <TouchableOpacity
+                  style={styles.dropdownItem}
+                  onPress={() => {
+                    onCreateCustomTracker();
+                    setShowDropdown(false);
+                    onClose();
+                  }}
+                >
+                  <Ionicons
+                    name="add-circle"
+                    size={20}
+                    color={colors.textOnPrimary}
+                    style={styles.dropdownIcon}
+                  />
+                  <Text style={styles.dropdownText}>Add a custom tracker</Text>
+                </TouchableOpacity>
+              </View>
+            </>
+          )}
+        </Animated.View>
       </Animated.View>
-    </>
+    </PanGestureHandler>
   );
 }
 
@@ -486,17 +554,32 @@ const styles = StyleSheet.create({
   trackerItem: {
     flex: 1,
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    backgroundColor: colors.background,
-    padding: 16,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: colors.border,
+    backgroundColor: colors.primaryDark,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 28,
+    minHeight: 50,
+    ...(Platform.OS === "web"
+      ? {
+          boxShadow: "0px 4px 8px rgba(0, 0, 0, 0.3)",
+        }
+      : {
+          shadowColor: "#000",
+          shadowOffset: {
+            width: 0,
+            height: 4,
+          },
+          shadowOpacity: 0.3,
+          shadowRadius: 4,
+          elevation: 8,
+        }),
   },
   trackerItemName: {
     fontSize: 16,
-    color: colors.text,
+    fontWeight: "600",
+    color: colors.textOnPrimary,
+    marginLeft: 12,
     flex: 1,
   },
   editIcons: {
@@ -669,4 +752,3 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
   },
 });
-

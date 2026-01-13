@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useRef } from "react";
 import {
   View,
   Text,
@@ -6,7 +6,9 @@ import {
   ActivityIndicator,
   Alert,
   ScrollView,
+  Dimensions,
 } from "react-native";
+import { PanGestureHandler, State } from "react-native-gesture-handler";
 import { useFocusEffect } from "@react-navigation/native";
 import { useAuth } from "../context/AuthContext";
 import { colors } from "../constants/colors";
@@ -18,10 +20,14 @@ import InsightsSection from "../components/InsightsSection";
 import { useTrackerData } from "../hooks/useTrackerData";
 import { trackerService } from "../services/trackerService";
 
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
+const SWIPE_THRESHOLD = 50; // Minimum distance to trigger swipe
+
 export default function HomeScreen({ navigation }) {
   const { logout } = useAuth();
   const [menuVisible, setMenuVisible] = useState(false);
   const [editMode, setEditMode] = useState(false);
+  const [tempSelectedTracker, setTempSelectedTracker] = useState(null); // Temporary selection, resets on app restart
 
   const {
     trackers,
@@ -37,6 +43,9 @@ export default function HomeScreen({ navigation }) {
     loadTrackers,
   } = useTrackerData();
 
+  // Use temporary selected tracker if available, otherwise use default
+  const activeTracker = tempSelectedTracker || defaultTracker;
+
   // Reload trackers when screen comes into focus
   useFocusEffect(
     useCallback(() => {
@@ -47,24 +56,49 @@ export default function HomeScreen({ navigation }) {
 
   const onDayPress = (day) => {
     setSelectedDate(day.dateString);
-    if (defaultTracker) {
-      navigation.navigate("TrackerDetail", { trackerId: defaultTracker.id });
+    if (activeTracker) {
+      navigation.navigate("TrackerDetail", { trackerId: activeTracker.id });
     }
   };
 
   const handleLogPress = () => {
-    if (defaultTracker) {
+    if (activeTracker) {
       navigation.navigate("LogSymptoms", {
-        trackerId: defaultTracker.id,
+        trackerId: activeTracker.id,
       });
     }
   };
 
   const handleConfigurePress = () => {
-    if (defaultTracker) {
+    if (activeTracker) {
       navigation.navigate("ConfigurePeriodTracker", {
-        trackerId: defaultTracker.id,
+        trackerId: activeTracker.id,
       });
+    }
+  };
+
+  const handleTrackerPress = (tracker) => {
+    setTempSelectedTracker(tracker);
+  };
+
+  // Handle swipe-to-open gesture from left edge
+  const swipeStartX = useRef(0);
+
+  const onSwipeGestureEvent = (event) => {
+    const { translationX, x } = event.nativeEvent;
+
+    // Only respond to swipes starting from the left edge
+    if (swipeStartX.current < SWIPE_THRESHOLD && translationX > 0) {
+      // Swipe is from left edge to right
+      if (translationX > SWIPE_THRESHOLD && !menuVisible) {
+        setMenuVisible(true);
+      }
+    }
+  };
+
+  const onSwipeHandlerStateChange = (event) => {
+    if (event.nativeEvent.state === State.BEGAN) {
+      swipeStartX.current = event.nativeEvent.x;
     }
   };
 
@@ -78,139 +112,142 @@ export default function HomeScreen({ navigation }) {
   }
 
   return (
-    <View style={styles.container}>
-      <HomeHeader onMenuPress={() => setMenuVisible(true)} />
+    <PanGestureHandler
+      onGestureEvent={onSwipeGestureEvent}
+      onHandlerStateChange={onSwipeHandlerStateChange}
+      activeOffsetX={[-10, 10]} // Format: [negative, positive] - we check direction in handler
+      failOffsetY={[-10, 10]} // Prevent conflicts with vertical scrolling
+    >
+      <View style={styles.container}>
+        <HomeHeader onMenuPress={() => setMenuVisible(true)} />
 
-      <ScrollView style={styles.scrollView}>
-        {defaultTracker && (
-          <>
-            <View style={styles.titleSection}>
-              <Text style={styles.calendarTitle}>{defaultTracker.name}</Text>
-            </View>
-            {needsSetup === true ? (
-              <SetupPrompt
-                trackerId={defaultTracker.id}
-                onConfigure={handleConfigurePress}
-              />
-            ) : needsSetup === false ? (
-              <CalendarSection
-                trackerName={defaultTracker.name}
-                selectedDate={selectedDate}
-                calendarData={calendarData}
-                isPeriodTracker={isPeriodTracker}
-                loading={false}
-                onDayPress={onDayPress}
-                onLogPress={handleLogPress}
-              />
-            ) : (
-              <CalendarSection
-                trackerName={defaultTracker.name}
-                selectedDate={selectedDate}
-                calendarData={calendarData}
-                isPeriodTracker={isPeriodTracker}
-                loading={true}
-                onDayPress={onDayPress}
-                onLogPress={handleLogPress}
-              />
-            )}
-            {/* Insights Section - Show for all configured trackers */}
-            {needsSetup === false && (
-              <InsightsSection
-                insights={insights}
-                isPeriodTracker={isPeriodTracker}
-              />
-            )}
-          </>
-        )}
-      </ScrollView>
+        <ScrollView style={styles.scrollView}>
+          {activeTracker && (
+            <>
+              <View style={styles.titleSection}>
+                <Text style={styles.calendarTitle}>{activeTracker.name}</Text>
+              </View>
+              {needsSetup === true ? (
+                <SetupPrompt
+                  trackerId={activeTracker.id}
+                  onConfigure={handleConfigurePress}
+                />
+              ) : needsSetup === false ? (
+                <CalendarSection
+                  trackerName={activeTracker.name}
+                  selectedDate={selectedDate}
+                  calendarData={calendarData}
+                  isPeriodTracker={isPeriodTracker}
+                  loading={false}
+                  onDayPress={onDayPress}
+                  onLogPress={handleLogPress}
+                />
+              ) : (
+                <CalendarSection
+                  trackerName={defaultTracker.name}
+                  selectedDate={selectedDate}
+                  calendarData={calendarData}
+                  isPeriodTracker={isPeriodTracker}
+                  loading={true}
+                  onDayPress={onDayPress}
+                  onLogPress={handleLogPress}
+                />
+              )}
+              {/* Insights Section - Show for all configured trackers */}
+              {needsSetup === false && (
+                <InsightsSection
+                  insights={insights}
+                  isPeriodTracker={isPeriodTracker}
+                />
+              )}
+            </>
+          )}
+        </ScrollView>
 
-      <MenuDrawer
-        visible={menuVisible}
-        onClose={() => {
-          setMenuVisible(false);
-          setEditMode(false); // Reset edit mode when closing drawer
-        }}
-        trackers={trackers}
-        onTrackerPress={(tracker) => {
-          if (!editMode) {
-            navigation.navigate("TrackerDetail", { trackerId: tracker.id });
-          }
-        }}
-        onCreateCustomTracker={() => {
-          // TODO: Navigate to create custom tracker screen
-          Alert.alert(
-            "Create Custom Tracker",
-            "This feature will be implemented soon. You'll be able to create your own custom tracker with custom fields.",
-            [{ text: "OK" }]
-          );
-        }}
-        onEditTrackersList={() => {
-          // This is handled by setEditMode in the dropdown
-        }}
-        editMode={editMode}
-        setEditMode={setEditMode}
-        onDeleteTracker={async (tracker) => {
-          Alert.alert(
-            "Delete Tracker",
-            `Are you sure you want to delete "${tracker.name}"? This action cannot be undone.`,
-            [
-              {
-                text: "Cancel",
-                style: "cancel",
-              },
-              {
-                text: "Delete",
-                style: "destructive",
-                onPress: async () => {
-                  try {
-                    // TODO: Implement delete tracker API call
-                    // await trackerService.deleteTracker(tracker.id);
-                    Alert.alert("Success", "Tracker deleted successfully");
-                    loadTrackers(); // Reload trackers after deletion
-                  } catch (error) {
-                    Alert.alert(
-                      "Error",
-                      "Failed to delete tracker. Please try again."
-                    );
-                  }
+        <MenuDrawer
+          visible={menuVisible}
+          onClose={() => {
+            setMenuVisible(false);
+            setEditMode(false); // Reset edit mode when closing drawer
+          }}
+          trackers={trackers}
+          onTrackerPress={handleTrackerPress}
+          onCreateCustomTracker={() => {
+            // TODO: Navigate to create custom tracker screen
+            Alert.alert(
+              "Create Custom Tracker",
+              "This feature will be implemented soon. You'll be able to create your own custom tracker with custom fields.",
+              [{ text: "OK" }]
+            );
+          }}
+          onEditTrackersList={() => {
+            // This is handled by setEditMode in the dropdown
+          }}
+          editMode={editMode}
+          setEditMode={setEditMode}
+          onDeleteTracker={async (tracker) => {
+            Alert.alert(
+              "Delete Tracker",
+              `Are you sure you want to delete "${tracker.name}"? This action cannot be undone.`,
+              [
+                {
+                  text: "Cancel",
+                  style: "cancel",
                 },
-              },
-            ]
-          );
-        }}
-        onToggleDefault={async (trackerId) => {
-          Alert.alert(
-            "Set Default Tracker",
-            "Are you sure you want to set this tracker as your default?",
-            [
-              {
-                text: "Cancel",
-                style: "cancel",
-              },
-              {
-                text: "Confirm",
-                onPress: async () => {
-                  try {
-                    await trackerService.setDefaultTracker(trackerId);
-                    loadTrackers(); // Reload trackers after update
-                  } catch (error) {
-                    console.error("Error updating default tracker:", error);
-                    Alert.alert(
-                      "Error",
-                      error.response?.data?.message ||
-                        "Failed to update default tracker. Please try again."
-                    );
-                  }
+                {
+                  text: "Delete",
+                  style: "destructive",
+                  onPress: async () => {
+                    try {
+                      // TODO: Implement delete tracker API call
+                      // await trackerService.deleteTracker(tracker.id);
+                      Alert.alert("Success", "Tracker deleted successfully");
+                      loadTrackers(); // Reload trackers after deletion
+                    } catch (error) {
+                      Alert.alert(
+                        "Error",
+                        "Failed to delete tracker. Please try again."
+                      );
+                    }
+                  },
                 },
-              },
-            ]
-          );
-        }}
-        defaultTrackerId={defaultTracker?.id}
-        onProfilePress={() => navigation.navigate("Profile")}
-        onLogout={logout}
-      />
-    </View>
+              ]
+            );
+          }}
+          onToggleDefault={async (trackerId) => {
+            Alert.alert(
+              "Set Default Tracker",
+              "Are you sure you want to set this tracker as your default?",
+              [
+                {
+                  text: "Cancel",
+                  style: "cancel",
+                },
+                {
+                  text: "Confirm",
+                  onPress: async () => {
+                    try {
+                      await trackerService.setDefaultTracker(trackerId);
+                      loadTrackers(); // Reload trackers after update
+                    } catch (error) {
+                      console.error("Error updating default tracker:", error);
+                      Alert.alert(
+                        "Error",
+                        error.response?.data?.message ||
+                          "Failed to update default tracker. Please try again."
+                      );
+                    }
+                  },
+                },
+              ]
+            );
+          }}
+          defaultTrackerId={defaultTracker?.id}
+          onProfilePress={() => navigation.navigate("Profile")}
+          onLogout={logout}
+        />
+      </View>
+    </PanGestureHandler>
   );
 }
 
