@@ -119,14 +119,14 @@ export default function HomeScreen({ navigation }) {
       failOffsetY={[-10, 10]} // Prevent conflicts with vertical scrolling
     >
       <View style={styles.container}>
-        <HomeHeader onMenuPress={() => setMenuVisible(true)} />
+        <HomeHeader
+          onMenuPress={() => setMenuVisible(true)}
+          trackerName={activeTracker?.name}
+        />
 
         <ScrollView style={styles.scrollView}>
           {activeTracker && (
             <>
-              <View style={styles.titleSection}>
-                <Text style={styles.calendarTitle}>{activeTracker.name}</Text>
-              </View>
               {needsSetup === true ? (
                 <SetupPrompt
                   trackerId={activeTracker.id}
@@ -263,17 +263,5 @@ const styles = StyleSheet.create({
   },
   scrollView: {
     flex: 1,
-  },
-  titleSection: {
-    backgroundColor: colors.background,
-    paddingVertical: 20,
-    paddingHorizontal: 20,
-    alignItems: "center",
-  },
-  calendarTitle: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: colors.text,
-    textAlign: "center",
   },
 });

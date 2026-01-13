@@ -1,21 +1,19 @@
-import React, { useState } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, Alert, Platform } from "react-native";
+import React from "react";
+import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { colors, APP_NAME } from "../constants/colors";
+import { colors } from "../constants/colors";
 
-export default function HomeHeader({ onMenuPress }) {
-
+export default function HomeHeader({ onMenuPress, trackerName }) {
   return (
-    <>
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.menuButton} onPress={onMenuPress}>
-          <Ionicons name="menu" size={28} color={colors.textOnPrimary} />
-        </TouchableOpacity>
-        <Text style={styles.title}>{APP_NAME}</Text>
-        <View style={styles.placeholder} />
-      </View>
-
-    </>
+    <View style={styles.header}>
+      <TouchableOpacity style={styles.menuButton} onPress={onMenuPress}>
+        <Ionicons name="menu" size={28} color={colors.textOnPrimary} />
+      </TouchableOpacity>
+      <Text style={styles.title} numberOfLines={1}>
+        {trackerName || "Trackers"}
+      </Text>
+      <View style={styles.placeholder} />
+    </View>
   );
 }
 

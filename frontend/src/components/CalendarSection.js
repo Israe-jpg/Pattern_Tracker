@@ -26,8 +26,9 @@ export default function CalendarSection({
   }
 
   return (
-    <View style={styles.calendarSection}>
-      <View style={{ position: "relative" }}>
+    <>
+      {/* Calendar Section - Separate */}
+      <View style={styles.calendarSection}>
         <Calendar
           current={selectedDate}
           onDayPress={onDayPress}
@@ -40,18 +41,18 @@ export default function CalendarSection({
             },
           }}
           theme={{
-            backgroundColor: colors.secondary,
-            calendarBackground: colors.secondary,
-            textSectionTitleColor: colors.textOnSecondary,
+            backgroundColor: colors.surface,
+            calendarBackground: colors.surface,
+            textSectionTitleColor: colors.text,
             selectedDayBackgroundColor: colors.primary,
             selectedDayTextColor: colors.textOnPrimary,
             todayTextColor: colors.primary,
-            dayTextColor: colors.textOnSecondary,
+            dayTextColor: colors.text,
             textDisabledColor: colors.textLight,
             dotColor: colors.primary,
             selectedDotColor: colors.textOnPrimary,
             arrowColor: colors.primary,
-            monthTextColor: colors.textOnSecondary,
+            monthTextColor: colors.text,
             textDayFontWeight: "500",
             textMonthFontWeight: "bold",
             textDayHeaderFontWeight: "600",
@@ -62,7 +63,8 @@ export default function CalendarSection({
           style={styles.calendar}
         />
       </View>
-      {/* Cycle Phase Legend - Only for Period Tracker */}
+
+      {/* Cycle Phase Legend - Separate Section (Only for Period Tracker) */}
       {isPeriodTracker && (
         <View style={styles.legendContainer}>
           <Text style={styles.legendTitle}>Cycle Phases</Text>
@@ -106,20 +108,24 @@ export default function CalendarSection({
           </View>
         </View>
       )}
-      <TouchableOpacity style={styles.logButton} onPress={onLogPress}>
-        <Text style={styles.logButtonText}>Log Symptoms</Text>
-      </TouchableOpacity>
-    </View>
+
+      {/* Log Symptoms Button - Separate Section */}
+      <View style={styles.buttonContainer}>
+        <TouchableOpacity style={styles.logButton} onPress={onLogPress}>
+          <Text style={styles.logButtonText}>Log Symptoms</Text>
+        </TouchableOpacity>
+      </View>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
   calendarSection: {
-    backgroundColor: colors.secondary,
+    backgroundColor: colors.surface,
     padding: 20,
-    marginBottom: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.secondaryDark,
+    marginTop: 20,
+    marginHorizontal: 20,
+    borderRadius: 12,
   },
   calendarLoader: {
     padding: 20,
@@ -128,29 +134,17 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     overflow: "hidden",
   },
-  logButton: {
-    backgroundColor: colors.primary,
-    paddingVertical: 14,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-    alignItems: "center",
-    marginTop: 20,
-  },
-  logButtonText: {
-    color: colors.textOnPrimary,
-    fontSize: 16,
-    fontWeight: "600",
-  },
   legendContainer: {
     padding: 16,
-    backgroundColor: colors.secondary,
+    backgroundColor: colors.background,
     borderRadius: 12,
-    marginTop: 12,
+    marginTop: 16,
+    marginHorizontal: 20,
   },
   legendTitle: {
     fontSize: 14,
     fontWeight: "600",
-    color: colors.textOnSecondary,
+    color: colors.text,
     marginBottom: 12,
   },
   legendRow: {
@@ -172,8 +166,25 @@ const styles = StyleSheet.create({
   },
   legendText: {
     fontSize: 12,
-    color: colors.textOnSecondary,
+    color: colors.text,
     fontWeight: "500",
+  },
+  buttonContainer: {
+    marginTop: 16,
+    marginHorizontal: 20,
+    marginBottom: 20,
+  },
+  logButton: {
+    backgroundColor: colors.primary,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    alignItems: "center",
+  },
+  logButtonText: {
+    color: colors.textOnPrimary,
+    fontSize: 16,
+    fontWeight: "600",
   },
 });
 
