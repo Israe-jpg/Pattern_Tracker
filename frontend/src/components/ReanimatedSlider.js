@@ -150,13 +150,13 @@ const styles = StyleSheet.create({
     width: "100%",
     justifyContent: "center",
     alignItems: "center",
-    minHeight: 50,
-    paddingHorizontal: 5,
-    paddingVertical: 5,
+    minHeight: 40,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
   },
   slider: {
     width: "100%",
-    height: 40,
-    minHeight: 40,
+    height: 32,
+    minHeight: 32,
   },
 });

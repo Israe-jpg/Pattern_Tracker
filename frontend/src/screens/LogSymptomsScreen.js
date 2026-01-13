@@ -68,6 +68,8 @@ export default function LogSymptomsScreen({ route, navigation }) {
         } else if (optionSchema.type === "string") {
           if (optionSchema.enum) {
             optionType = "single_choice";
+          } else if (optionSchema.format === "time") {
+            optionType = "time";
           } else {
             optionType = optionSchema.max_length ? "notes" : "text";
           }
@@ -525,108 +527,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 20,
-  },
-  fieldContainer: {
-    backgroundColor: colors.secondary,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  fieldLabel: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: colors.textOnSecondary,
-    marginBottom: 12,
-  },
-  optionContainer: {
-    marginBottom: 16,
-  },
-  optionLabel: {
-    fontSize: 14,
-    fontWeight: "500",
-    color: colors.textOnSecondary,
-    marginBottom: 8,
-  },
-  choiceButtons: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    alignItems: "center",
-  },
-  choiceButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    backgroundColor: colors.background,
-    borderWidth: 1,
-    borderColor: colors.border,
-    marginRight: 8,
-    marginBottom: 8,
-    flexShrink: 0,
-  },
-  choiceButtonSelected: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  choiceButtonText: {
-    fontSize: 14,
-    color: colors.text,
-  },
-  choiceButtonTextSelected: {
-    color: colors.textOnPrimary,
-    fontWeight: "600",
-  },
-  numberInput: {
-    backgroundColor: colors.background,
-    borderRadius: 8,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    fontSize: 16,
-    color: colors.text,
-  },
-  textInput: {
-    backgroundColor: colors.background,
-    borderRadius: 8,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    fontSize: 16,
-    color: colors.text,
-    minHeight: 40,
-    textAlignVertical: "top",
-  },
-  emptyChoicesText: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    fontStyle: "italic",
-    marginTop: 8,
-  },
-  sliderContainer: {
-    marginTop: 8,
-  },
-  sliderValueDisplay: {
-    fontSize: 24,
-    fontWeight: "600",
-    color: colors.primary,
-    textAlign: "center",
-    marginBottom: 12,
-  },
-  slider: {
-    width: "100%",
-    height: 40,
-  },
-  sliderLabels: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginTop: 8,
-  },
-  sliderLabel: {
-    fontSize: 12,
-    color: colors.textOnSecondary,
-    fontWeight: "500",
+    backgroundColor: colors.surface,
   },
   submitButton: {
     backgroundColor: colors.primary,

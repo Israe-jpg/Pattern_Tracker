@@ -127,10 +127,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   choiceButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    backgroundColor: colors.background,
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    borderRadius: 20,
+    backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
     marginRight: 8,
@@ -142,8 +142,9 @@ const styles = StyleSheet.create({
     borderColor: colors.primary,
   },
   choiceButtonText: {
-    fontSize: 14,
+    fontSize: 13,
     color: colors.text,
+    fontWeight: "500",
   },
   choiceButtonTextSelected: {
     color: colors.textOnPrimary,

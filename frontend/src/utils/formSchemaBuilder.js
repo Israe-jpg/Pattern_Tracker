@@ -58,6 +58,23 @@ export function buildZodSchema(formSchema) {
                 );
               break;
 
+            case "time":
+              optionSchema = z
+                .string()
+                .nullable()
+                .optional()
+                .refine(
+                  (val) => {
+                    if (!val) return true;
+                    // Validate time format: HH:MM AM/PM
+                    return /^(0?[1-9]|1[0-2]):[0-5][0-9]\s?(AM|PM)$/i.test(val);
+                  },
+                  {
+                    message: "Invalid time format. Use HH:MM AM/PM",
+                  }
+                );
+              break;
+
             case "text":
             case "notes":
               optionSchema = z
@@ -170,6 +187,8 @@ function convertSchemaToFields(schemaObj, groupName) {
       } else if (optionSchema.type === "string") {
         if (optionSchema.enum) {
           optionType = "single_choice";
+        } else if (optionSchema.format === "time") {
+          optionType = "time";
         } else {
           optionType = optionSchema.max_length ? "notes" : "text";
         }

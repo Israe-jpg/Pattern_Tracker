@@ -32,8 +32,6 @@ const FormField = React.memo(({ field, control }) => {
           defaultValue={
             option.option_type === "multiple_choice"
               ? []
-              : option.option_type === "yes_no"
-              ? false
               : null
           }
           shouldUnregister={false}
@@ -62,17 +60,24 @@ FormField.displayName = "FormField";
 
 const styles = StyleSheet.create({
   fieldContainer: {
-    backgroundColor: colors.secondary,
+    backgroundColor: colors.background,
     borderRadius: 12,
     padding: 16,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: colors.border,
+    marginBottom: 16,
+    marginHorizontal: 20,
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
   fieldLabel: {
     fontSize: 18,
     fontWeight: "600",
-    color: colors.textOnSecondary,
+    color: colors.text,
     marginBottom: 12,
   },
 });

@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, TextInput } from "react-nativ
 import { colors } from "../../constants/colors";
 import SliderOption from "./SliderOption";
 import ChoiceOption from "./ChoiceOption";
+import TimePickerOption from "./TimePickerOption";
 
 const FormOption = React.memo(({ field, option, value, onChange }) => {
   const optionLabel = option.display_label || option.option_name;
@@ -50,6 +51,17 @@ const FormOption = React.memo(({ field, option, value, onChange }) => {
               const numValue = text ? parseFloat(text) : null;
               onChange(numValue);
             }}
+          />
+        </View>
+      );
+
+    case "time":
+      return (
+        <View style={styles.optionContainer}>
+          <Text style={styles.optionLabel}>{optionLabel}</Text>
+          <TimePickerOption
+            value={value}
+            onChange={onChange}
           />
         </View>
       );
@@ -105,12 +117,12 @@ FormOption.displayName = "FormOption";
 
 const styles = StyleSheet.create({
   optionContainer: {
-    marginBottom: 16,
+    marginBottom: 14,
   },
   optionLabel: {
     fontSize: 14,
-    fontWeight: "500",
-    color: colors.textOnSecondary,
+    fontWeight: "600",
+    color: colors.text,
     marginBottom: 8,
   },
   numberInput: {

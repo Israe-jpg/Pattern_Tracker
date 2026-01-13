@@ -41,7 +41,7 @@ const SliderOption = React.memo(({ sliderId, minValue, maxValue, value, onChange
         onValueChange={handleValueChange}
         step={1}
         minimumTrackTintColor={colors.primary}
-        maximumTrackTintColor={colors.background}
+        maximumTrackTintColor={colors.surface}
         thumbTintColor={colors.primary}
       />
       <View style={styles.sliderLabels}>
@@ -64,24 +64,24 @@ SliderOption.displayName = "SliderOption";
 
 const styles = StyleSheet.create({
   sliderContainer: {
-    marginTop: 8,
+    marginTop: 4,
   },
   sliderValueDisplay: {
-    fontSize: 24,
-    fontWeight: "600",
+    fontSize: 20,
+    fontWeight: "700",
     color: colors.primary,
     textAlign: "center",
-    marginBottom: 12,
+    marginBottom: 8,
   },
   sliderLabels: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginTop: 8,
+    marginTop: 6,
   },
   sliderLabel: {
-    fontSize: 12,
-    color: colors.textOnSecondary,
+    fontSize: 11,
+    color: colors.textLight,
     fontWeight: "500",
   },
 });
