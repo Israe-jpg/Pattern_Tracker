@@ -124,8 +124,18 @@ api.interceptors.response.use(
         isRefreshing = false;
         await AsyncStorage.multiRemove([ACCESS_TOKEN_KEY, REFRESH_TOKEN_KEY]);
         
+        // Preserve the original error message for debugging
+        const errorMessage = refreshError.message || 
+          refreshError.response?.data?.error || 
+          "Failed to refresh token";
+        
+        // Create a new error with more context
+        const enhancedError = new Error(errorMessage);
+        enhancedError.response = refreshError.response;
+        enhancedError.originalError = refreshError;
+        
         // Navigation to login is handled by AppNavigator based on isAuthenticated state
-        return Promise.reject(refreshError);
+        return Promise.reject(enhancedError);
       }
     }
 

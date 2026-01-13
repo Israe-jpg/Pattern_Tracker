@@ -27,12 +27,47 @@ export const AuthProvider = ({ children }) => {
       setIsAuthenticated(authenticated);
       
       if (authenticated) {
-        const profile = await authService.getProfile();
-        setUser(profile);
+        try {
+          // getProfile() will trigger API interceptor if token is expired
+          // Interceptor will try to refresh token automatically
+          // Only if refresh fails will this throw an error
+          const profile = await authService.getProfile();
+          setUser(profile);
+        } catch (profileError) {
+          // If we get here, the API interceptor already tried to refresh
+          // and failed (or there was no refresh token)
+          
+          // Check if refresh token exists
+          const { refresh_token } = await authService.getTokens();
+          
+          if (profileError.response?.status === 401) {
+            // Refresh token failed or doesn't exist - user needs to login again
+            setIsAuthenticated(false);
+            setUser(null);
+            
+            // Provide helpful error message
+            if (!refresh_token) {
+              console.warn('Session expired - no refresh token found. Please login again.');
+            } else if (profileError.message?.includes("No refresh token available")) {
+              console.warn('Session expired - refresh token was cleared. Please login again.');
+            } else {
+              console.warn('Session expired - refresh token invalid or expired. Please login again.');
+            }
+          } else {
+            // Other errors (network, server) - log for debugging but don't log out
+            console.error('Error fetching user profile:', profileError);
+            // Don't log out on network errors - keep user logged in
+            // They might just have temporary connection issues
+          }
+        }
       }
     } catch (error) {
-      console.error('Auth check error:', error);
+      // Only log unexpected errors
+      if (error.response?.status !== 401) {
+        console.error('Auth check error:', error);
+      }
       setIsAuthenticated(false);
+      setUser(null);
     } finally {
       setLoading(false);
     }
@@ -91,11 +126,25 @@ export const AuthProvider = ({ children }) => {
   const login = async (email, password) => {
     try {
       const response = await authService.login(email, password);
+      
+      // Verify tokens were stored
+      const { access_token, refresh_token } = await authService.getTokens();
+      if (!access_token) {
+        throw new Error("Access token was not stored after login");
+      }
+      if (!refresh_token) {
+        console.warn("Warning: Refresh token was not stored after login. Session may expire.");
+      }
+      
       setIsAuthenticated(true);
       const profile = await authService.getProfile();
       setUser(profile);
       return { success: true, data: response };
     } catch (error) {
+      // If login failed, clear any partial state
+      setIsAuthenticated(false);
+      setUser(null);
+      
       const errorMessage = error.response?.data?.error 
         || error.response?.data?.message 
         || error.message 
