@@ -175,7 +175,7 @@ def get_user_sex_info():
 @jwt_required()
 def obtain_optional_user_info():
     """
-    Update user profile information (height, weight, DOB, unit preference).
+    Update user profile information (username, height, weight, DOB, unit preference).
     Height and weight are automatically converted to metric for storage.
     """
     try:
@@ -184,6 +184,16 @@ def obtain_optional_user_info():
         user = User.query.filter_by(id=current_user_id).first()
         if not user:
             return jsonify({'error': 'User not found'}), 404
+        
+        # Update username if provided and different from current
+        if data.get('username') and data.get('username').strip():
+            new_username = data.get('username').strip()
+            if new_username != user.username:
+                # Check if username is already taken by another user
+                existing_user = User.query.filter_by(username=new_username).first()
+                if existing_user and existing_user.id != user.id:
+                    return jsonify({'error': 'Username already taken'}), 400
+                user.username = new_username
         
         # Update unit system preference (must come before height/weight conversion)
         unit_system = data.get('unit_system', user.unit_system or 'metric')
