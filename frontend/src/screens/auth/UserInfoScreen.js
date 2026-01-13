@@ -6,12 +6,17 @@ import {
   TouchableOpacity,
   ScrollView,
   Platform,
-  Modal,
 } from "react-native";
 import { colors } from "../../constants/colors";
 import { useAuth } from "../../context/AuthContext";
 import Button from "../../components/Button";
-import Input from "../../components/Input";
+import PickerModal from "../../components/PickerModal";
+import { useHealthPickers } from "../../hooks/useHealthPickers";
+import {
+  formatDateForDisplay,
+  formatHeightForDisplay,
+  formatWeightForDisplay,
+} from "../../utils/pickerHelpers";
 
 export default function UserInfoScreen({ navigation }) {
   const { submitUserInfo, user } = useAuth();
@@ -21,28 +26,25 @@ export default function UserInfoScreen({ navigation }) {
   const [weight, setWeight] = useState("");
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [selectedDate, setSelectedDate] = useState(() => {
-    // Initialize with current date or existing dateOfBirth if available
-    if (user?.date_of_birth) {
-      return new Date(user.date_of_birth);
-    }
-    // Default to 25 years ago for better UX
-    const defaultDate = new Date();
-    defaultDate.setFullYear(defaultDate.getFullYear() - 25);
-    return defaultDate;
-  });
-  const [showHeightPicker, setShowHeightPicker] = useState(false);
-  const [showWeightPicker, setShowWeightPicker] = useState(false);
-  const [selectedHeight, setSelectedHeight] = useState({
-    metric: 170, // Default 170 cm
-    feet: 5,
-    inches: 7,
-  });
-  const [selectedWeight, setSelectedWeight] = useState({
-    metric: 70, // Default 70 kg
-    imperial: 154, // Default 154 lbs
-  });
+
+  // Use custom health pickers hook
+  const {
+    showDatePicker,
+    setShowDatePicker,
+    selectedDate,
+    getDatePickerColumns,
+    handleDateSelect,
+    showHeightPicker,
+    setShowHeightPicker,
+    selectedHeight,
+    getHeightPickerColumns,
+    handleHeightSelect,
+    showWeightPicker,
+    setShowWeightPicker,
+    selectedWeight,
+    getWeightPickerColumns,
+    handleWeightSelect,
+  } = useHealthPickers(unitSystem);
 
   const handleSkip = () => {
     // Navigate to Home screen, skipping user info
@@ -139,150 +141,6 @@ export default function UserInfoScreen({ navigation }) {
     }
   };
 
-  const formatDateForDisplay = (dateString) => {
-    if (!dateString) return "";
-    const date = new Date(dateString);
-    if (isNaN(date.getTime())) return "";
-    return date.toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    });
-  };
-
-  const handleDateSelect = () => {
-    const year = selectedDate.getFullYear();
-    const month = String(selectedDate.getMonth() + 1).padStart(2, "0");
-    const day = String(selectedDate.getDate()).padStart(2, "0");
-    const formattedDate = `${year}-${month}-${day}`;
-    setDateOfBirth(formattedDate);
-    setShowDatePicker(false);
-    if (errors.dateOfBirth) {
-      setErrors({ ...errors, dateOfBirth: "" });
-    }
-  };
-
-  const getDaysInMonth = (year, month) => {
-    return new Date(year, month + 1, 0).getDate();
-  };
-
-  const generateYears = () => {
-    const currentYear = new Date().getFullYear();
-    const years = [];
-    for (let i = currentYear; i >= currentYear - 120; i--) {
-      years.push(i);
-    }
-    return years;
-  };
-
-  const generateMonths = () => {
-    return [
-      "January",
-      "February",
-      "March",
-      "April",
-      "May",
-      "June",
-      "July",
-      "August",
-      "September",
-      "October",
-      "November",
-      "December",
-    ];
-  };
-
-  const generateDays = (year, month) => {
-    const daysInMonth = getDaysInMonth(year, month);
-    const days = [];
-    for (let i = 1; i <= daysInMonth; i++) {
-      days.push(i);
-    }
-    return days;
-  };
-
-  const generateHeightValues = () => {
-    if (unitSystem === "metric") {
-      // Generate cm values from 120 to 250
-      const values = [];
-      for (let i = 120; i <= 250; i++) {
-        values.push(i);
-      }
-      return values;
-    } else {
-      // Generate feet (4-8) and inches (0-11)
-      // 4 feet = 48 inches = ~122 cm, which is close to 120 cm
-      return {
-        feet: [4, 5, 6, 7, 8],
-        inches: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
-      };
-    }
-  };
-
-  const generateWeightValues = () => {
-    if (unitSystem === "metric") {
-      // Generate kg values from 30 to 300
-      const values = [];
-      for (let i = 30; i <= 300; i++) {
-        values.push(i);
-      }
-      return values;
-    } else {
-      // Generate lbs values from 66 to 700
-      // 30 kg ≈ 66 lbs
-      const values = [];
-      for (let i = 66; i <= 700; i++) {
-        values.push(i);
-      }
-      return values;
-    }
-  };
-
-  const formatHeightForDisplay = () => {
-    if (!height) return "";
-    if (unitSystem === "metric") {
-      return `${height} cm`;
-    } else {
-      // Convert inches to feet and inches
-      const totalInches = parseFloat(height);
-      if (isNaN(totalInches)) return "";
-      const feet = Math.floor(totalInches / 12);
-      const inches = Math.round(totalInches % 12);
-      return `${feet}'${inches}"`;
-    }
-  };
-
-  const formatWeightForDisplay = () => {
-    if (!weight) return "";
-    return unitSystem === "metric" ? `${weight} kg` : `${weight} lbs`;
-  };
-
-  const handleHeightSelect = () => {
-    if (unitSystem === "metric") {
-      setHeight(selectedHeight.metric.toString());
-    } else {
-      // Convert feet and inches to total inches
-      const totalInches = selectedHeight.feet * 12 + selectedHeight.inches;
-      setHeight(totalInches.toString());
-    }
-    setShowHeightPicker(false);
-    if (errors.height) {
-      setErrors({ ...errors, height: "" });
-    }
-  };
-
-  const handleWeightSelect = () => {
-    const weightValue =
-      unitSystem === "metric"
-        ? selectedWeight.metric.toString()
-        : selectedWeight.imperial.toString();
-    setWeight(weightValue);
-    setShowWeightPicker(false);
-    if (errors.weight) {
-      setErrors({ ...errors, weight: "" });
-    }
-  };
-
   return (
     <ScrollView
       style={styles.container}
@@ -356,16 +214,7 @@ export default function UserInfoScreen({ navigation }) {
               styles.dateInput,
               errors.dateOfBirth && styles.dateInputError,
             ]}
-            onPress={() => {
-              // If dateOfBirth exists, parse it and set as selectedDate
-              if (dateOfBirth) {
-                const parsedDate = new Date(dateOfBirth);
-                if (!isNaN(parsedDate.getTime())) {
-                  setSelectedDate(parsedDate);
-                }
-              }
-              setShowDatePicker(true);
-            }}
+            onPress={() => setShowDatePicker(true)}
             activeOpacity={0.7}
           >
             <Text
@@ -385,149 +234,18 @@ export default function UserInfoScreen({ navigation }) {
         </View>
 
         {/* Date Picker Modal */}
-        <Modal
+        <PickerModal
           visible={showDatePicker}
-          transparent={true}
-          animationType="slide"
-          onRequestClose={() => setShowDatePicker(false)}
-        >
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>Select Date of Birth</Text>
-
-              <View style={styles.datePickerContainer}>
-                {/* Year Picker */}
-                <View style={styles.pickerColumn}>
-                  <Text style={styles.pickerLabel}>Year</Text>
-                  <ScrollView style={styles.pickerScrollView}>
-                    {generateYears().map((year) => (
-                      <TouchableOpacity
-                        key={year}
-                        style={[
-                          styles.pickerOption,
-                          selectedDate.getFullYear() === year &&
-                            styles.pickerOptionSelected,
-                        ]}
-                        onPress={() => {
-                          const newDate = new Date(selectedDate);
-                          newDate.setFullYear(year);
-                          // Adjust day if needed (e.g., Feb 29 -> Feb 28)
-                          const daysInMonth = getDaysInMonth(
-                            year,
-                            newDate.getMonth()
-                          );
-                          if (newDate.getDate() > daysInMonth) {
-                            newDate.setDate(daysInMonth);
-                          }
-                          setSelectedDate(newDate);
-                        }}
-                      >
-                        <Text
-                          style={[
-                            styles.pickerOptionText,
-                            selectedDate.getFullYear() === year &&
-                              styles.pickerOptionTextSelected,
-                          ]}
-                        >
-                          {year}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                </View>
-
-                {/* Month Picker */}
-                <View style={styles.pickerColumn}>
-                  <Text style={styles.pickerLabel}>Month</Text>
-                  <ScrollView style={styles.pickerScrollView}>
-                    {generateMonths().map((month, index) => (
-                      <TouchableOpacity
-                        key={index}
-                        style={[
-                          styles.pickerOption,
-                          selectedDate.getMonth() === index &&
-                            styles.pickerOptionSelected,
-                        ]}
-                        onPress={() => {
-                          const newDate = new Date(selectedDate);
-                          newDate.setMonth(index);
-                          // Adjust day if needed
-                          const daysInMonth = getDaysInMonth(
-                            newDate.getFullYear(),
-                            index
-                          );
-                          if (newDate.getDate() > daysInMonth) {
-                            newDate.setDate(daysInMonth);
-                          }
-                          setSelectedDate(newDate);
-                        }}
-                      >
-                        <Text
-                          style={[
-                            styles.pickerOptionText,
-                            selectedDate.getMonth() === index &&
-                              styles.pickerOptionTextSelected,
-                          ]}
-                        >
-                          {month}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                </View>
-
-                {/* Day Picker */}
-                <View style={styles.pickerColumn}>
-                  <Text style={styles.pickerLabel}>Day</Text>
-                  <ScrollView style={styles.pickerScrollView}>
-                    {generateDays(
-                      selectedDate.getFullYear(),
-                      selectedDate.getMonth()
-                    ).map((day) => (
-                      <TouchableOpacity
-                        key={day}
-                        style={[
-                          styles.pickerOption,
-                          selectedDate.getDate() === day &&
-                            styles.pickerOptionSelected,
-                        ]}
-                        onPress={() => {
-                          const newDate = new Date(selectedDate);
-                          newDate.setDate(day);
-                          setSelectedDate(newDate);
-                        }}
-                      >
-                        <Text
-                          style={[
-                            styles.pickerOptionText,
-                            selectedDate.getDate() === day &&
-                              styles.pickerOptionTextSelected,
-                          ]}
-                        >
-                          {day}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                </View>
-              </View>
-
-              <View style={styles.modalButtons}>
-                <Button
-                  title="Cancel"
-                  onPress={() => setShowDatePicker(false)}
-                  variant="outline"
-                  style={styles.modalButton}
-                />
-                <Button
-                  title="Select"
-                  onPress={handleDateSelect}
-                  style={styles.modalButton}
-                />
-              </View>
-            </View>
-          </View>
-        </Modal>
+          title="Select Date of Birth"
+          onClose={() => setShowDatePicker(false)}
+          onSelect={() =>
+            handleDateSelect(setDateOfBirth, () =>
+              setErrors({ ...errors, dateOfBirth: "" })
+            )
+          }
+          columns={getDatePickerColumns()}
+          selectedValue={selectedDate}
+        />
 
         {/* Height */}
         <View style={styles.dateContainer}>
@@ -536,25 +254,7 @@ export default function UserInfoScreen({ navigation }) {
           </Text>
           <TouchableOpacity
             style={[styles.dateInput, errors.height && styles.dateInputError]}
-            onPress={() => {
-              // Initialize selectedHeight from current height value
-              if (height) {
-                const heightNum = parseFloat(height);
-                if (!isNaN(heightNum)) {
-                  if (unitSystem === "metric") {
-                    setSelectedHeight({
-                      ...selectedHeight,
-                      metric: Math.round(heightNum),
-                    });
-                  } else {
-                    const feet = Math.floor(heightNum / 12);
-                    const inches = Math.round(heightNum % 12);
-                    setSelectedHeight({ ...selectedHeight, feet, inches });
-                  }
-                }
-              }
-              setShowHeightPicker(true);
-            }}
+            onPress={() => setShowHeightPicker(true)}
             activeOpacity={0.7}
           >
             <Text
@@ -563,7 +263,9 @@ export default function UserInfoScreen({ navigation }) {
                 !height && styles.dateInputPlaceholder,
               ]}
             >
-              {height ? formatHeightForDisplay() : `Select your height`}
+              {height
+                ? formatHeightForDisplay(height, unitSystem)
+                : `Select your height`}
             </Text>
           </TouchableOpacity>
           {errors.height && (
@@ -572,135 +274,20 @@ export default function UserInfoScreen({ navigation }) {
         </View>
 
         {/* Height Picker Modal */}
-        <Modal
+        <PickerModal
           visible={showHeightPicker}
-          transparent={true}
-          animationType="slide"
-          onRequestClose={() => setShowHeightPicker(false)}
-        >
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>
-                Select Height ({unitSystem === "metric" ? "cm" : "ft'in\""})
-              </Text>
-
-              <View style={styles.datePickerContainer}>
-                {unitSystem === "metric" ? (
-                  <View style={styles.pickerColumn}>
-                    <Text style={styles.pickerLabel}>Centimeters</Text>
-                    <ScrollView style={styles.pickerScrollView}>
-                      {generateHeightValues().map((value) => (
-                        <TouchableOpacity
-                          key={value}
-                          style={[
-                            styles.pickerOption,
-                            selectedHeight.metric === value &&
-                              styles.pickerOptionSelected,
-                          ]}
-                          onPress={() =>
-                            setSelectedHeight({
-                              ...selectedHeight,
-                              metric: value,
-                            })
-                          }
-                        >
-                          <Text
-                            style={[
-                              styles.pickerOptionText,
-                              selectedHeight.metric === value &&
-                                styles.pickerOptionTextSelected,
-                            ]}
-                          >
-                            {value} cm
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </ScrollView>
-                  </View>
-                ) : (
-                  <>
-                    <View style={styles.pickerColumn}>
-                      <Text style={styles.pickerLabel}>Feet</Text>
-                      <ScrollView style={styles.pickerScrollView}>
-                        {generateHeightValues().feet.map((value) => (
-                          <TouchableOpacity
-                            key={value}
-                            style={[
-                              styles.pickerOption,
-                              selectedHeight.feet === value &&
-                                styles.pickerOptionSelected,
-                            ]}
-                            onPress={() =>
-                              setSelectedHeight({
-                                ...selectedHeight,
-                                feet: value,
-                              })
-                            }
-                          >
-                            <Text
-                              style={[
-                                styles.pickerOptionText,
-                                selectedHeight.feet === value &&
-                                  styles.pickerOptionTextSelected,
-                              ]}
-                            >
-                              {value}'
-                            </Text>
-                          </TouchableOpacity>
-                        ))}
-                      </ScrollView>
-                    </View>
-                    <View style={styles.pickerColumn}>
-                      <Text style={styles.pickerLabel}>Inches</Text>
-                      <ScrollView style={styles.pickerScrollView}>
-                        {generateHeightValues().inches.map((value) => (
-                          <TouchableOpacity
-                            key={value}
-                            style={[
-                              styles.pickerOption,
-                              selectedHeight.inches === value &&
-                                styles.pickerOptionSelected,
-                            ]}
-                            onPress={() =>
-                              setSelectedHeight({
-                                ...selectedHeight,
-                                inches: value,
-                              })
-                            }
-                          >
-                            <Text
-                              style={[
-                                styles.pickerOptionText,
-                                selectedHeight.inches === value &&
-                                  styles.pickerOptionTextSelected,
-                              ]}
-                            >
-                              {value}"
-                            </Text>
-                          </TouchableOpacity>
-                        ))}
-                      </ScrollView>
-                    </View>
-                  </>
-                )}
-              </View>
-
-              <View style={styles.modalButtons}>
-                <Button
-                  title="Cancel"
-                  onPress={() => setShowHeightPicker(false)}
-                  variant="outline"
-                  style={styles.modalButton}
-                />
-                <Button
-                  title="Select"
-                  onPress={handleHeightSelect}
-                  style={styles.modalButton}
-                />
-              </View>
-            </View>
-          </View>
-        </Modal>
+          title={`Select Height (${
+            unitSystem === "metric" ? "cm" : "ft'in\""
+          })`}
+          onClose={() => setShowHeightPicker(false)}
+          onSelect={() =>
+            handleHeightSelect(unitSystem, setHeight, () =>
+              setErrors({ ...errors, height: "" })
+            )
+          }
+          columns={getHeightPickerColumns(unitSystem)}
+          selectedValue={selectedHeight}
+        />
 
         {/* Weight */}
         <View style={styles.dateContainer}>
@@ -709,26 +296,7 @@ export default function UserInfoScreen({ navigation }) {
           </Text>
           <TouchableOpacity
             style={[styles.dateInput, errors.weight && styles.dateInputError]}
-            onPress={() => {
-              // Initialize selectedWeight from current weight value
-              if (weight) {
-                const weightNum = parseFloat(weight);
-                if (!isNaN(weightNum)) {
-                  if (unitSystem === "metric") {
-                    setSelectedWeight({
-                      ...selectedWeight,
-                      metric: Math.round(weightNum),
-                    });
-                  } else {
-                    setSelectedWeight({
-                      ...selectedWeight,
-                      imperial: Math.round(weightNum),
-                    });
-                  }
-                }
-              }
-              setShowWeightPicker(true);
-            }}
+            onPress={() => setShowWeightPicker(true)}
             activeOpacity={0.7}
           >
             <Text
@@ -737,7 +305,9 @@ export default function UserInfoScreen({ navigation }) {
                 !weight && styles.dateInputPlaceholder,
               ]}
             >
-              {weight ? formatWeightForDisplay() : `Select your weight`}
+              {weight
+                ? formatWeightForDisplay(weight, unitSystem)
+                : `Select your weight`}
             </Text>
           </TouchableOpacity>
           {errors.weight && (
@@ -746,81 +316,18 @@ export default function UserInfoScreen({ navigation }) {
         </View>
 
         {/* Weight Picker Modal */}
-        <Modal
+        <PickerModal
           visible={showWeightPicker}
-          transparent={true}
-          animationType="slide"
-          onRequestClose={() => setShowWeightPicker(false)}
-        >
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>
-                Select Weight ({unitSystem === "metric" ? "kg" : "lbs"})
-              </Text>
-
-              <View style={styles.datePickerContainer}>
-                <View style={styles.pickerColumn}>
-                  <Text style={styles.pickerLabel}>
-                    {unitSystem === "metric" ? "Kilograms" : "Pounds"}
-                  </Text>
-                  <ScrollView style={styles.pickerScrollView}>
-                    {generateWeightValues().map((value) => (
-                      <TouchableOpacity
-                        key={value}
-                        style={[
-                          styles.pickerOption,
-                          (unitSystem === "metric"
-                            ? selectedWeight.metric
-                            : selectedWeight.imperial) === value &&
-                            styles.pickerOptionSelected,
-                        ]}
-                        onPress={() => {
-                          if (unitSystem === "metric") {
-                            setSelectedWeight({
-                              ...selectedWeight,
-                              metric: value,
-                            });
-                          } else {
-                            setSelectedWeight({
-                              ...selectedWeight,
-                              imperial: value,
-                            });
-                          }
-                        }}
-                      >
-                        <Text
-                          style={[
-                            styles.pickerOptionText,
-                            (unitSystem === "metric"
-                              ? selectedWeight.metric
-                              : selectedWeight.imperial) === value &&
-                              styles.pickerOptionTextSelected,
-                          ]}
-                        >
-                          {value} {unitSystem === "metric" ? "kg" : "lbs"}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                </View>
-              </View>
-
-              <View style={styles.modalButtons}>
-                <Button
-                  title="Cancel"
-                  onPress={() => setShowWeightPicker(false)}
-                  variant="outline"
-                  style={styles.modalButton}
-                />
-                <Button
-                  title="Select"
-                  onPress={handleWeightSelect}
-                  style={styles.modalButton}
-                />
-              </View>
-            </View>
-          </View>
-        </Modal>
+          title={`Select Weight (${unitSystem === "metric" ? "kg" : "lbs"})`}
+          onClose={() => setShowWeightPicker(false)}
+          onSelect={() =>
+            handleWeightSelect(unitSystem, setWeight, () =>
+              setErrors({ ...errors, weight: "" })
+            )
+          }
+          columns={getWeightPickerColumns(unitSystem)}
+          selectedValue={selectedWeight}
+        />
 
         {errors.submit ? (
           <Text style={styles.errorText}>{errors.submit}</Text>
@@ -954,72 +461,5 @@ const styles = StyleSheet.create({
   },
   dateInputPlaceholder: {
     color: colors.textLight,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  modalContent: {
-    backgroundColor: colors.background,
-    borderRadius: 20,
-    padding: 24,
-    width: "90%",
-    maxWidth: 400,
-    maxHeight: "80%",
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: colors.text,
-    marginBottom: 20,
-    textAlign: "center",
-  },
-  datePickerContainer: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 20,
-    height: 300,
-  },
-  pickerColumn: {
-    flex: 1,
-    marginHorizontal: 4,
-  },
-  pickerLabel: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.text,
-    marginBottom: 8,
-    textAlign: "center",
-  },
-  pickerScrollView: {
-    flex: 1,
-  },
-  pickerOption: {
-    padding: 12,
-    borderRadius: 8,
-    marginVertical: 2,
-    alignItems: "center",
-    backgroundColor: colors.surface,
-  },
-  pickerOptionSelected: {
-    backgroundColor: colors.primary,
-  },
-  pickerOptionText: {
-    fontSize: 16,
-    color: colors.text,
-  },
-  pickerOptionTextSelected: {
-    color: colors.textOnPrimary,
-    fontWeight: "600",
-  },
-  modalButtons: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  modalButton: {
-    flex: 1,
-    marginHorizontal: 6,
   },
 });
