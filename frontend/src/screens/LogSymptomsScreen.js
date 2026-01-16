@@ -289,12 +289,52 @@ export default function LogSymptomsScreen({ route, navigation }) {
     return uniqueFields;
   }, [formSchema]);
 
-  // Loading state
+  // Loading state - Professional skeleton loader
   if (loading) {
     return (
-      <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.loadingText}>Loading form...</Text>
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => navigation.goBack()}
+          >
+            <Ionicons
+              name="arrow-back"
+              size={24}
+              color={colors.textOnPrimary}
+            />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Log Symptoms</Text>
+          <View style={styles.placeholder} />
+        </View>
+
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+        >
+          {/* Date indicator skeleton */}
+          <View style={styles.dateContainer}>
+            <View style={styles.skeletonIcon} />
+            <View style={styles.skeletonDateText} />
+          </View>
+
+          {/* Three skeleton field sections */}
+          {[1, 2, 3].map((index) => (
+            <View key={index} style={styles.skeletonFieldContainer}>
+              {/* Field label skeleton */}
+              <View style={styles.skeletonLabel} />
+
+              {/* Option skeletons - varying sizes */}
+              <View style={styles.skeletonOptionsContainer}>
+                <View style={[styles.skeletonOption, { width: "45%" }]} />
+                <View style={[styles.skeletonOption, { width: "45%" }]} />
+              </View>
+              <View style={styles.skeletonOptionsContainer}>
+                <View style={[styles.skeletonOption, { width: "60%" }]} />
+              </View>
+            </View>
+          ))}
+        </ScrollView>
       </View>
     );
   }
@@ -436,9 +476,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: 20,
     paddingTop: 60,
-    backgroundColor: colors.primary,
+    backgroundColor: colors.navigation,
     borderBottomWidth: 1,
-    borderBottomColor: colors.primaryDark,
+    borderBottomColor: colors.navigation,
   },
   backButton: {
     padding: 4,
@@ -457,12 +497,15 @@ const styles = StyleSheet.create({
   headerSubmitButtonDisabled: {
     opacity: 0.4,
   },
+  placeholder: {
+    width: 32,
+  },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
     padding: 20,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.formSchemaBackground,
   },
   dateContainer: {
     flexDirection: "row",
@@ -522,5 +565,57 @@ const styles = StyleSheet.create({
     color: colors.textOnPrimary,
     fontSize: 16,
     fontWeight: "600",
+  },
+  // Skeleton loader styles
+  skeletonIcon: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: colors.border,
+    opacity: 0.3,
+  },
+  skeletonDateText: {
+    width: 200,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: colors.border,
+    opacity: 0.3,
+    marginLeft: 10,
+  },
+  skeletonFieldContainer: {
+    backgroundColor: colors.formFieldBackground,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    marginHorizontal: 20,
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  skeletonLabel: {
+    width: 120,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: colors.border,
+    opacity: 0.3,
+    marginBottom: 12,
+  },
+  skeletonOptionsContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    marginBottom: 12,
+    gap: 8,
+  },
+  skeletonOption: {
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.border,
+    opacity: 0.2,
+    marginBottom: 8,
   },
 });
