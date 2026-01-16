@@ -3,62 +3,100 @@ import { View, Text, StyleSheet } from "react-native";
 import { ReanimatedSlider } from "../ReanimatedSlider";
 import { colors } from "../../constants/colors";
 
-const SliderOption = React.memo(({ sliderId, minValue, maxValue, value, onChange }) => {
-  // Display value for real-time updates
-  const [displayValue, setDisplayValue] = useState(value ?? minValue);
-  
-  // Update display value when external value changes (form reset scenario)
-  useEffect(() => {
-    const numValue = typeof value === "number" && !isNaN(value) ? value : minValue;
-    setDisplayValue(numValue);
-  }, [value, minValue]);
+const SliderOption = React.memo(
+  ({ sliderId, minValue, maxValue, value, onChange }) => {
+    // Track if slider has been set (not null)
+    const isSet = value !== null && value !== undefined;
 
-  // Use ref to store onChange to prevent recreation
-  const onChangeRef = React.useRef(onChange);
-  React.useEffect(() => {
-    onChangeRef.current = onChange;
-  }, [onChange]);
+    // Slider internal range: minValue-1 to maxValue
+    // minValue-1 = "not set", minValue onwards = actual values
+    const sliderMin = minValue - 1;
+    const sliderMax = maxValue;
 
-  // Handle value change in real-time (updates display immediately)
-  const handleValueChange = React.useCallback(
-    (newValue) => {
-      setDisplayValue(newValue);
-      // Also update React Hook Form in real-time
-      if (onChangeRef.current) {
-        onChangeRef.current(newValue);
+    // Internal slider position (includes the "not set" position)
+    const [sliderPosition, setSliderPosition] = useState(
+      isSet ? value : sliderMin
+    );
+
+    // Update slider position when external value changes (form reset scenario)
+    useEffect(() => {
+      if (
+        value !== null &&
+        value !== undefined &&
+        typeof value === "number" &&
+        !isNaN(value)
+      ) {
+        setSliderPosition(value);
+      } else {
+        setSliderPosition(sliderMin);
       }
-    },
-    [] // Empty deps - onChangeRef is stable
-  );
+    }, [value, sliderMin]);
 
-  return (
-    <View style={styles.sliderContainer}>
-      <Text style={styles.sliderValueDisplay}>{Math.round(displayValue)}</Text>
-      <ReanimatedSlider
-        minValue={minValue}
-        maxValue={maxValue}
-        value={value ?? minValue}
-        onValueChange={handleValueChange}
-        step={1}
-        minimumTrackTintColor={colors.primary}
-        maximumTrackTintColor={colors.surface}
-        thumbTintColor={colors.primary}
-      />
-      <View style={styles.sliderLabels}>
-        <Text style={styles.sliderLabel}>{minValue}</Text>
-        <Text style={styles.sliderLabel}>{maxValue}</Text>
+    // Use ref to store onChange to prevent recreation
+    const onChangeRef = React.useRef(onChange);
+    React.useEffect(() => {
+      onChangeRef.current = onChange;
+    }, [onChange]);
+
+    // Handle slider change
+    const handleValueChange = React.useCallback(
+      (newPosition) => {
+        setSliderPosition(newPosition);
+
+        // If at the leftmost position (sliderMin), set to null
+        // Otherwise, use the actual value
+        const actualValue = newPosition <= sliderMin ? null : newPosition;
+
+        if (onChangeRef.current) {
+          onChangeRef.current(actualValue);
+        }
+      },
+      [sliderMin]
+    );
+
+    // Check if currently at "not set" position
+    const isAtNotSetPosition = sliderPosition <= sliderMin;
+
+    return (
+      <View style={styles.sliderContainer}>
+        <View style={styles.valueRow}>
+          {isAtNotSetPosition ? (
+            <Text style={styles.sliderValuePlaceholder}>Not set</Text>
+          ) : (
+            <Text style={styles.sliderValueDisplay}>
+              {Math.round(sliderPosition)}
+            </Text>
+          )}
+        </View>
+        <ReanimatedSlider
+          minValue={sliderMin}
+          maxValue={sliderMax}
+          value={sliderPosition}
+          onValueChange={handleValueChange}
+          step={1}
+          minimumTrackTintColor={
+            isAtNotSetPosition ? colors.surface : colors.primary
+          }
+          maximumTrackTintColor={colors.surface}
+          thumbTintColor={isAtNotSetPosition ? colors.border : colors.primary}
+        />
+        <View style={styles.sliderLabels}>
+          <Text style={styles.sliderLabel}>{minValue}</Text>
+          <Text style={styles.sliderLabel}>{maxValue}</Text>
+        </View>
       </View>
-    </View>
-  );
-}, (prevProps, nextProps) => {
-  // Only re-render if value or callbacks changed
-  return (
-    prevProps.minValue === nextProps.minValue &&
-    prevProps.maxValue === nextProps.maxValue &&
-    prevProps.value === nextProps.value &&
-    prevProps.onChange === nextProps.onChange
-  );
-});
+    );
+  },
+  (prevProps, nextProps) => {
+    // Only re-render if value or callbacks changed
+    return (
+      prevProps.minValue === nextProps.minValue &&
+      prevProps.maxValue === nextProps.maxValue &&
+      prevProps.value === nextProps.value &&
+      prevProps.onChange === nextProps.onChange
+    );
+  }
+);
 
 SliderOption.displayName = "SliderOption";
 
@@ -66,18 +104,30 @@ const styles = StyleSheet.create({
   sliderContainer: {
     marginTop: 4,
   },
+  valueRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 8,
+    minHeight: 28,
+  },
   sliderValueDisplay: {
     fontSize: 20,
     fontWeight: "700",
     color: colors.primary,
-    textAlign: "center",
-    marginBottom: 8,
+  },
+  sliderValuePlaceholder: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: colors.textLight,
+    fontStyle: "italic",
   },
   sliderLabels: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     marginTop: 6,
+    paddingHorizontal: 4,
   },
   sliderLabel: {
     fontSize: 11,
@@ -87,4 +137,3 @@ const styles = StyleSheet.create({
 });
 
 export default SliderOption;
-

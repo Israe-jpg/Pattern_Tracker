@@ -19,198 +19,244 @@ import { colors } from "../constants/colors";
 import { buildZodSchema } from "../utils/formSchemaBuilder";
 
 export default function LogSymptomsScreen({ route, navigation }) {
-  const { trackerId, selectedDate } = route.params || {};
+  const { trackerId } = route.params || {};
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [formSchema, setFormSchema] = useState(null);
+  const [existingData, setExistingData] = useState(null);
+  const [entryDate] = useState(new Date().toISOString().split("T")[0]); // Today's date
 
   useEffect(() => {
-    loadFormSchema();
+    initializeForm();
   }, [trackerId]);
 
-  const loadFormSchema = async () => {
+  /**
+   * Initialize form: Load schema and check for existing data
+   */
+  const initializeForm = async () => {
     try {
       setLoading(true);
-      const response = await trackerService.getFormSchema(trackerId);
-      const fieldGroups = response.field_groups || {};
-      const initialData = {};
 
-      for (const groupName in fieldGroups) {
-        const group = fieldGroups[groupName];
-        if (!Array.isArray(group)) continue;
+      // Step 1: Load form schema
+      const schemaResponse = await trackerService.getFormSchema(trackerId);
+      setFormSchema(schemaResponse);
 
-        for (const field of group) {
-          if (!field.options || field.options.length === 0) continue;
+      // Step 2: Check if data exists for today
+      console.log("🔍 Checking for existing data:");
+      console.log("  Tracker ID:", trackerId);
+      console.log("  Date:", entryDate);
 
-          const fieldData = {};
-          for (const option of field.options) {
-            fieldData[option.option_name] =
-              option.option_type === "multiple_choice" ? [] : null;
-          }
-          initialData[field.field_name] = fieldData;
+      try {
+        const response = await dataTrackingService.getDataByDate(
+          trackerId,
+          entryDate
+        );
+        console.log("📦 Full API response:", JSON.stringify(response, null, 2));
+
+        // The service returns response.data, which contains { tracking_data: {...}, message: "..." }
+        const trackingData =
+          response?.data?.tracking_data || response?.tracking_data;
+        const data = trackingData?.data;
+        console.log("📊 Tracking data object:", trackingData);
+        console.log("📊 Extracted data field:", data);
+
+        if (data && Object.keys(data).length > 0) {
+          setExistingData(data);
+          console.log("✅ Found existing data for today:", data);
+        } else {
+          setExistingData(null);
+          console.log("⚠️ Response returned but data is empty");
+        }
+      } catch (error) {
+        console.log("❌ Error fetching data:");
+        console.log("  Status:", error.response?.status);
+        console.log("  Message:", error.message);
+        console.log("  Response data:", error.response?.data);
+
+        // 404 means no data exists - that's fine
+        if (error.response?.status === 404) {
+          setExistingData(null);
+          console.log("📝 No existing data for today - new entry (404)");
+        } else {
+          throw error;
         }
       }
 
-      setFormSchema({
-        ...response,
-        fieldGroups: fieldGroups,
-      });
       setLoading(false);
     } catch (error) {
-      console.error("Error loading form schema:", error);
-      console.error("Error details:", {
-        status: error.response?.status,
-        statusText: error.response?.statusText,
-        data: error.response?.data,
-        message: error.message,
-      });
-
-      // Don't show alert immediately - let the error state UI handle it
-      // This prevents blocking the UI
+      console.error("Error initializing form:", error);
       setLoading(false);
-
-      // Only show alert for network errors, not for 500s (backend issues)
-      if (!error.response || error.response.status !== 500) {
-        const errorMessage =
-          error.response?.data?.error ||
-          error.message ||
-          "Failed to load form. Please try again.";
-        Alert.alert("Error Loading Form", errorMessage, [
-          {
-            text: "Retry",
-            onPress: () => loadFormSchema(),
-          },
-          {
-            text: "Go Back",
-            style: "cancel",
-            onPress: () => navigation.goBack(),
-          },
-        ]);
-      }
+      Alert.alert("Error", "Failed to load form. Please try again.", [
+        { text: "Retry", onPress: initializeForm },
+        { text: "Go Back", onPress: () => navigation.goBack() },
+      ]);
     }
   };
+
+  /**
+   * Get default value based on option type
+   */
+  const getDefaultValue = (optionType) => {
+    switch (optionType) {
+      case "multiple_choice":
+        return [];
+      case "yes_no":
+        return false;
+      default:
+        return null;
+    }
+  };
+
+  /**
+   * Convert database value to form-compatible type
+   */
+  const convertToFormType = (value, optionType) => {
+    if (value === null || value === undefined) {
+      return getDefaultValue(optionType);
+    }
+
+    switch (optionType) {
+      case "rating":
+      case "number_input":
+        const num =
+          typeof value === "string" ? parseFloat(value) : Number(value);
+        return isNaN(num) ? null : num;
+
+      case "yes_no":
+        if (typeof value === "boolean") return value;
+        if (typeof value === "string") return value === "true" || value === "1";
+        return Boolean(value);
+
+      case "multiple_choice":
+        return Array.isArray(value) ? value : value ? [value] : [];
+
+      case "text":
+      case "notes":
+      case "single_choice":
+      case "time":
+        return String(value);
+
+      default:
+        return value;
+    }
+  };
+
+  /**
+   * Build form default values from schema and existing data
+   */
+  const defaultValues = useMemo(() => {
+    if (!formSchema?.field_groups) return {};
+
+    const defaults = {};
+    const fieldGroups = formSchema.field_groups;
+
+    // Build structure from schema
+    Object.keys(fieldGroups).forEach((groupName) => {
+      const group = fieldGroups[groupName];
+      if (!Array.isArray(group)) return;
+
+      group.forEach((field) => {
+        if (!field.options || field.options.length === 0) return;
+
+        defaults[field.field_name] = {};
+
+        field.options.forEach((option) => {
+          const optionName = option.option_name;
+
+          // Check if we have existing data for this field/option
+          const existingValue = existingData?.[field.field_name]?.[optionName];
+
+          if (existingValue !== undefined && existingValue !== null) {
+            // Use existing data, converting to correct type
+            defaults[field.field_name][optionName] = convertToFormType(
+              existingValue,
+              option.option_type
+            );
+          } else {
+            // Use default for option type
+            defaults[field.field_name][optionName] = getDefaultValue(
+              option.option_type
+            );
+          }
+        });
+      });
+    });
+
+    return defaults;
+  }, [formSchema, existingData]);
 
   const zodSchema = useMemo(() => {
     if (!formSchema) return null;
     return buildZodSchema(formSchema);
   }, [formSchema]);
 
-  const defaultValues = useMemo(() => {
-    if (!formSchema?.fieldGroups) return {};
-
-    const defaults = {};
-    for (const groupName in formSchema.fieldGroups) {
-      const group = formSchema.fieldGroups[groupName];
-      if (!Array.isArray(group)) continue;
-
-      for (const field of group) {
-        if (!field.options || field.options.length === 0) continue;
-
-        const fieldDefaults = {};
-        for (const option of field.options) {
-          if (option.option_type === "multiple_choice") {
-            fieldDefaults[option.option_name] = [];
-          } else if (option.option_type === "yes_no") {
-            fieldDefaults[option.option_name] = false;
-          } else {
-            fieldDefaults[option.option_name] = null;
-          }
-        }
-        defaults[field.field_name] = fieldDefaults;
-      }
-    }
-    return defaults;
-  }, [formSchema]);
-
   const {
     control,
-    handleSubmit: rhfHandleSubmit,
-    formState: { errors },
+    handleSubmit,
+    formState: { errors, isDirty },
+    reset,
   } = useForm({
     resolver: zodSchema ? zodResolver(zodSchema) : undefined,
     defaultValues,
     mode: "onBlur",
-    reValidateMode: "onBlur",
   });
 
+  // Reset form when defaultValues change (after existing data loads)
+  useEffect(() => {
+    if (defaultValues && Object.keys(defaultValues).length > 0) {
+      console.log("🔄 Resetting form with values:", defaultValues);
+      reset(defaultValues);
+    }
+  }, [defaultValues, reset]);
+
+  /**
+   * Handle form submission (create or update)
+   */
   const onSubmit = async (data) => {
-    let payload = null;
     try {
       setSubmitting(true);
 
-      // Format data for backend (same structure as before)
-      const formattedData = {};
+      // Filter out empty values
+      const cleanedData = {};
       Object.keys(data).forEach((fieldName) => {
         const fieldData = data[fieldName];
         if (!fieldData || typeof fieldData !== "object") return;
 
         Object.keys(fieldData).forEach((optionName) => {
           const value = fieldData[optionName];
-          // Filter out null, undefined, empty strings, and empty arrays
-          if (value !== null && value !== undefined && value !== "") {
-            // For arrays (multiple_choice), only include if not empty
-            if (Array.isArray(value) && value.length === 0) {
-              return;
-            }
-            if (!formattedData[fieldName]) {
-              formattedData[fieldName] = {};
-            }
-            formattedData[fieldName][optionName] = value;
+
+          // Skip empty values
+          if (value === null || value === undefined || value === "") return;
+          if (Array.isArray(value) && value.length === 0) return;
+
+          if (!cleanedData[fieldName]) {
+            cleanedData[fieldName] = {};
           }
+          cleanedData[fieldName][optionName] = value;
         });
       });
 
-      payload = {
-        data: formattedData,
-      };
+      // Submit to backend (save endpoint handles both create and update)
+      await dataTrackingService.saveData(trackerId, cleanedData, entryDate);
 
-      if (selectedDate) {
-        payload.entry_date = selectedDate;
+      // Update state to reflect that data now exists
+      if (!existingData) {
+        setExistingData(cleanedData);
       }
 
-      await dataTrackingService.saveData(
-        trackerId,
-        payload.data,
-        payload.entry_date
-      );
+      const message = existingData
+        ? "Symptoms updated successfully!"
+        : "Symptoms logged successfully!";
 
-      Alert.alert("Success", "Symptoms logged successfully!", [
-        {
-          text: "OK",
-          onPress: () => navigation.goBack(),
-        },
+      Alert.alert("Success", message, [
+        { text: "OK", onPress: () => navigation.goBack() },
       ]);
     } catch (error) {
       console.error("Error submitting form:", error);
-      console.error("Error response:", {
-        status: error.response?.status,
-        statusText: error.response?.statusText,
-        data: error.response?.data,
-        message: error.message,
-      });
-      if (payload) {
-        console.error("Payload sent:", {
-          data: payload.data,
-          entry_date: payload.entry_date,
-        });
-      } else {
-        console.error(
-          "Payload not created - error occurred before payload construction"
-        );
-      }
 
-      // Extract error message from response
       let errorMessage = "Failed to save symptoms. Please try again.";
-      if (error.response?.data) {
-        if (error.response.data.error) {
-          errorMessage = error.response.data.error;
-        } else if (error.response.data.message) {
-          errorMessage = error.response.data.message;
-        } else if (typeof error.response.data === "string") {
-          errorMessage = error.response.data;
-        }
-      } else if (error.message) {
-        errorMessage = error.message;
+      if (error.response?.data?.error) {
+        errorMessage = error.response.data.error;
       }
 
       Alert.alert("Error", errorMessage);
@@ -219,34 +265,31 @@ export default function LogSymptomsScreen({ route, navigation }) {
     }
   };
 
-  const uniqueFields = useMemo(() => {
-    if (!formSchema?.fieldGroups) return [];
+  /**
+   * Get unique fields from all field groups
+   */
+  const fields = useMemo(() => {
+    if (!formSchema?.field_groups) return [];
 
-    const fieldMap = new Map();
-    const seenFieldNames = new Set();
+    const uniqueFields = [];
+    const seenIds = new Set();
 
-    for (const groupName in formSchema.fieldGroups) {
-      const group = formSchema.fieldGroups[groupName];
+    Object.values(formSchema.field_groups).forEach((group) => {
+      if (!Array.isArray(group)) return;
 
-      if (!Array.isArray(group)) {
-        console.warn(`Field group '${groupName}' is not an array`);
-        continue;
-      }
-
-      for (const field of group) {
-        if (field) {
-          const key = field.id || field.field_name;
-          if (key && !seenFieldNames.has(key)) {
-            seenFieldNames.add(key);
-            fieldMap.set(key, field);
-          }
+      group.forEach((field) => {
+        const key = field.id || field.field_name;
+        if (key && !seenIds.has(key)) {
+          seenIds.add(key);
+          uniqueFields.push(field);
         }
-      }
-    }
+      });
+    });
 
-    return Array.from(fieldMap.values());
+    return uniqueFields;
   }, [formSchema]);
 
+  // Loading state
   if (loading) {
     return (
       <View style={styles.centerContainer}>
@@ -256,6 +299,7 @@ export default function LogSymptomsScreen({ route, navigation }) {
     );
   }
 
+  // Error state
   if (!formSchema && !loading) {
     return (
       <View style={styles.container}>
@@ -280,26 +324,15 @@ export default function LogSymptomsScreen({ route, navigation }) {
             color={colors.error}
           />
           <Text style={styles.errorText}>Failed to load form</Text>
-          <Text style={styles.errorSubtext}>
-            The server encountered an error. Please try again.
-          </Text>
-          <TouchableOpacity
-            style={styles.retryButton}
-            onPress={() => loadFormSchema()}
-          >
+          <TouchableOpacity style={styles.retryButton} onPress={initializeForm}>
             <Text style={styles.retryButtonText}>Retry</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.backButtonStyle}
-            onPress={() => navigation.goBack()}
-          >
-            <Text style={styles.backButtonTextStyle}>Go Back</Text>
           </TouchableOpacity>
         </View>
       </View>
     );
   }
 
+  // Main form
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -309,26 +342,46 @@ export default function LogSymptomsScreen({ route, navigation }) {
         >
           <Ionicons name="arrow-back" size={24} color={colors.textOnPrimary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Log Symptoms</Text>
-        <View style={styles.placeholder} />
+        <Text style={styles.headerTitle}>
+          {existingData ? "Update" : "Log"} Symptoms
+        </Text>
+        <TouchableOpacity
+          style={[
+            styles.headerSubmitButton,
+            (!isDirty || submitting) && styles.headerSubmitButtonDisabled,
+          ]}
+          onPress={handleSubmit(onSubmit)}
+          disabled={!isDirty || submitting}
+        >
+          {submitting ? (
+            <ActivityIndicator size="small" color={colors.textOnPrimary} />
+          ) : (
+            <Ionicons name="checkmark" size={24} color={colors.textOnPrimary} />
+          )}
+        </TouchableOpacity>
       </View>
 
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
-        scrollEnabled={true}
         keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="on-drag"
-        bounces={true}
-        bouncesZoom={false}
         showsVerticalScrollIndicator={true}
-        showsHorizontalScrollIndicator={false}
-        {...(Platform.OS === "ios" && {
-          automaticallyAdjustContentInsets: false,
-          contentInsetAdjustmentBehavior: "automatic",
-        })}
       >
-        {uniqueFields.map((field) => (
+        {/* Date indicator */}
+        <View style={styles.dateContainer}>
+          <Ionicons name="calendar" size={20} color={colors.primary} />
+          <Text style={styles.dateText}>
+            {new Date(entryDate).toLocaleDateString("en-US", {
+              weekday: "long",
+              year: "numeric",
+              month: "long",
+              day: "numeric",
+            })}
+          </Text>
+        </View>
+
+        {/* Form fields */}
+        {fields.map((field) => (
           <FormField
             key={field.id || field.field_name}
             field={field}
@@ -336,18 +389,29 @@ export default function LogSymptomsScreen({ route, navigation }) {
           />
         ))}
 
+        {/* Submit button */}
         <TouchableOpacity
           style={[
             styles.submitButton,
-            submitting && styles.submitButtonDisabled,
+            (!isDirty || submitting) && styles.submitButtonDisabled,
           ]}
-          onPress={rhfHandleSubmit(onSubmit)}
-          disabled={submitting}
+          onPress={handleSubmit(onSubmit)}
+          disabled={!isDirty || submitting}
         >
           {submitting ? (
             <ActivityIndicator size="small" color={colors.textOnPrimary} />
           ) : (
-            <Text style={styles.submitButtonText}>Submit</Text>
+            <>
+              <Ionicons
+                name="checkmark"
+                size={20}
+                color={colors.textOnPrimary}
+                style={styles.buttonIcon}
+              />
+              <Text style={styles.submitButtonText}>
+                {existingData ? "Update" : "Submit"}
+              </Text>
+            </>
           )}
         </TouchableOpacity>
       </ScrollView>
@@ -384,8 +448,14 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     color: colors.textOnPrimary,
   },
-  placeholder: {
+  headerSubmitButton: {
+    padding: 4,
     width: 32,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerSubmitButtonDisabled: {
+    opacity: 0.4,
   },
   scrollView: {
     flex: 1,
@@ -394,16 +464,35 @@ const styles = StyleSheet.create({
     padding: 20,
     backgroundColor: colors.surface,
   },
+  dateContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.background,
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 20,
+  },
+  dateText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: colors.text,
+    marginLeft: 10,
+  },
   submitButton: {
     backgroundColor: colors.primary,
     paddingVertical: 16,
     borderRadius: 8,
     alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "center",
     marginTop: 20,
     marginBottom: 40,
   },
   submitButtonDisabled: {
     opacity: 0.6,
+  },
+  buttonIcon: {
+    marginRight: 8,
   },
   submitButtonText: {
     color: colors.textOnPrimary,
@@ -420,37 +509,18 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: colors.error,
     marginTop: 16,
-    marginBottom: 8,
-    textAlign: "center",
-  },
-  errorSubtext: {
-    fontSize: 14,
-    color: colors.textSecondary,
     marginBottom: 24,
     textAlign: "center",
-    paddingHorizontal: 40,
   },
   retryButton: {
     backgroundColor: colors.primary,
     paddingVertical: 12,
     paddingHorizontal: 24,
     borderRadius: 8,
-    marginBottom: 12,
-    minWidth: 120,
   },
   retryButtonText: {
     color: colors.textOnPrimary,
     fontSize: 16,
     fontWeight: "600",
-    textAlign: "center",
-  },
-  backButtonStyle: {
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-  },
-  backButtonTextStyle: {
-    color: colors.textSecondary,
-    fontSize: 16,
-    textAlign: "center",
   },
 });
