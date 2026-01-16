@@ -257,22 +257,39 @@ class CategoryService:
                     print(f"Failed to initialize {category_name}: {str(e)}")
                     continue
             
-            # Check if fields/options exist for this category (migration doesn't create them)
-            baseline_fields_exist = TrackerField.query.filter_by(
+                baseline_fields_exist = TrackerField.query.filter_by(
                 category_id=category.id,
                 field_group='baseline'
             ).first() is not None
             
+            category_specific_fields_exist = TrackerField.query.filter_by(
+                category_id=category.id,
+                field_group=config_key
+            ).first() is not None
+            
             if not baseline_fields_exist:
-                # Fields/options don't exist, create them from JSON config
-                specific_schema = config.get(config_key, {})
-                
-                CategoryService._create_fields_for_prebuilt_category(
-                    category.id, 
-                    baseline_schema, 
-                    specific_schema, 
-                    config_key
+                CategoryService._create_fields_from_schema(
+                    category.id,
+                    baseline_schema,
+                    field_group='baseline',
+                    start_order=0
                 )
+            
+            if not category_specific_fields_exist:
+                specific_schema = config.get(config_key, {})
+                baseline_count = TrackerField.query.filter_by(
+                    category_id=category.id,
+                    field_group='baseline'
+                ).count()
+                
+                CategoryService._create_fields_from_schema(
+                    category.id,
+                    specific_schema,
+                    field_group=config_key,
+                    start_order=baseline_count
+                )
+            
+            if not baseline_fields_exist or not category_specific_fields_exist:
                 db.session.commit()
             
             categories.append(category)
@@ -308,7 +325,6 @@ class CategoryService:
                 print(f"Failed to initialize Period Tracker: {str(e)}")
                 return None
         
-        # Check if fields/options exist (migration doesn't create them)
         baseline_fields_exist = TrackerField.query.filter_by(
             category_id=category.id,
             field_group='baseline'
@@ -319,17 +335,63 @@ class CategoryService:
             field_group=CategoryService.PERIOD_TRACKER_KEY
         ).first() is not None
         
-        # Create missing fields
-        if not baseline_fields_exist or not period_fields_exist:
-            # Fields/options don't exist, create them from JSON config
-            CategoryService._create_fields_for_prebuilt_category(
+        if not baseline_fields_exist:
+            CategoryService._create_fields_from_schema(
                 category.id,
                 baseline_schema,
-                period_schema,
-                CategoryService.PERIOD_TRACKER_KEY
+                field_group='baseline',
+                start_order=0
             )
+        
+        if not period_fields_exist:
+            baseline_count = TrackerField.query.filter_by(
+                category_id=category.id,
+                field_group='baseline'
+            ).count()
+            
+            next_order = baseline_count
+            
+            for context_name in ['menstruating', 'not_menstruating']:
+                context_schema = period_schema.get(context_name, {})
+                
+                for field_name, field_options in context_schema.items():
+                    field = TrackerField(
+                        category_id=category.id,
+                        field_name=field_name,
+                        context=context_name,
+                        display_label=field_name.replace('_', ' ').title(),
+                        field_group='period_tracker',
+                        field_order=next_order,
+                        is_active=True
+                    )
+                    db.session.add(field)
+                    db.session.flush()
+                    
+                    option_order = 0
+                    for option_name, option_schema in field_options.items():
+                        option_data = CategoryService._schema_to_option_data(option_name, option_schema)
+                        
+                        option = FieldOption(
+                            tracker_field_id=field.id,
+                            option_name=option_name,
+                            option_type=option_data['option_type'],
+                            display_label=option_data.get('display_label', option_name.replace('_', ' ').title()),
+                            is_required=option_data.get('is_required', False),
+                            option_order=option_order,
+                            min_value=option_data.get('min_value'),
+                            max_value=option_data.get('max_value'),
+                            max_length=option_data.get('max_length'),
+                            step=option_data.get('step'),
+                            choices=option_data.get('choices'),
+                            choice_labels=option_data.get('choice_labels'),
+                            is_active=True
+                        )
+                        db.session.add(option)
+                        option_order += 1
+                    
+                    next_order += 1
+            
             db.session.commit()
-            print(f"[INIT] Created Period Tracker fields (baseline={not baseline_fields_exist}, period={not period_fields_exist})")
         
         return category
     
@@ -1070,6 +1132,8 @@ class CategoryService:
         
         The baseline and custom fields are always included.
         Only the period_tracker section is contextual.
+        
+        NOW RETURNS: Array format with database IDs (consistent with other trackers)
         """
         settings = tracker.settings or {}
         
@@ -1126,36 +1190,61 @@ class CategoryService:
         if not category:
             raise ValueError("Period Tracker category not found")
         
-        # Build base schema (baseline + custom fields)
-        CategoryService.rebuild_category_schema(category, tracker)
-        db.session.refresh(category)
+        # Query database fields for baseline (always included)
+        baseline_fields = TrackerField.query.filter_by(
+            category_id=category.id,
+            field_group='baseline',
+            is_active=True
+        ).order_by(TrackerField.field_order.asc()).all()
         
-        base_schema = category.data_schema or {}
+        # Query period_tracker fields and filter based on menstruation state
+        current_context = 'menstruating' if is_menstruating else 'not_menstruating'
         
-        # Load contextual period_tracker fields from config
-        config = CategoryService._load_config()
-        period_config = config.get(CategoryService.PERIOD_TRACKER_KEY, {})
+        period_tracker_fields = TrackerField.query.filter_by(
+            category_id=category.id,
+            field_group='period_tracker',
+            context=current_context,
+            is_active=True
+        ).order_by(TrackerField.field_order.asc()).all()
         
-        # Get the appropriate period schema based on menstruation state
-        if is_menstruating:
-            contextual_period_fields = period_config.get('menstruating', {})
-        else:
-            contextual_period_fields = period_config.get('not_menstruating', {})
+        # Query custom fields (user additions for this specific tracker)
+        custom_fields = TrackerUserField.query.filter_by(
+            tracker_id=tracker.id,
+            is_active=True
+        ).order_by(TrackerUserField.field_order.asc()).all()
         
-        # Build final contextual schema
-        contextual_schema = {
-            'baseline': base_schema.get('baseline', {}),
-            'period_tracker': contextual_period_fields,  # Only relevant fields
-            'custom': base_schema.get('custom', {})
+        # Serialize fields with their options (includes database IDs)
+        def serialize_field(field):
+            """Serialize field with options and database IDs"""
+            if isinstance(field, TrackerUserField):
+                options = FieldOption.query.filter_by(
+                    tracker_user_field_id=field.id,
+                    is_active=True
+                ).order_by(FieldOption.option_order.asc()).all()
+            else:
+                options = FieldOption.query.filter_by(
+                    tracker_field_id=field.id,
+                    is_active=True
+                ).order_by(FieldOption.option_order.asc()).all()
+            
+            data = field.to_dict()
+            data['options'] = [o.to_dict() for o in options]
+            return data
+        
+        # Build field groups with database IDs
+        field_groups = {
+            'baseline': [serialize_field(f) for f in baseline_fields],
+            'period_tracker': [serialize_field(f) for f in period_tracker_fields],
+            'custom': [serialize_field(f) for f in custom_fields]
         }
         
-        # Return schema with cycle context and predictions
         response = {
             'setup_required': False,
             'cycle_info': {
                 'cycle_day': cycle_day,
                 'cycle_phase': cycle_phase,
-                'is_menstruating': is_menstruating
+                'is_menstruating': is_menstruating,
+                'context': current_context
             },
             'predictions': {
                 'ovulation_date': ovulation_date.isoformat() if ovulation_date else None,
@@ -1163,7 +1252,7 @@ class CategoryService:
                 'period_expected_soon': period_expected_soon,
                 'period_late': period_late
             },
-            'data_schema': contextual_schema
+            'field_groups': field_groups
         }
         
         # Add fertility window if available
