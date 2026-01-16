@@ -1231,12 +1231,96 @@ class CategoryService:
             data['options'] = [o.to_dict() for o in options]
             return data
         
-        # Build field groups with database IDs
+        # Build field groups with database IDs (for frontend)
         field_groups = {
             'baseline': [serialize_field(f) for f in baseline_fields],
             'period_tracker': [serialize_field(f) for f in period_tracker_fields],
             'custom': [serialize_field(f) for f in custom_fields]
         }
+        
+        # Build data_schema for validation (dict format: {field_name: {option_name: schema}})
+        data_schema = {}
+        
+        # Build baseline schema
+        baseline_schema = {}
+        for field in baseline_fields:
+            options = FieldOption.query.filter_by(
+                tracker_field_id=field.id,
+                is_active=True
+            ).order_by(FieldOption.option_order.asc()).all()
+            
+            field_options = {}
+            for option in options:
+                option_schema = SchemaManager.build_option_schema({
+                    'option_type': option.option_type,
+                    'is_required': option.is_required,
+                    'min_value': option.min_value,
+                    'max_value': option.max_value,
+                    'max_length': option.max_length,
+                    'step': option.step,
+                    'choices': option.choices,
+                    'choice_labels': option.choice_labels
+                })
+                field_options[option.option_name] = option_schema
+            
+            if field_options:
+                baseline_schema[field.field_name] = field_options
+        
+        data_schema['baseline'] = baseline_schema if baseline_schema else CategoryService.get_baseline_schema()
+        
+        # Build period_tracker schema (contextual)
+        period_tracker_schema = {}
+        for field in period_tracker_fields:
+            options = FieldOption.query.filter_by(
+                tracker_field_id=field.id,
+                is_active=True
+            ).order_by(FieldOption.option_order.asc()).all()
+            
+            field_options = {}
+            for option in options:
+                option_schema = SchemaManager.build_option_schema({
+                    'option_type': option.option_type,
+                    'is_required': option.is_required,
+                    'min_value': option.min_value,
+                    'max_value': option.max_value,
+                    'max_length': option.max_length,
+                    'step': option.step,
+                    'choices': option.choices,
+                    'choice_labels': option.choice_labels
+                })
+                field_options[option.option_name] = option_schema
+            
+            if field_options:
+                period_tracker_schema[field.field_name] = field_options
+        
+        data_schema['period_tracker'] = period_tracker_schema
+        
+        # Build custom schema (user-specific fields)
+        custom_schema = {}
+        for field in custom_fields:
+            options = FieldOption.query.filter_by(
+                tracker_user_field_id=field.id,
+                is_active=True
+            ).order_by(FieldOption.option_order.asc()).all()
+            
+            field_options = {}
+            for option in options:
+                option_schema = SchemaManager.build_option_schema({
+                    'option_type': option.option_type,
+                    'is_required': option.is_required,
+                    'min_value': option.min_value,
+                    'max_value': option.max_value,
+                    'max_length': option.max_length,
+                    'step': option.step,
+                    'choices': option.choices,
+                    'choice_labels': option.choice_labels
+                })
+                field_options[option.option_name] = option_schema
+            
+            if field_options:
+                custom_schema[field.field_name] = field_options
+        
+        data_schema['custom'] = custom_schema
         
         response = {
             'setup_required': False,
@@ -1252,7 +1336,8 @@ class CategoryService:
                 'period_expected_soon': period_expected_soon,
                 'period_late': period_late
             },
-            'field_groups': field_groups
+            'field_groups': field_groups,
+            'data_schema': data_schema  # Add data_schema for validation
         }
         
         # Add fertility window if available

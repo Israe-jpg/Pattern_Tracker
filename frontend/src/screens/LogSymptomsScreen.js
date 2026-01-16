@@ -134,6 +134,7 @@ export default function LogSymptomsScreen({ route, navigation }) {
   });
 
   const onSubmit = async (data) => {
+    let payload = null;
     try {
       setSubmitting(true);
 
@@ -145,7 +146,12 @@ export default function LogSymptomsScreen({ route, navigation }) {
 
         Object.keys(fieldData).forEach((optionName) => {
           const value = fieldData[optionName];
+          // Filter out null, undefined, empty strings, and empty arrays
           if (value !== null && value !== undefined && value !== "") {
+            // For arrays (multiple_choice), only include if not empty
+            if (Array.isArray(value) && value.length === 0) {
+              return;
+            }
             if (!formattedData[fieldName]) {
               formattedData[fieldName] = {};
             }
@@ -154,7 +160,7 @@ export default function LogSymptomsScreen({ route, navigation }) {
         });
       });
 
-      const payload = {
+      payload = {
         data: formattedData,
       };
 
@@ -176,11 +182,38 @@ export default function LogSymptomsScreen({ route, navigation }) {
       ]);
     } catch (error) {
       console.error("Error submitting form:", error);
-      Alert.alert(
-        "Error",
-        error.response?.data?.error ||
-          "Failed to save symptoms. Please try again."
-      );
+      console.error("Error response:", {
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+        message: error.message,
+      });
+      if (payload) {
+        console.error("Payload sent:", {
+          data: payload.data,
+          entry_date: payload.entry_date,
+        });
+      } else {
+        console.error(
+          "Payload not created - error occurred before payload construction"
+        );
+      }
+
+      // Extract error message from response
+      let errorMessage = "Failed to save symptoms. Please try again.";
+      if (error.response?.data) {
+        if (error.response.data.error) {
+          errorMessage = error.response.data.error;
+        } else if (error.response.data.message) {
+          errorMessage = error.response.data.message;
+        } else if (typeof error.response.data === "string") {
+          errorMessage = error.response.data;
+        }
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+
+      Alert.alert("Error", errorMessage);
     } finally {
       setSubmitting(false);
     }
