@@ -28,131 +28,18 @@ export default function LogSymptomsScreen({ route, navigation }) {
     loadFormSchema();
   }, [trackerId]);
 
-  // Convert nested schema structure to field/option format
-  const convertSchemaToFields = (schemaObj, groupName) => {
-    if (
-      !schemaObj ||
-      typeof schemaObj !== "object" ||
-      Array.isArray(schemaObj)
-    ) {
-      return [];
-    }
-
-    const fields = [];
-
-    // Iterate over top-level keys (field names)
-    for (const fieldName in schemaObj) {
-      const fieldSchema = schemaObj[fieldName];
-      if (!fieldSchema || typeof fieldSchema !== "object") continue;
-
-      const options = [];
-      let optionOrder = 0;
-
-      // Iterate over nested keys (option names)
-      for (const optionName in fieldSchema) {
-        const optionSchema = fieldSchema[optionName];
-        if (!optionSchema || typeof optionSchema !== "object") continue;
-
-        // Determine option type from schema
-        let optionType = "text";
-        if (optionSchema.type === "integer" || optionSchema.type === "float") {
-          if (
-            optionSchema.range &&
-            optionSchema.range[0] !== null &&
-            optionSchema.range[1] !== null
-          ) {
-            optionType = "rating";
-          } else {
-            optionType = "number_input";
-          }
-        } else if (optionSchema.type === "string") {
-          if (optionSchema.enum) {
-            optionType = "single_choice";
-          } else if (optionSchema.format === "time") {
-            optionType = "time";
-          } else {
-            optionType = optionSchema.max_length ? "notes" : "text";
-          }
-        } else if (optionSchema.type === "array") {
-          if (optionSchema.items === "string" && optionSchema.enum) {
-            optionType = "multiple_choice";
-          } else {
-            optionType = "multiple_choice";
-          }
-        } else if (optionSchema.type === "boolean") {
-          optionType = "yes_no";
-        }
-
-        // Build option object
-        const option = {
-          id: `${fieldName}_${optionName}`,
-          option_name: optionName,
-          display_label:
-            optionSchema.labels?.[optionName] ||
-            optionName
-              .split("_")
-              .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-              .join(" "),
-          option_type: optionType,
-          option_order: optionOrder++,
-          optional: optionSchema.optional || false,
-        };
-
-        // Add type-specific properties
-        if (optionType === "rating" || optionType === "number_input") {
-          option.min_value = optionSchema.range?.[0] ?? 0;
-          option.max_value = optionSchema.range?.[1] ?? 10;
-          option.labels = optionSchema.labels || {};
-        }
-
-        if (
-          optionType === "single_choice" ||
-          optionType === "multiple_choice"
-        ) {
-          option.choices = optionSchema.enum || [];
-          option.choice_labels = optionSchema.labels || {};
-        }
-
-        if (optionType === "text" || optionType === "notes") {
-          option.max_length = optionSchema.max_length;
-          option.placeholder = optionSchema.placeholder;
-        }
-
-        options.push(option);
-      }
-
-      if (options.length > 0) {
-        fields.push({
-          id: `${groupName}_${fieldName}`,
-          field_name: fieldName,
-          display_label: fieldName
-            .split("_")
-            .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-            .join(" "),
-          field_group: groupName,
-          options: options,
-        });
-      }
-    }
-
-    return fields;
-  };
-
   const loadFormSchema = async () => {
     try {
       setLoading(true);
       const response = await trackerService.getFormSchema(trackerId);
-
-      // Backend returns data merged at top level
-      // Handle both 'field-groups' (hyphen) and 'field_groups' (underscore)
-      const fieldGroups =
-        response["field-groups"] || response.field_groups || {};
-      // Initialize form data structure - optimized
+      const fieldGroups = response.field_groups || {};
       const initialData = {};
 
-      // Helper to process fields (either from array or converted from schema)
-      const processFields = (fields) => {
-        for (const field of fields) {
+      for (const groupName in fieldGroups) {
+        const group = fieldGroups[groupName];
+        if (!Array.isArray(group)) continue;
+
+        for (const field of group) {
           if (!field.options || field.options.length === 0) continue;
 
           const fieldData = {};
@@ -161,42 +48,6 @@ export default function LogSymptomsScreen({ route, navigation }) {
               option.option_type === "multiple_choice" ? [] : null;
           }
           initialData[field.field_name] = fieldData;
-        }
-      };
-
-      // Process all field groups (handle both array and schema formats)
-      for (const groupName in fieldGroups) {
-        const group = fieldGroups[groupName];
-        if (Array.isArray(group)) {
-          processFields(group);
-        } else if (group && typeof group === "object") {
-          // Convert schema to fields format
-          const convertedFields = convertSchemaToFields(group, groupName);
-          processFields(convertedFields);
-        }
-      }
-
-      // Calculate unique fields count
-      const tempFieldMap = new Map();
-      const tempSeenNames = new Set();
-      for (const groupName in fieldGroups) {
-        const group = fieldGroups[groupName];
-        let fieldsToProcess = [];
-
-        if (Array.isArray(group)) {
-          fieldsToProcess = group;
-        } else if (group && typeof group === "object") {
-          fieldsToProcess = convertSchemaToFields(group, groupName);
-        }
-
-        for (const field of fieldsToProcess) {
-          if (field) {
-            const key = field.field_name || field.id;
-            if (key && !tempSeenNames.has(key)) {
-              tempSeenNames.add(key);
-              tempFieldMap.set(key, field);
-            }
-          }
         }
       }
 
@@ -239,29 +90,20 @@ export default function LogSymptomsScreen({ route, navigation }) {
     }
   };
 
-  // Build Zod schema and initialize react-hook-form
-  // Rule A: Memoize schema creation strictly - only rebuild when formSchema changes
   const zodSchema = useMemo(() => {
     if (!formSchema) return null;
     return buildZodSchema(formSchema);
-  }, [formSchema]); // Only depends on formSchema, not any other state
+  }, [formSchema]);
 
-  // Build default values for the form
   const defaultValues = useMemo(() => {
     if (!formSchema?.fieldGroups) return {};
 
     const defaults = {};
     for (const groupName in formSchema.fieldGroups) {
       const group = formSchema.fieldGroups[groupName];
-      let fieldsToProcess = [];
+      if (!Array.isArray(group)) continue;
 
-      if (Array.isArray(group)) {
-        fieldsToProcess = group;
-      } else if (group && typeof group === "object") {
-        fieldsToProcess = convertSchemaToFields(group, groupName);
-      }
-
-      for (const field of fieldsToProcess) {
+      for (const field of group) {
         if (!field.options || field.options.length === 0) continue;
 
         const fieldDefaults = {};
@@ -280,8 +122,6 @@ export default function LogSymptomsScreen({ route, navigation }) {
     return defaults;
   }, [formSchema]);
 
-  // Initialize react-hook-form
-  // Use "onBlur" mode to reduce re-renders during typing/dragging
   const {
     control,
     handleSubmit: rhfHandleSubmit,
@@ -289,7 +129,7 @@ export default function LogSymptomsScreen({ route, navigation }) {
   } = useForm({
     resolver: zodSchema ? zodResolver(zodSchema) : undefined,
     defaultValues,
-    mode: "onBlur", // Changed from "onChange" to reduce re-renders
+    mode: "onBlur",
     reValidateMode: "onBlur",
   });
 
@@ -346,7 +186,6 @@ export default function LogSymptomsScreen({ route, navigation }) {
     }
   };
 
-  // Memoize the unique fields list to prevent recalculation on every render
   const uniqueFields = useMemo(() => {
     if (!formSchema?.fieldGroups) return [];
 
@@ -355,17 +194,15 @@ export default function LogSymptomsScreen({ route, navigation }) {
 
     for (const groupName in formSchema.fieldGroups) {
       const group = formSchema.fieldGroups[groupName];
-      let fieldsToProcess = [];
 
-      if (Array.isArray(group)) {
-        fieldsToProcess = group;
-      } else if (group && typeof group === "object") {
-        fieldsToProcess = convertSchemaToFields(group, groupName);
+      if (!Array.isArray(group)) {
+        console.warn(`Field group '${groupName}' is not an array`);
+        continue;
       }
 
-      for (const field of fieldsToProcess) {
+      for (const field of group) {
         if (field) {
-          const key = field.field_name || field.id;
+          const key = field.id || field.field_name;
           if (key && !seenFieldNames.has(key)) {
             seenFieldNames.add(key);
             fieldMap.set(key, field);
@@ -446,18 +283,13 @@ export default function LogSymptomsScreen({ route, navigation }) {
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
-        // ✅ iOS FIX: Disable scroll when slider is being touched
         scrollEnabled={true}
-        // ✅ iOS FIX: Keyboard handling
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
-        // ✅ iOS FIX: Reduce over-scroll to prevent gesture conflicts
         bounces={true}
         bouncesZoom={false}
-        // ✅ iOS FIX: Indicator configuration
         showsVerticalScrollIndicator={true}
         showsHorizontalScrollIndicator={false}
-        // ✅ iOS FIX: Content inset for iOS safe areas
         {...(Platform.OS === "ios" && {
           automaticallyAdjustContentInsets: false,
           contentInsetAdjustmentBehavior: "automatic",
