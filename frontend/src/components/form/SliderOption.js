@@ -75,10 +75,10 @@ const SliderOption = React.memo(
           onValueChange={handleValueChange}
           step={1}
           minimumTrackTintColor={
-            isAtNotSetPosition ? colors.surface : colors.primary
+            isAtNotSetPosition ? colors.surface : colors.slider
           }
           maximumTrackTintColor={colors.surface}
-          thumbTintColor={isAtNotSetPosition ? colors.border : colors.primary}
+          thumbTintColor={isAtNotSetPosition ? colors.border : colors.slider}
         />
         <View style={styles.sliderLabels}>
           <Text style={styles.sliderLabel}>{minValue}</Text>
@@ -114,7 +114,7 @@ const styles = StyleSheet.create({
   sliderValueDisplay: {
     fontSize: 20,
     fontWeight: "700",
-    color: colors.primary,
+    color: colors.slider,
   },
   sliderValuePlaceholder: {
     fontSize: 16,

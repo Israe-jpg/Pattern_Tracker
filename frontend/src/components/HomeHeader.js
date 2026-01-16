@@ -24,9 +24,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: 20,
     paddingTop: 60,
-    backgroundColor: colors.primary,
+    backgroundColor: colors.navigation,
     borderBottomWidth: 1,
-    borderBottomColor: colors.primaryDark,
+    borderBottomColor: colors.navigation,
   },
   menuButton: {
     padding: 4,

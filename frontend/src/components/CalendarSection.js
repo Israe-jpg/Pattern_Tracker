@@ -37,14 +37,16 @@ export default function CalendarSection({
             [selectedDate]: {
               ...calendarData[selectedDate],
               selected: true,
-              selectedColor: colors.primary,
+              selectedColor: colors.selected,
             },
           }}
           theme={{
-            backgroundColor: colors.surface,
-            calendarBackground: colors.surface,
+            backgroundColor: colors.calendar,
+            calendarBackground: colors.calendar,
+            dayBackgroundColor: colors.calendar,
+            todayBackgroundColor: colors.calendar,
             textSectionTitleColor: colors.text,
-            selectedDayBackgroundColor: colors.primary,
+            selectedDayBackgroundColor: colors.selected,
             selectedDayTextColor: colors.textOnPrimary,
             todayTextColor: colors.primary,
             dayTextColor: colors.text,
@@ -121,7 +123,7 @@ export default function CalendarSection({
 
 const styles = StyleSheet.create({
   calendarSection: {
-    backgroundColor: colors.surface,
+    backgroundColor: colors.calendar,
     padding: 20,
     marginTop: 20,
     marginHorizontal: 20,
@@ -173,13 +175,14 @@ const styles = StyleSheet.create({
     marginTop: 16,
     marginHorizontal: 20,
     marginBottom: 20,
+    alignItems: "flex-end",
   },
   logButton: {
     backgroundColor: colors.primary,
     paddingVertical: 14,
     paddingHorizontal: 24,
-    borderRadius: 8,
-    alignItems: "center",
+    borderRadius: 9999, // 50% border radius (pill shape)
+    alignSelf: "flex-end",
   },
   logButtonText: {
     color: colors.textOnPrimary,

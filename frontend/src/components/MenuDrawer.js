@@ -460,7 +460,7 @@ const styles = StyleSheet.create({
     top: 0,
     bottom: 0,
     width: DRAWER_WIDTH,
-    backgroundColor: colors.primary,
+    backgroundColor: colors.navigation,
     zIndex: 999,
     ...(Platform.OS === "web"
       ? {
@@ -484,7 +484,7 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingTop: 60,
     borderBottomWidth: 1,
-    borderBottomColor: colors.primaryDark,
+    borderBottomColor: colors.navigation,
   },
   drawerTitle: {
     fontSize: 24,
@@ -533,7 +533,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 4,
     borderRadius: 4,
-    backgroundColor: colors.primaryLight,
+    backgroundColor: colors.navigationLight,
   },
   hideButtonText: {
     fontSize: 12,
@@ -555,7 +555,7 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: colors.primaryDark,
+    backgroundColor: colors.trackerItem,
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderRadius: 28,
@@ -626,7 +626,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: colors.primaryDark,
+    backgroundColor: colors.trackerItem,
     borderRadius: 28,
     paddingHorizontal: 12,
     paddingVertical: 8,
@@ -657,7 +657,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: colors.primaryDark,
+    backgroundColor: colors.trackerItem,
     justifyContent: "center",
     alignItems: "center",
     ...(Platform.OS === "web"
@@ -679,7 +679,7 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: colors.primaryDark,
+    backgroundColor: colors.trackerItem,
     justifyContent: "center",
     alignItems: "center",
     ...(Platform.OS === "web"
@@ -708,12 +708,12 @@ const styles = StyleSheet.create({
   dropdown: {
     position: "absolute",
     right: 20,
-    backgroundColor: colors.primaryDark,
+    backgroundColor: colors.trackerItem,
     borderRadius: 12,
     minWidth: 220,
     zIndex: 1002,
     borderWidth: 1,
-    borderColor: colors.primaryLight,
+    borderColor: colors.trackerItemLight,
     overflow: "hidden",
     ...(Platform.OS === "web"
       ? {
@@ -748,7 +748,7 @@ const styles = StyleSheet.create({
   },
   dropdownDivider: {
     height: 1,
-    backgroundColor: colors.primaryLight,
+    backgroundColor: colors.trackerItemLight,
     marginHorizontal: 16,
   },
 });

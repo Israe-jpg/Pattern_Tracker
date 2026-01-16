@@ -138,8 +138,8 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
   choiceButtonSelected: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
+    backgroundColor: colors.selected,
+    borderColor: colors.selected,
   },
   choiceButtonText: {
     fontSize: 13,
