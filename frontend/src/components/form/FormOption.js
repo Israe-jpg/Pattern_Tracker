@@ -11,6 +11,7 @@ import SliderOption from "./SliderOption";
 import ChoiceOption from "./ChoiceOption";
 import TimePickerOption from "./TimePickerOption";
 import TemperaturePickerOption from "./TemperaturePickerOption";
+import IncrementDecrementOption from "./IncrementDecrementOption";
 
 const FormOption = React.memo(
   ({ field, option, value, onChange }) => {
@@ -49,6 +50,21 @@ const FormOption = React.memo(
             <View style={styles.optionContainer}>
               <Text style={styles.optionLabel}>{optionLabel}</Text>
               <TemperaturePickerOption value={value} onChange={onChange} />
+            </View>
+          );
+        }
+        // Check if this is sleep hours - use increment/decrement control
+        if (option.option_name === "hours" && field.field_name === "sleep") {
+          return (
+            <View style={styles.optionContainer}>
+              <Text style={styles.optionLabel}>{optionLabel}</Text>
+              <IncrementDecrementOption
+                value={value}
+                onChange={onChange}
+                minValue={option.min_value || 0}
+                maxValue={option.max_value || 24}
+                step={option.step || 0.5}
+              />
             </View>
           );
         }
