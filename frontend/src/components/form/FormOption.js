@@ -10,6 +10,7 @@ import { colors } from "../../constants/colors";
 import SliderOption from "./SliderOption";
 import ChoiceOption from "./ChoiceOption";
 import TimePickerOption from "./TimePickerOption";
+import TemperaturePickerOption from "./TemperaturePickerOption";
 
 const FormOption = React.memo(
   ({ field, option, value, onChange }) => {
@@ -42,6 +43,16 @@ const FormOption = React.memo(
         );
 
       case "number_input":
+        // Check if this is basal_temperature - use temperature picker
+        if (option.option_name === "basal_temperature") {
+          return (
+            <View style={styles.optionContainer}>
+              <Text style={styles.optionLabel}>{optionLabel}</Text>
+              <TemperaturePickerOption value={value} onChange={onChange} />
+            </View>
+          );
+        }
+        // Regular number input
         return (
           <View style={styles.optionContainer}>
             <Text style={styles.optionLabel}>{optionLabel}</Text>
@@ -68,6 +79,19 @@ const FormOption = React.memo(
 
       case "text":
       case "notes":
+        // Fallback: Check by option_name for time fields (in case backend hasn't updated yet)
+        if (
+          option.option_name === "time_taken" ||
+          (option.option_name?.toLowerCase().includes("time") &&
+            option.option_type === "text")
+        ) {
+          return (
+            <View style={styles.optionContainer}>
+              <Text style={styles.optionLabel}>{optionLabel}</Text>
+              <TimePickerOption value={value} onChange={onChange} />
+            </View>
+          );
+        }
         return (
           <View style={styles.optionContainer}>
             <Text style={styles.optionLabel}>{optionLabel}</Text>

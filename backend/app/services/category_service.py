@@ -573,8 +573,12 @@ class CategoryService:
         """Convert schema format to option data format."""
         # Determine option type from schema type
         schema_type = option_schema.get('type', 'string')
+        schema_format = option_schema.get('format', None)
         
-        if schema_type == 'integer':
+        # Check for time format first
+        if schema_format == 'time':
+            option_type = 'time'
+        elif schema_type == 'integer':
             option_type = 'rating' if 'range' in option_schema else 'number_input'
         elif schema_type == 'string':
             option_type = 'single_choice' if 'enum' in option_schema else 'text'

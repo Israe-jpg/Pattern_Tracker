@@ -8,6 +8,7 @@ const TimePickerOption = React.memo(({ value, onChange }) => {
   const [selectedHour, setSelectedHour] = useState(9);
   const [selectedMinute, setSelectedMinute] = useState(0);
   const [selectedPeriod, setSelectedPeriod] = useState("AM");
+  const [hasInteracted, setHasInteracted] = useState(false);
 
   // Parse existing value if present
   React.useEffect(() => {
@@ -17,31 +18,96 @@ const TimePickerOption = React.memo(({ value, onChange }) => {
         setSelectedHour(parseInt(match[1]));
         setSelectedMinute(parseInt(match[2]));
         setSelectedPeriod(match[3].toUpperCase());
+        setHasInteracted(true); // User has a saved value
       }
+    } else {
+      // Reset to defaults when no value
+      setSelectedHour(9);
+      setSelectedMinute(0);
+      setSelectedPeriod("AM");
+      setHasInteracted(false);
     }
   }, [value]);
 
+  // Reset interaction state when modal opens
+  React.useEffect(() => {
+    if (showPicker) {
+      setHasInteracted(!!value); // If there's a value, user has interacted
+    }
+  }, [showPicker, value]);
+
   const formatTime = (hour, minute, period) => {
-    const h = hour.toString().padStart(2, '0');
+    // Format: "H:MM AM/PM" or "HH:MM AM/PM" (single digit hour is allowed)
+    const h = hour.toString(); // Don't pad hour - allows 1-12
     const m = minute.toString().padStart(2, '0');
     return `${h}:${m} ${period}`;
   };
 
+  const validateTime = () => {
+    // Check if hour, minute, and period are all valid
+    if (!selectedHour || selectedHour < 1 || selectedHour > 12) {
+      return { isValid: false, error: "Please select a valid hour" };
+    }
+    if (selectedMinute === null || selectedMinute === undefined || selectedMinute < 0 || selectedMinute > 59) {
+      return { isValid: false, error: "Please select a valid minute" };
+    }
+    if (!selectedPeriod || !["AM", "PM"].includes(selectedPeriod)) {
+      return { isValid: false, error: "Please select AM or PM" };
+    }
+    return { isValid: true, error: null };
+  };
+
+  const handleSelection = (type, newValue) => {
+    setHasInteracted(true);
+    if (type === "hour") {
+      setSelectedHour(newValue);
+    } else if (type === "minute") {
+      setSelectedMinute(newValue);
+    } else if (type === "period") {
+      setSelectedPeriod(newValue);
+    }
+  };
+
   const handleConfirm = () => {
+    if (isConfirmDisabled) {
+      return; // Don't proceed if validation fails
+    }
     const timeString = formatTime(selectedHour, selectedMinute, selectedPeriod);
     onChange(timeString);
     setShowPicker(false);
   };
 
-  const handleCancel = () => {
+  const handleClear = () => {
+    onChange(null);
     setShowPicker(false);
   };
+
+  const handleCancel = () => {
+    // Reset to original values
+    if (value) {
+      const match = value.match(/(\d+):(\d+)\s*(AM|PM)/i);
+      if (match) {
+        setSelectedHour(parseInt(match[1]));
+        setSelectedMinute(parseInt(match[2]));
+        setSelectedPeriod(match[3].toUpperCase());
+      }
+    } else {
+      setSelectedHour(9);
+      setSelectedMinute(0);
+      setSelectedPeriod("AM");
+    }
+    setHasInteracted(!!value);
+    setShowPicker(false);
+  };
+
+  const validation = validateTime();
+  const isConfirmDisabled = !hasInteracted || !validation.isValid;
 
   const displayValue = value || "Select time";
 
   // Generate arrays for picker
   const hours = Array.from({ length: 12 }, (_, i) => i + 1);
-  const minutes = Array.from({ length: 12 }, (_, i) => i * 5);
+  const minutes = Array.from({ length: 12 }, (_, i) => i * 5); // 0, 5, 10, 15, ..., 55
   const periods = ["AM", "PM"];
 
   return (
@@ -80,7 +146,7 @@ const TimePickerOption = React.memo(({ value, onChange }) => {
                         styles.pickerItem,
                         selectedHour === hour && styles.pickerItemSelected,
                       ]}
-                      onPress={() => setSelectedHour(hour)}
+                      onPress={() => handleSelection("hour", hour)}
                     >
                       <Text
                         style={[
@@ -106,7 +172,7 @@ const TimePickerOption = React.memo(({ value, onChange }) => {
                         styles.pickerItem,
                         selectedMinute === minute && styles.pickerItemSelected,
                       ]}
-                      onPress={() => setSelectedMinute(minute)}
+                      onPress={() => handleSelection("minute", minute)}
                     >
                       <Text
                         style={[
@@ -132,7 +198,7 @@ const TimePickerOption = React.memo(({ value, onChange }) => {
                         styles.pickerItem,
                         selectedPeriod === period && styles.pickerItemSelected,
                       ]}
-                      onPress={() => setSelectedPeriod(period)}
+                      onPress={() => handleSelection("period", period)}
                     >
                       <Text
                         style={[
@@ -148,6 +214,28 @@ const TimePickerOption = React.memo(({ value, onChange }) => {
               </View>
             </View>
 
+            {/* Preview of selected time */}
+            <View style={styles.previewContainer}>
+              <Text style={styles.previewLabel}>Selected Time:</Text>
+              <Text style={styles.previewTime}>
+                {formatTime(selectedHour, selectedMinute, selectedPeriod)}
+              </Text>
+              {validation.error && (
+                <Text style={styles.errorText}>{validation.error}</Text>
+              )}
+            </View>
+
+            {/* Clear button - only show if there's an existing value */}
+            {value && (
+              <TouchableOpacity
+                style={styles.clearButton}
+                onPress={handleClear}
+              >
+                <Ionicons name="close-circle" size={18} color={colors.error} />
+                <Text style={styles.clearButtonText}>Clear Selection</Text>
+              </TouchableOpacity>
+            )}
+
             <View style={styles.modalActions}>
               <TouchableOpacity
                 style={[styles.modalButton, styles.cancelButton]}
@@ -156,10 +244,22 @@ const TimePickerOption = React.memo(({ value, onChange }) => {
                 <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.modalButton, styles.confirmButton]}
+                style={[
+                  styles.modalButton,
+                  styles.confirmButton,
+                  isConfirmDisabled && styles.confirmButtonDisabled,
+                ]}
                 onPress={handleConfirm}
+                disabled={isConfirmDisabled}
               >
-                <Text style={styles.confirmButtonText}>Confirm</Text>
+                <Text
+                  style={[
+                    styles.confirmButtonText,
+                    isConfirmDisabled && styles.confirmButtonTextDisabled,
+                  ]}
+                >
+                  Confirm
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -269,6 +369,43 @@ const styles = StyleSheet.create({
   confirmButton: {
     backgroundColor: colors.primary,
   },
+  confirmButtonDisabled: {
+    backgroundColor: colors.surface,
+    opacity: 0.5,
+  },
+  previewContainer: {
+    marginBottom: 20,
+    alignItems: "center",
+  },
+  previewLabel: {
+    fontSize: 12,
+    color: colors.textLight,
+    marginBottom: 4,
+  },
+  previewTime: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: colors.primary,
+  },
+  errorText: {
+    fontSize: 12,
+    color: colors.error,
+    marginTop: 4,
+    textAlign: "center",
+  },
+  clearButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 10,
+    marginBottom: 12,
+    gap: 6,
+  },
+  clearButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: colors.error,
+  },
   cancelButtonText: {
     fontSize: 16,
     fontWeight: "600",
@@ -278,6 +415,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     color: colors.textOnPrimary,
+  },
+  confirmButtonTextDisabled: {
+    color: colors.textLight,
   },
 });
 

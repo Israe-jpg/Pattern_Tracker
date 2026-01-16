@@ -119,7 +119,7 @@ class FieldOptionSchema(Schema):
         validate.Regexp(r'^[a-z][a-z0-9_]*$', error='Option name must be lowercase, start with letter, and contain only letters, numbers, and underscores')
     ])
     option_type = fields.Str(required=True, validate=validate.OneOf([
-        'rating', 'single_choice', 'multiple_choice', 'yes_no', 'number_input', 'text', 'notes'
+        'rating', 'single_choice', 'multiple_choice', 'yes_no', 'number_input', 'text', 'notes', 'time'
     ]))
     option_order = fields.Int(missing=0)
     is_required = fields.Bool(missing=False)

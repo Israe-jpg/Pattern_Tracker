@@ -66,7 +66,8 @@ class FieldOption(db.Model):
         'yes_no': 'boolean',          # True/False
         'number_input': 'float',       # Free number input (float accepts both int and float)
         'text': 'string',             # Free text
-        'notes': 'string'             # Free text (longer)
+        'notes': 'string',            # Free text (longer)
+        'time': 'string'              # Time input (HH:MM AM/PM format)
     }
     
     OPTION_TYPE_LABELS = {
@@ -76,7 +77,8 @@ class FieldOption(db.Model):
         'yes_no': 'Yes/No',
         'number_input': 'Number Input',
         'text': 'Text Input',
-        'notes': 'Notes (free text)'
+        'notes': 'Notes (free text)',
+        'time': 'Time Picker'
     }
     
     def to_dict(self):
@@ -112,6 +114,10 @@ class FieldOption(db.Model):
             'type': technical_type,
             'optional': not self.is_required
         }
+        
+        # Add format for time fields
+        if self.option_type == 'time':
+            schema['format'] = 'time'
         
         # Add enum/choices
         if self.choices:
