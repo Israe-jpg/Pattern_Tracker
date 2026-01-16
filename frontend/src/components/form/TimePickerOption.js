@@ -178,7 +178,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: colors.background,
+    backgroundColor: "#FFFFFF",
     borderRadius: 8,
     padding: 12,
     borderWidth: 1,
@@ -198,7 +198,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   modalContent: {
-    backgroundColor: colors.background,
+    backgroundColor: "#FFFFFF",
     borderRadius: 12,
     padding: 20,
     width: "85%",
