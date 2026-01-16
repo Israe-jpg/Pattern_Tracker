@@ -7,19 +7,22 @@ class TrackerField(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     category_id = db.Column(db.Integer, db.ForeignKey('tracker_categories.id'), nullable=False)
     
-    # Field identification - simplified for the new structure
-    field_name = db.Column(db.String(100), nullable=False)              # "Mood", "Sleep", "Energy"
-    field_parent = db.Column(db.String(100), nullable=True)             # "discharge" (for nested fields) - DEPRECATED
-    parent_id = db.Column(db.Integer, db.ForeignKey('tracker_fields.id'), nullable=True) #Proper parent relationship
-    field_full_path = db.Column(db.String(200), nullable=True)          # "discharge.amount"
+    # Field identification
+    field_name = db.Column(db.String(100), nullable=False)
+    field_parent = db.Column(db.String(100), nullable=True)
+    parent_id = db.Column(db.Integer, db.ForeignKey('tracker_fields.id'), nullable=True)
+    field_full_path = db.Column(db.String(200), nullable=True)
     
-    # Field configuration - basic info only, options handled by FieldOption model
-    display_label = db.Column(db.String(200), nullable=True)    # "How was your mood today?"
-    help_text = db.Column(db.Text, nullable=True)               # "Track your daily mood patterns"
+    # Field configuration
+    display_label = db.Column(db.String(200), nullable=True)
+    help_text = db.Column(db.Text, nullable=True)
+    
+    # Context for conditional fields
+    context = db.Column(db.String(100), nullable=True)
     
     # Ordering and grouping
     field_order = db.Column(db.Integer, default=0)
-    field_group = db.Column(db.String(100), nullable=True)  # 'baseline', 'custom', etc.
+    field_group = db.Column(db.String(100), nullable=True)
     
     # Metadata
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -48,17 +51,18 @@ class TrackerField(db.Model):
         return {
             'id': self.id,
             'field_name': self.field_name,
-            'field_parent': self.field_parent,  # Keep for backward compatibility
+            'field_parent': self.field_parent,
             'parent_id': self.parent_id,
             'field_full_path': self.field_full_path,
             'display_label': self.display_label,
             'help_text': self.help_text,
+            'context': self.context,
             'field_order': self.field_order,
             'field_group': self.field_group,
             'is_active': self.is_active,
             'has_children': len(self.children) > 0 if self.children else False,
             'children_count': len(self.children) if self.children else 0,
-            'options': field_options,  # NEW: Include all field options
+            'options': field_options,
             'options_count': len(field_options)
         }
     

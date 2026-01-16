@@ -611,15 +611,15 @@ def get_form_schema(tracker_id: int):
                     }
                 )
             
-            # Format response consistently with other trackers
+            # Format response consistently with other trackers (now using field_groups from result)
             cycle_info = result.get('cycle_info') or {}
             predictions = result.get('predictions') or {}
-            data_schema = result.get('data_schema') or {}
+            field_groups = result.get('field_groups') or {}
             
             return success_response(
                 "Form schema retrieved successfully",
                 {
-                    'field_groups': data_schema,
+                    'field_groups': field_groups,  # Now returns array format with database IDs
                     'tracker_name': category.name,
                     'tracker_id': tracker.id,
                     'cycle_info': {
@@ -631,12 +631,12 @@ def get_form_schema(tracker_id: int):
                         'ovulation_date': predictions.get('ovulation_date'),
                         'next_period_date': predictions.get('next_period_date'),
                         'period_expected_soon': predictions.get('period_expected_soon'),
-                        'period_late': predictions.get('period_late')
+                        'period_late': predictions.get('period_late'),
+                        'fertility_window': predictions.get('fertility_window')
                     },
                     'is_prebuilt': True,
                     'is_contextual': True,
-                    'context': result.get('context'),
-                    'field_count': len(data_schema.get('baseline', [])) + len(data_schema.get('period_tracker', [])) + len(data_schema.get('custom', [])),
+                    'field_count': len(field_groups.get('baseline', [])) + len(field_groups.get('period_tracker', [])) + len(field_groups.get('custom', [])),
                 }
             )
         
@@ -707,7 +707,7 @@ def get_form_schema(tracker_id: int):
         return success_response(
             "Form schema retrieved successfully",
             {
-                'field-groups': field_groups,
+                'field_groups': field_groups,  # Changed to underscore for consistency
                 'tracker_name': category.name,
                 'tracker_id': tracker.id,
                 'is_prebuilt': is_prebuilt,
