@@ -12,6 +12,7 @@ import {
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import FormField from "../components/form/FormField";
+import FormFieldEdit from "../components/form/FormFieldEdit";
 import { Ionicons } from "@expo/vector-icons";
 import { trackerService } from "../services/trackerService";
 import { dataTrackingService } from "../services/dataTrackingService";
@@ -23,8 +24,10 @@ export default function LogSymptomsScreen({ route, navigation }) {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [formSchema, setFormSchema] = useState(null);
+  const [managementSchema, setManagementSchema] = useState(null);
   const [existingData, setExistingData] = useState(null);
   const [entryDate] = useState(new Date().toISOString().split("T")[0]); // Today's date
+  const [isEditMode, setIsEditMode] = useState(false);
 
   useEffect(() => {
     initializeForm();
@@ -266,28 +269,200 @@ export default function LogSymptomsScreen({ route, navigation }) {
   };
 
   /**
+   * Edit mode handlers
+   */
+  const handleDeleteField = (field) => {
+    Alert.alert(
+      "Delete Field",
+      `Are you sure you want to delete "${
+        field.display_label || field.field_name
+      }"?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            console.log("Delete field:", field.field_name);
+            // TODO: Implement field deletion API call
+          },
+        },
+      ]
+    );
+  };
+
+  const handleEditField = (field) => {
+    console.log("Edit field:", field.field_name);
+    // TODO: Navigate to field edit screen or show modal
+    Alert.alert(
+      "Edit Field",
+      `Editing "${field.display_label || field.field_name}"`
+    );
+  };
+
+  const handleDeleteOption = (field, option) => {
+    Alert.alert(
+      "Delete Option",
+      `Delete "${option.display_label || option.option_name}" from "${
+        field.display_label || field.field_name
+      }"?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            console.log(
+              "Delete option:",
+              option.option_name,
+              "from field:",
+              field.field_name
+            );
+            // TODO: Implement option deletion API call
+          },
+        },
+      ]
+    );
+  };
+
+  const handleEditOption = (field, option) => {
+    console.log(
+      "Edit option:",
+      option.option_name,
+      "from field:",
+      field.field_name
+    );
+    // TODO: Navigate to option edit screen or show modal
+    Alert.alert(
+      "Edit Option",
+      `Editing "${option.display_label || option.option_name}"`
+    );
+  };
+
+  const handleAddField = () => {
+    console.log("Add new field");
+    // TODO: Navigate to field creation screen or show modal
+    Alert.alert("Add Field", "Create a new field for this form");
+  };
+
+  const handleAddOption = (field) => {
+    console.log("Add option to field:", field.field_name);
+    // TODO: Navigate to option creation screen or show modal
+    Alert.alert(
+      "Add Option",
+      `Add a new option to "${field.display_label || field.field_name}"`
+    );
+  };
+
+  const handleToggleField = (field, activate) => {
+    const action = activate ? "Show" : "Hide";
+    Alert.alert(
+      `${action} Field`,
+      `${action} "${field.display_label || field.field_name}" in the form?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: action,
+          onPress: () => {
+            console.log(`${action} field:`, field.field_name);
+            // TODO: Implement field toggle API call
+          },
+        },
+      ]
+    );
+  };
+
+  const handleToggleOption = (field, option, activate) => {
+    const action = activate ? "Show" : "Hide";
+    Alert.alert(
+      `${action} Option`,
+      `${action} "${option.display_label || option.option_name}" in "${
+        field.display_label || field.field_name
+      }"?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: action,
+          onPress: () => {
+            console.log(
+              `${action} option:`,
+              option.option_name,
+              "from field:",
+              field.field_name
+            );
+            // TODO: Implement option toggle API call
+          },
+        },
+      ]
+    );
+  };
+
+  /**
+   * Load management schema for edit mode
+   */
+  const loadManagementSchema = async () => {
+    try {
+      console.log("📋 Loading management schema for edit mode...");
+      const schema = await trackerService.getManagementSchema(trackerId);
+      setManagementSchema(schema);
+      console.log("✅ Management schema loaded:", schema);
+    } catch (error) {
+      console.error("❌ Error loading management schema:", error);
+      Alert.alert("Error", "Failed to load form editor. Please try again.");
+    }
+  };
+
+  /**
+   * Toggle edit mode
+   */
+  const toggleEditMode = async () => {
+    if (!isEditMode && !managementSchema) {
+      // Entering edit mode - load management schema
+      await loadManagementSchema();
+    }
+    setIsEditMode(!isEditMode);
+  };
+
+  /**
    * Get unique fields from all field groups
    */
   const fields = useMemo(() => {
-    if (!formSchema?.field_groups) return [];
+    // Use management schema in edit mode, regular schema otherwise
+    const schema = isEditMode ? managementSchema : formSchema;
 
-    const uniqueFields = [];
-    const seenIds = new Set();
+    if (isEditMode) {
+      // Management schema has a different structure: baseline_fields, category_fields, custom_fields
+      if (!schema) return [];
 
-    Object.values(formSchema.field_groups).forEach((group) => {
-      if (!Array.isArray(group)) return;
+      const allFields = [
+        ...(schema.baseline_fields || []),
+        ...(schema.category_fields || []),
+        ...(schema.custom_fields || []),
+      ];
 
-      group.forEach((field) => {
-        const key = field.id || field.field_name;
-        if (key && !seenIds.has(key)) {
-          seenIds.add(key);
-          uniqueFields.push(field);
-        }
+      return allFields;
+    } else {
+      // Regular form schema has field_groups
+      if (!schema?.field_groups) return [];
+
+      const uniqueFields = [];
+      const seenIds = new Set();
+
+      Object.values(schema.field_groups).forEach((group) => {
+        if (!Array.isArray(group)) return;
+
+        group.forEach((field) => {
+          const key = field.id || field.field_name;
+          if (key && !seenIds.has(key)) {
+            seenIds.add(key);
+            uniqueFields.push(field);
+          }
+        });
       });
-    });
 
-    return uniqueFields;
-  }, [formSchema]);
+      return uniqueFields;
+    }
+  }, [formSchema, managementSchema, isEditMode]);
 
   // Loading state - Professional skeleton loader
   if (loading) {
@@ -383,22 +558,29 @@ export default function LogSymptomsScreen({ route, navigation }) {
           <Ionicons name="arrow-back" size={24} color={colors.textOnPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>
-          {existingData ? "Update" : "Log"} Symptoms
+          {isEditMode ? "Edit Form" : existingData ? "Update" : "Log"} Symptoms
         </Text>
-        <TouchableOpacity
-          style={[
-            styles.headerSubmitButton,
-            (!isDirty || submitting) && styles.headerSubmitButtonDisabled,
-          ]}
-          onPress={handleSubmit(onSubmit)}
-          disabled={!isDirty || submitting}
-        >
-          {submitting ? (
-            <ActivityIndicator size="small" color={colors.textOnPrimary} />
-          ) : (
-            <Ionicons name="checkmark" size={24} color={colors.textOnPrimary} />
-          )}
-        </TouchableOpacity>
+        {!isEditMode && (
+          <TouchableOpacity
+            style={[
+              styles.headerSubmitButton,
+              (!isDirty || submitting) && styles.headerSubmitButtonDisabled,
+            ]}
+            onPress={handleSubmit(onSubmit)}
+            disabled={!isDirty || submitting}
+          >
+            {submitting ? (
+              <ActivityIndicator size="small" color={colors.textOnPrimary} />
+            ) : (
+              <Ionicons
+                name="checkmark"
+                size={24}
+                color={colors.textOnPrimary}
+              />
+            )}
+          </TouchableOpacity>
+        )}
+        {isEditMode && <View style={styles.placeholder} />}
       </View>
 
       <ScrollView
@@ -407,53 +589,119 @@ export default function LogSymptomsScreen({ route, navigation }) {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={true}
       >
-        {/* Date indicator */}
-        <View style={styles.dateContainer}>
-          <Ionicons name="calendar" size={20} color={colors.primary} />
-          <Text style={styles.dateText}>
-            {new Date(entryDate).toLocaleDateString("en-US", {
-              weekday: "long",
-              year: "numeric",
-              month: "long",
-              day: "numeric",
-            })}
-          </Text>
-        </View>
+        {/* Date indicator - only show in normal mode */}
+        {!isEditMode && (
+          <View style={styles.dateContainer}>
+            <Ionicons name="calendar" size={20} color={colors.primary} />
+            <Text style={styles.dateText}>
+              {new Date(entryDate).toLocaleDateString("en-US", {
+                weekday: "long",
+                year: "numeric",
+                month: "long",
+                day: "numeric",
+              })}
+            </Text>
+          </View>
+        )}
+
+        {/* Edit mode indicator */}
+        {isEditMode && (
+          <View style={styles.editModeIndicator}>
+            <Ionicons name="build-outline" size={20} color={colors.primary} />
+            <Text style={styles.editModeText}>
+              Edit mode - Customize your form fields and options
+            </Text>
+          </View>
+        )}
 
         {/* Form fields */}
-        {fields.map((field) => (
-          <FormField
-            key={field.id || field.field_name}
-            field={field}
-            control={control}
-          />
-        ))}
-
-        {/* Submit button */}
-        <TouchableOpacity
-          style={[
-            styles.submitButton,
-            (!isDirty || submitting) && styles.submitButtonDisabled,
-          ]}
-          onPress={handleSubmit(onSubmit)}
-          disabled={!isDirty || submitting}
-        >
-          {submitting ? (
-            <ActivityIndicator size="small" color={colors.textOnPrimary} />
-          ) : (
-            <>
-              <Ionicons
-                name="checkmark"
-                size={20}
-                color={colors.textOnPrimary}
-                style={styles.buttonIcon}
+        {isEditMode ? (
+          // Edit mode - show field editor
+          <>
+            {fields.map((field) => (
+              <FormFieldEdit
+                key={field.id || field.field_name}
+                field={field}
+                onDeleteField={handleDeleteField}
+                onEditField={handleEditField}
+                onDeleteOption={handleDeleteOption}
+                onEditOption={handleEditOption}
+                onAddOption={handleAddOption}
+                onToggleField={handleToggleField}
+                onToggleOption={handleToggleOption}
               />
-              <Text style={styles.submitButtonText}>
-                {existingData ? "Update" : "Submit"}
-              </Text>
-            </>
+            ))}
+            {/* Add field button */}
+            <TouchableOpacity
+              style={styles.addFieldButton}
+              onPress={handleAddField}
+            >
+              <Ionicons
+                name="add-circle-outline"
+                size={24}
+                color={colors.primary}
+              />
+              <Text style={styles.addFieldText}>Add New Field</Text>
+            </TouchableOpacity>
+          </>
+        ) : (
+          // Normal mode - show form
+          fields.map((field) => (
+            <FormField
+              key={field.id || field.field_name}
+              field={field}
+              control={control}
+            />
+          ))
+        )}
+
+        {/* Submit and Edit buttons */}
+        <View
+          style={[
+            styles.bottomButtonsContainer,
+            isEditMode && styles.bottomButtonsContainerCentered,
+          ]}
+        >
+          {!isEditMode && (
+            <TouchableOpacity
+              style={[
+                styles.submitButton,
+                (!isDirty || submitting) && styles.submitButtonDisabled,
+              ]}
+              onPress={handleSubmit(onSubmit)}
+              disabled={!isDirty || submitting}
+            >
+              {submitting ? (
+                <ActivityIndicator size="small" color={colors.textOnPrimary} />
+              ) : (
+                <>
+                  <Ionicons
+                    name="checkmark"
+                    size={20}
+                    color={colors.textOnPrimary}
+                    style={styles.buttonIcon}
+                  />
+                  <Text style={styles.submitButtonText}>
+                    {existingData ? "Update" : "Submit"}
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
           )}
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.editFormButton,
+              isEditMode && styles.editFormButtonActive,
+            ]}
+            onPress={toggleEditMode}
+          >
+            <Ionicons
+              name={isEditMode ? "checkmark" : "create-outline"}
+              size={20}
+              color={isEditMode ? colors.textOnPrimary : colors.primary}
+            />
+          </TouchableOpacity>
+        </View>
       </ScrollView>
     </View>
   );
@@ -521,15 +769,43 @@ const styles = StyleSheet.create({
     color: colors.text,
     marginLeft: 10,
   },
+  editModeIndicator: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
+  editModeText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: colors.text,
+    marginLeft: 10,
+    flex: 1,
+  },
+  bottomButtonsContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 20,
+    marginBottom: 40,
+    gap: 12,
+  },
+  bottomButtonsContainerCentered: {
+    justifyContent: "center",
+  },
   submitButton: {
     backgroundColor: colors.primary,
-    paddingVertical: 16,
-    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 50,
     alignItems: "center",
     flexDirection: "row",
     justifyContent: "center",
-    marginTop: 20,
-    marginBottom: 40,
+    alignSelf: "flex-start",
   },
   submitButtonDisabled: {
     opacity: 0.6,
@@ -541,6 +817,38 @@ const styles = StyleSheet.create({
     color: colors.textOnPrimary,
     fontSize: 16,
     fontWeight: "600",
+  },
+  editFormButton: {
+    backgroundColor: colors.surface,
+    padding: 12,
+    borderRadius: 50,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  editFormButtonActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  addFieldButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.formFieldBackground,
+    borderRadius: 12,
+    padding: 20,
+    marginBottom: 16,
+    marginHorizontal: 20,
+    borderWidth: 2,
+    borderColor: colors.primary,
+    borderStyle: "dashed",
+    gap: 8,
+  },
+  addFieldText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: colors.primary,
   },
   loadingText: {
     marginTop: 12,

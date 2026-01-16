@@ -20,6 +20,12 @@ export const trackerService = {
     return response.data;
   },
 
+  // Get management schema (all fields including baseline for editing)
+  getManagementSchema: async (trackerId) => {
+    const response = await api.get(API_ENDPOINTS.MANAGEMENT_SCHEMA(trackerId));
+    return response.data;
+  },
+
   // Create custom tracker
   createCustomTracker: async (trackerData) => {
     const response = await api.post(

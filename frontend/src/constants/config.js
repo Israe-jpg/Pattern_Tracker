@@ -59,6 +59,7 @@ export const API_ENDPOINTS = {
   SETUP_DEFAULT_TRACKERS: "/trackers/setup-default-trackers",
   TRACKER_DETAILS: (id) => `/trackers/${id}/tracker-details`,
   FORM_SCHEMA: (id) => `/trackers/${id}/form-schema`,
+  MANAGEMENT_SCHEMA: (id) => `/trackers/${id}/management-schema`,
   CREATE_CUSTOM_TRACKER: "/trackers/create-custom-category",
   TRACKER_SETTINGS: (id) => `/trackers/${id}/tracker-settings`,
   UPDATE_DEFAULT_TRACKER: (id) => `/trackers/update-default-tracker/${id}`,

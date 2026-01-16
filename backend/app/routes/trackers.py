@@ -751,14 +751,13 @@ def get_management_schema(tracker_id: int):
         
         db.session.expire_all()
         
-        # Get baseline fields
+        # Get baseline fields (including inactive for management UI)
         baseline_fields = TrackerField.query.filter_by(
             category_id=category.id,
-            field_group='baseline',
-            is_active=True
+            field_group='baseline'
         ).order_by(TrackerField.field_order.asc()).all()
         
-        # Get category-specific fields
+        # Get category-specific fields (including inactive)
         category_specific_fields = []
         is_prebuilt = CategoryService.is_prebuilt_category(category.name)
         print(f"Is prebuilt: {is_prebuilt}")
@@ -770,38 +769,33 @@ def get_management_schema(tracker_id: int):
             if section_key:
                 category_specific_fields = TrackerField.query.filter_by(
                     category_id=category.id,
-                    field_group=section_key,
-                    is_active=True
+                    field_group=section_key
                 ).order_by(TrackerField.field_order.asc()).all()
                 print(f"Category specific fields: {category_specific_fields}")
             
         
-        # Get custom fields
+        # Get custom fields (including inactive)
         custom_fields = []
         if is_prebuilt:
             # User-specific fields
             custom_fields = TrackerUserField.query.filter_by(
-                tracker_id=tracker.id,
-                is_active=True
+                tracker_id=tracker.id
             ).order_by(TrackerUserField.field_order.asc()).all()
         else:
             # Category-level custom fields
             custom_fields = TrackerField.query.filter_by(
                 category_id=category.id,
-                field_group='custom',
-                is_active=True
+                field_group='custom'
             ).order_by(TrackerField.field_order.asc()).all()
         
         def serialize_field(field):
             if isinstance(field, TrackerUserField):
                 options = FieldOption.query.filter_by(
-                    tracker_user_field_id=field.id,
-                    is_active=True
+                    tracker_user_field_id=field.id
                 ).order_by(FieldOption.option_order.asc()).all()
             else:
                 options = FieldOption.query.filter_by(
-                    tracker_field_id=field.id,
-                    is_active=True
+                    tracker_field_id=field.id
                 ).order_by(FieldOption.option_order.asc()).all()
             
             data = field.to_dict()
@@ -809,14 +803,30 @@ def get_management_schema(tracker_id: int):
             data['is_user_field'] = isinstance(field, TrackerUserField)
             return data
         
+        # Filter out container/grouping fields (fields without options that are just containers)
+        # For period tracker: exclude 'menstruating', 'not_menstruating', 'primary_data', 'calculated_data'
+        container_field_names = {'menstruating', 'not_menstruating', 'primary_data', 'calculated_data'}
+        
+        def should_include_field(field):
+            """Only include fields that have options (actual data fields)"""
+            # Exclude container fields
+            if field.field_name in container_field_names:
+                return False
+            # Include if field has options
+            if isinstance(field, TrackerUserField):
+                has_options = FieldOption.query.filter_by(tracker_user_field_id=field.id).count() > 0
+            else:
+                has_options = FieldOption.query.filter_by(tracker_field_id=field.id).count() > 0
+            return has_options
+        
         response_data = {
-            'baseline_fields': [serialize_field(f) for f in baseline_fields],
-            'custom_fields': [serialize_field(f) for f in custom_fields]
+            'baseline_fields': [serialize_field(f) for f in baseline_fields if should_include_field(f)],
+            'custom_fields': [serialize_field(f) for f in custom_fields if should_include_field(f)]
         }
         
         if category_specific_fields:
             response_data['category_fields'] = [
-                serialize_field(f) for f in category_specific_fields
+                serialize_field(f) for f in category_specific_fields if should_include_field(f)
             ]
         
         return success_response(
