@@ -89,7 +89,7 @@ export default function LogSymptomsScreen({ route, navigation }) {
       case "multiple_choice":
         return [];
       case "yes_no":
-        return false;
+        return null;
       default:
         return null;
     }
