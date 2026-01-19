@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   View,
   Text,
@@ -30,6 +30,9 @@ export default function LogSymptomsScreen({ route, navigation }) {
   const [entryDate] = useState(new Date().toISOString().split("T")[0]); // Today's date
   const [isEditMode, setIsEditMode] = useState(false);
   const [showFieldModal, setShowFieldModal] = useState(false);
+  const [showMaskedFields, setShowMaskedFields] = useState(false);
+  const [hasEditModeChanges, setHasEditModeChanges] = useState(false);
+  const scrollViewRef = useRef(null);
 
   useEffect(() => {
     initializeForm();
@@ -270,6 +273,7 @@ export default function LogSymptomsScreen({ route, navigation }) {
           style: "destructive",
           onPress: () => {
             // TODO: Implement field deletion API call
+            setHasEditModeChanges(true); // Mark that changes were made
           },
         },
       ]
@@ -278,6 +282,7 @@ export default function LogSymptomsScreen({ route, navigation }) {
 
   const handleEditField = (field) => {
     // TODO: Navigate to field edit screen or show modal
+    // When implemented, mark changes here
     Alert.alert(
       "Edit Field",
       `Editing "${field.display_label || field.field_name}"`
@@ -297,6 +302,7 @@ export default function LogSymptomsScreen({ route, navigation }) {
           style: "destructive",
           onPress: () => {
             // TODO: Implement option deletion API call
+            setHasEditModeChanges(true); // Mark that changes were made
           },
         },
       ]
@@ -305,6 +311,7 @@ export default function LogSymptomsScreen({ route, navigation }) {
 
   const handleEditOption = (field, option) => {
     // TODO: Navigate to option edit screen or show modal
+    // When implemented, mark changes here
     Alert.alert(
       "Edit Option",
       `Editing "${option.display_label || option.option_name}"`
@@ -321,6 +328,7 @@ export default function LogSymptomsScreen({ route, navigation }) {
       await trackerService.createNewField(trackerId, fieldData);
       Alert.alert("Success", "Field created successfully!");
       setShowFieldModal(false);
+      setHasEditModeChanges(true); // Mark that changes were made
       // Reload management schema to show new field
       if (isEditMode) {
         await loadManagementSchema();
@@ -339,46 +347,130 @@ export default function LogSymptomsScreen({ route, navigation }) {
 
   const handleAddOption = (field) => {
     // TODO: Navigate to option creation screen or show modal
+    // When implemented, mark changes here
     Alert.alert(
       "Add Option",
       `Add a new option to "${field.display_label || field.field_name}"`
     );
   };
 
-  const handleToggleField = (field, activate) => {
-    const action = activate ? "Show" : "Hide";
-    Alert.alert(
-      `${action} Field`,
-      `${action} "${field.display_label || field.field_name}" in the form?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: action,
-          onPress: () => {
-            // TODO: Implement field toggle API call
-          },
-        },
-      ]
-    );
+  const handleToggleField = async (field, activate) => {
+    // Optimistic update: update the UI immediately
+    setManagementSchema((prevSchema) => {
+      if (!prevSchema) return prevSchema;
+
+      const updatedSchema = {
+        ...prevSchema,
+        baseline_fields: prevSchema.baseline_fields
+          ? prevSchema.baseline_fields.map((f) => ({ ...f }))
+          : [],
+        category_fields: prevSchema.category_fields
+          ? prevSchema.category_fields.map((f) => ({ ...f }))
+          : [],
+        custom_fields: prevSchema.custom_fields
+          ? prevSchema.custom_fields.map((f) => ({ ...f }))
+          : [],
+      };
+
+      // Search through all field arrays
+      const fieldArrays = [
+        updatedSchema.baseline_fields,
+        updatedSchema.category_fields,
+        updatedSchema.custom_fields,
+      ];
+
+      for (const fieldArray of fieldArrays) {
+        const fieldIndex = fieldArray.findIndex((f) => f.id === field.id);
+        if (fieldIndex !== -1) {
+          fieldArray[fieldIndex] = {
+            ...fieldArray[fieldIndex],
+            is_active: activate,
+          };
+          break;
+        }
+      }
+
+      return updatedSchema;
+    });
+
+    setHasEditModeChanges(true); // Mark that changes were made
+
+    try {
+      await trackerService.toggleFieldActive(field.id);
+      // Reload management schema to sync with backend
+      await loadManagementSchema();
+    } catch (error) {
+      console.error("Error toggling field:", error);
+      // Revert optimistic update on error
+      await loadManagementSchema();
+      const errorMessage =
+        error.response?.data?.error ||
+        error.message ||
+        "Failed to update field. Please try again.";
+      Alert.alert("Error", errorMessage);
+    }
   };
 
-  const handleToggleOption = (field, option, activate) => {
-    const action = activate ? "Show" : "Hide";
-    Alert.alert(
-      `${action} Option`,
-      `${action} "${option.display_label || option.option_name}" in "${
-        field.display_label || field.field_name
-      }"?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: action,
-          onPress: () => {
-            // TODO: Implement option toggle API call
-          },
-        },
-      ]
-    );
+  const handleToggleOption = async (field, option, activate) => {
+    // Optimistic update: update the UI immediately
+    setManagementSchema((prevSchema) => {
+      if (!prevSchema) return prevSchema;
+
+      const updatedSchema = {
+        ...prevSchema,
+        baseline_fields: prevSchema.baseline_fields
+          ? [...prevSchema.baseline_fields]
+          : [],
+        category_fields: prevSchema.category_fields
+          ? [...prevSchema.category_fields]
+          : [],
+        custom_fields: prevSchema.custom_fields
+          ? [...prevSchema.custom_fields]
+          : [],
+      };
+
+      // Search through all field arrays
+      const fieldArrays = [
+        updatedSchema.baseline_fields,
+        updatedSchema.category_fields,
+        updatedSchema.custom_fields,
+      ];
+
+      for (const fieldArray of fieldArrays) {
+        const fieldIndex = fieldArray.findIndex((f) => f.id === field.id);
+        if (fieldIndex !== -1) {
+          const fieldToUpdate = { ...fieldArray[fieldIndex] };
+          if (fieldToUpdate.options) {
+            fieldToUpdate.options = fieldToUpdate.options.map((opt) =>
+              opt.id === option.id
+                ? { ...opt, is_active: activate }
+                : { ...opt }
+            );
+          }
+          fieldArray[fieldIndex] = fieldToUpdate;
+          break;
+        }
+      }
+
+      return updatedSchema;
+    });
+
+    setHasEditModeChanges(true); // Mark that changes were made
+
+    try {
+      await trackerService.toggleOptionActive(option.id);
+      // Reload management schema to sync with backend
+      await loadManagementSchema();
+    } catch (error) {
+      console.error("Error toggling option:", error);
+      // Revert optimistic update on error
+      await loadManagementSchema();
+      const errorMessage =
+        error.response?.data?.error ||
+        error.message ||
+        "Failed to update option. Please try again.";
+      Alert.alert("Error", errorMessage);
+    }
   };
 
   /**
@@ -398,11 +490,49 @@ export default function LogSymptomsScreen({ route, navigation }) {
    * Toggle edit mode
    */
   const toggleEditMode = async () => {
+    const wasInEditMode = isEditMode;
+
+    // Don't allow exiting edit mode if there are unsaved changes
+    if (wasInEditMode && hasEditModeChanges) {
+      Alert.alert(
+        "Unsaved Changes",
+        "You have unsaved changes. Are you sure you want to exit edit mode?",
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Exit",
+            style: "destructive",
+            onPress: async () => {
+              setIsEditMode(false);
+              setShowMaskedFields(false);
+              setHasEditModeChanges(false);
+            },
+          },
+        ]
+      );
+      return;
+    }
+
     if (!isEditMode && !managementSchema) {
       // Entering edit mode - load management schema
       await loadManagementSchema();
     }
+
     setIsEditMode(!isEditMode);
+    setHasEditModeChanges(false);
+
+    // Reset masked fields toggle when exiting edit mode
+    if (wasInEditMode) {
+      setShowMaskedFields(false);
+    }
+
+    // Scroll to top when entering edit mode
+    if (!wasInEditMode) {
+      // Wait for state update and DOM render
+      setTimeout(() => {
+        scrollViewRef.current?.scrollTo({ y: 0, animated: true });
+      }, 300);
+    }
   };
 
   /**
@@ -422,7 +552,16 @@ export default function LogSymptomsScreen({ route, navigation }) {
         ...(schema.custom_fields || []),
       ];
 
-      return allFields;
+      // Filter by active/inactive status based on showMaskedFields toggle
+      // Backend handles the logic: if you mask an option and the field still has active options,
+      // the field itself is not automatically masked
+      if (showMaskedFields) {
+        // Show only inactive fields
+        return allFields.filter((field) => field.is_active === false);
+      } else {
+        // Show only active fields
+        return allFields.filter((field) => field.is_active !== false);
+      }
     } else {
       // Regular form schema has field_groups
       if (!schema?.field_groups) return [];
@@ -444,7 +583,7 @@ export default function LogSymptomsScreen({ route, navigation }) {
 
       return uniqueFields;
     }
-  }, [formSchema, managementSchema, isEditMode]);
+  }, [formSchema, managementSchema, isEditMode, showMaskedFields]);
 
   // Loading state - Professional skeleton loader
   if (loading) {
@@ -542,27 +681,26 @@ export default function LogSymptomsScreen({ route, navigation }) {
         <Text style={styles.headerTitle}>
           {isEditMode ? "Edit Form" : existingData ? "Update" : "Log"} Symptoms
         </Text>
-        {!isEditMode && (
-          <TouchableOpacity
-            style={[
-              styles.headerSubmitButton,
-              (!isDirty || submitting) && styles.headerSubmitButtonDisabled,
-            ]}
-            onPress={handleSubmit(onSubmit)}
-            disabled={!isDirty || submitting}
-          >
-            {submitting ? (
-              <ActivityIndicator size="small" color={colors.textOnPrimary} />
-            ) : (
-              <Ionicons
-                name="checkmark"
-                size={24}
-                color={colors.textOnPrimary}
-              />
-            )}
-          </TouchableOpacity>
-        )}
-        {isEditMode && <View style={styles.placeholder} />}
+        <TouchableOpacity
+          style={[
+            styles.headerEditButton,
+            isEditMode &&
+              !hasEditModeChanges &&
+              styles.headerEditButtonDisabled,
+          ]}
+          onPress={toggleEditMode}
+          disabled={isEditMode && !hasEditModeChanges}
+        >
+          <Ionicons
+            name={isEditMode ? "checkmark" : "create-outline"}
+            size={24}
+            color={
+              isEditMode && !hasEditModeChanges
+                ? colors.textLight
+                : colors.textOnPrimary
+            }
+          />
+        </TouchableOpacity>
       </View>
 
       <ScrollView
@@ -588,12 +726,50 @@ export default function LogSymptomsScreen({ route, navigation }) {
 
         {/* Edit mode indicator */}
         {isEditMode && (
-          <View style={styles.editModeIndicator}>
-            <Ionicons name="build-outline" size={20} color={colors.primary} />
-            <Text style={styles.editModeText}>
-              Edit mode - Customize your form fields and options
-            </Text>
-          </View>
+          <>
+            <View style={styles.editModeIndicator}>
+              <Ionicons name="build-outline" size={20} color={colors.primary} />
+              <Text style={styles.editModeText}>
+                Edit mode - Customize your form fields and options
+              </Text>
+            </View>
+
+            {/* Active/Masked Fields Toggle Buttons */}
+            <View style={styles.fieldsToggleContainer}>
+              <TouchableOpacity
+                style={[
+                  styles.fieldToggleButton,
+                  !showMaskedFields && styles.fieldToggleButtonSelected,
+                ]}
+                onPress={() => setShowMaskedFields(false)}
+              >
+                <Text
+                  style={[
+                    styles.fieldToggleButtonText,
+                    !showMaskedFields && styles.fieldToggleButtonTextSelected,
+                  ]}
+                >
+                  Active
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.fieldToggleButton,
+                  showMaskedFields && styles.fieldToggleButtonSelected,
+                ]}
+                onPress={() => setShowMaskedFields(true)}
+              >
+                <Text
+                  style={[
+                    styles.fieldToggleButtonText,
+                    showMaskedFields && styles.fieldToggleButtonTextSelected,
+                  ]}
+                >
+                  Masked
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </>
         )}
 
         {/* Form fields */}
@@ -613,18 +789,22 @@ export default function LogSymptomsScreen({ route, navigation }) {
                 onToggleOption={handleToggleOption}
               />
             ))}
-            {/* Add field button */}
-            <TouchableOpacity
-              style={styles.addFieldButton}
-              onPress={handleAddField}
-            >
-              <Ionicons
-                name="add-circle-outline"
-                size={24}
-                color={colors.primary}
-              />
-              <Text style={styles.addFieldText}>Add New Field</Text>
-            </TouchableOpacity>
+            {/* Add field button - smaller, on the right - only show for active fields */}
+            {!showMaskedFields && (
+              <View style={styles.addFieldButtonContainer}>
+                <TouchableOpacity
+                  style={styles.addFieldButtonSmall}
+                  onPress={handleAddField}
+                >
+                  <Ionicons
+                    name="add-circle-outline"
+                    size={18}
+                    color={colors.primary}
+                  />
+                  <Text style={styles.addFieldTextSmall}>Add New Field</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </>
         ) : (
           // Normal mode - show form
@@ -638,13 +818,8 @@ export default function LogSymptomsScreen({ route, navigation }) {
         )}
 
         {/* Submit and Edit buttons */}
-        <View
-          style={[
-            styles.bottomButtonsContainer,
-            isEditMode && styles.bottomButtonsContainerCentered,
-          ]}
-        >
-          {!isEditMode && (
+        {!isEditMode && (
+          <View style={styles.bottomButtonsContainer}>
             <TouchableOpacity
               style={[
                 styles.submitButton,
@@ -669,21 +844,18 @@ export default function LogSymptomsScreen({ route, navigation }) {
                 </>
               )}
             </TouchableOpacity>
-          )}
-          <TouchableOpacity
-            style={[
-              styles.editFormButton,
-              isEditMode && styles.editFormButtonActive,
-            ]}
-            onPress={toggleEditMode}
-          >
-            <Ionicons
-              name={isEditMode ? "checkmark" : "create-outline"}
-              size={20}
-              color={isEditMode ? colors.textOnPrimary : colors.primary}
-            />
-          </TouchableOpacity>
-        </View>
+            <TouchableOpacity
+              style={styles.editFormButton}
+              onPress={toggleEditMode}
+            >
+              <Ionicons
+                name="create-outline"
+                size={20}
+                color={colors.primary}
+              />
+            </TouchableOpacity>
+          </View>
+        )}
       </ScrollView>
 
       {/* Field Creation Modal */}
@@ -734,6 +906,15 @@ const styles = StyleSheet.create({
   headerSubmitButtonDisabled: {
     opacity: 0.4,
   },
+  headerEditButton: {
+    padding: 4,
+    width: 32,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerEditButtonDisabled: {
+    opacity: 0.4,
+  },
   placeholder: {
     width: 32,
   },
@@ -774,6 +955,37 @@ const styles = StyleSheet.create({
     color: colors.text,
     marginLeft: 10,
     flex: 1,
+  },
+  fieldsToggleContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 20,
+    marginHorizontal: 20,
+    gap: 8,
+  },
+  fieldToggleButton: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    backgroundColor: colors.background,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  fieldToggleButtonSelected: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  fieldToggleButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: colors.text,
+  },
+  fieldToggleButtonTextSelected: {
+    color: colors.textOnPrimary,
   },
   bottomButtonsContainer: {
     flexDirection: "row",
@@ -820,22 +1032,24 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     borderColor: colors.primary,
   },
-  addFieldButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: colors.formFieldBackground,
-    borderRadius: 12,
-    padding: 20,
+  addFieldButtonContainer: {
+    alignItems: "flex-end",
     marginBottom: 16,
     marginHorizontal: 20,
-    borderWidth: 2,
+  },
+  addFieldButtonSmall: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.formFieldBackground,
+    borderRadius: 50,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderWidth: 1,
     borderColor: colors.primary,
-    borderStyle: "dashed",
     gap: 8,
   },
-  addFieldText: {
-    fontSize: 16,
+  addFieldTextSmall: {
+    fontSize: 14,
     fontWeight: "600",
     color: colors.primary,
   },

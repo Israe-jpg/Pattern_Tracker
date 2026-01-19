@@ -66,4 +66,16 @@ export const trackerService = {
     });
     return response.data;
   },
+
+  // Toggle field active status (mask/unmask)
+  toggleFieldActive: async (fieldId) => {
+    const response = await api.patch(API_ENDPOINTS.TOGGLE_FIELD_ACTIVE(fieldId));
+    return response.data;
+  },
+
+  // Toggle option active status (mask/unmask)
+  toggleOptionActive: async (optionId) => {
+    const response = await api.patch(API_ENDPOINTS.TOGGLE_OPTION_ACTIVE(optionId));
+    return response.data;
+  },
 };

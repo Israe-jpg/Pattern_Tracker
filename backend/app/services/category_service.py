@@ -955,7 +955,18 @@ class CategoryService:
             if not option:
                 raise ValueError("Option not found")
             
-            field = option.tracker_field
+            # Handle both TrackerField and TrackerUserField
+            field = None
+            is_user_field = False
+            
+            if option.tracker_field_id:
+                field = TrackerField.query.filter_by(id=option.tracker_field_id).first()
+            elif option.tracker_user_field_id:
+                field = TrackerUserField.query.filter_by(id=option.tracker_user_field_id).first()
+                is_user_field = True
+            
+            if not field:
+                raise ValueError("Field not found for option")
             
             new_status = not option.is_active
             option.is_active = new_status
@@ -965,19 +976,32 @@ class CategoryService:
                 field.is_active = True
             
             # Check if all options are inactive
-            active_options = FieldOption.query.filter_by(
-                tracker_field_id=field.id,
-                is_active=True
-            ).count()
+            if is_user_field:
+                active_options = FieldOption.query.filter_by(
+                    tracker_user_field_id=field.id,
+                    is_active=True
+                ).count()
+            else:
+                active_options = FieldOption.query.filter_by(
+                    tracker_field_id=field.id,
+                    is_active=True
+                ).count()
             
             # If all options are inactive, mask the field
             if active_options == 0:
                 field.is_active = False
             
             # Rebuild schema to reflect changes
-            category = TrackerCategory.query.filter_by(id=field.category_id).first()
-            if category:
-                CategoryService.rebuild_category_schema(category)
+            if is_user_field:
+                tracker = Tracker.query.filter_by(id=field.tracker_id).first()
+                if tracker:
+                    category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
+                    if category:
+                        CategoryService.rebuild_category_schema(category, tracker)
+            else:
+                category = TrackerCategory.query.filter_by(id=field.category_id).first()
+                if category:
+                    CategoryService.rebuild_category_schema(category)
             
             db.session.commit()
         except Exception as e:

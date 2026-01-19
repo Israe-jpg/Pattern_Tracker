@@ -35,12 +35,8 @@ const FormFieldEdit = React.memo(
           <TouchableOpacity
             style={styles.toggleButtonOutside}
             onPress={() => {
-              if (isCustomField) {
-                onDeleteField(field);
-              } else {
-                // For baseline/category fields, mask them instead of delete
-                onToggleField && onToggleField(field, false);
-              }
+              // For all fields, mask them (set inactive)
+              onToggleField && onToggleField(field, false);
             }}
           >
             <Ionicons name="remove-circle" size={24} color={colors.error} />
@@ -105,7 +101,7 @@ const FormFieldEdit = React.memo(
                 styles.optionRow,
                 isOptionMasked && styles.optionRowMasked,
               ]}>
-                {/* Show plus for masked options, minus for active custom options */}
+                {/* Show plus for masked options, minus for active options */}
                 {isOptionMasked ? (
                   <TouchableOpacity
                     style={styles.addOptionIconButton}
@@ -113,14 +109,17 @@ const FormFieldEdit = React.memo(
                   >
                     <Ionicons name="add-circle" size={16} color={colors.success} />
                   </TouchableOpacity>
-                ) : isCustomField ? (
+                ) : (
                   <TouchableOpacity
                     style={styles.deleteOptionButton}
-                    onPress={() => onDeleteOption(field, option)}
+                    onPress={() => {
+                      // For all options, mask them (set inactive)
+                      onToggleOption && onToggleOption(field, option, false);
+                    }}
                   >
                     <Ionicons name="remove-circle" size={16} color={colors.error} />
                   </TouchableOpacity>
-                ) : null}
+                )}
                 <View style={styles.optionContent}>
                   <Text style={[
                     styles.optionLabel,
@@ -128,7 +127,10 @@ const FormFieldEdit = React.memo(
                   ]}>
                     {option.display_label || option.option_name}
                   </Text>
-                  <Text style={styles.optionType}>
+                  <Text style={[
+                    styles.optionType,
+                    isOptionMasked && styles.optionTypeMasked,
+                  ]}>
                     {option.option_type}
                     {isOptionMasked && " • Hidden"}
                   </Text>
@@ -169,10 +171,37 @@ const FormFieldEdit = React.memo(
     );
   },
   (prevProps, nextProps) => {
-    return (
-      prevProps.field.id === nextProps.field.id &&
-      prevProps.field.field_name === nextProps.field.field_name
-    );
+    // Check if field properties changed
+    if (
+      prevProps.field.id !== nextProps.field.id ||
+      prevProps.field.field_name !== nextProps.field.field_name ||
+      prevProps.field.is_active !== nextProps.field.is_active
+    ) {
+      return false;
+    }
+
+    // Check if options changed (count or active status)
+    const prevOptions = prevProps.field.options || [];
+    const nextOptions = nextProps.field.options || [];
+    
+    if (prevOptions.length !== nextOptions.length) {
+      return false;
+    }
+
+    // Check if any option's active status changed
+    for (let i = 0; i < prevOptions.length; i++) {
+      const prevOption = prevOptions[i];
+      const nextOption = nextOptions[i];
+      
+      if (
+        prevOption.id !== nextOption.id ||
+        prevOption.is_active !== nextOption.is_active
+      ) {
+        return false;
+      }
+    }
+
+    return true;
   }
 );
 
@@ -285,7 +314,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   optionRowMasked: {
-    opacity: 0.5,
+    opacity: 0.4,
     backgroundColor: colors.surface,
   },
   deleteOptionButton: {
@@ -305,11 +334,15 @@ const styles = StyleSheet.create({
   },
   optionLabelMasked: {
     color: colors.textLight,
+    opacity: 0.5,
   },
   optionType: {
     fontSize: 12,
     color: colors.textLight,
     fontStyle: "italic",
+  },
+  optionTypeMasked: {
+    opacity: 0.5,
   },
   optionActions: {
     flexDirection: "row",
@@ -327,6 +360,13 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderStyle: "dashed",
     gap: 6,
+  },
+  noOptionsText: {
+    fontSize: 14,
+    color: colors.textLight,
+    fontStyle: "italic",
+    textAlign: "center",
+    paddingVertical: 12,
   },
   addOptionText: {
     fontSize: 14,

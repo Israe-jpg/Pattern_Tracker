@@ -64,6 +64,8 @@ export const API_ENDPOINTS = {
   TRACKER_SETTINGS: (id) => `/trackers/${id}/tracker-settings`,
   UPDATE_DEFAULT_TRACKER: (id) => `/trackers/update-default-tracker/${id}`,
   CREATE_NEW_FIELD: (id) => `/trackers/${id}/create-new-field`,
+  TOGGLE_FIELD_ACTIVE: (fieldId) => `/trackers/${fieldId}/toggle-field-active-status`,
+  TOGGLE_OPTION_ACTIVE: (optionId) => `/trackers/${optionId}/toggle-option-active-status`,
 
   // Data Tracking
   SAVE_DATA: (id) => `/data-tracking/${id}/save-tracking-data`,

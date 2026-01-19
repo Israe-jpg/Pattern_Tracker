@@ -74,13 +74,19 @@ def verify_option_ownership(option_id: int, user_id: int) -> FieldOption:
     
     # Check if option belongs to a category field or user field
     if option.tracker_field_id:
+        tracker_field = TrackerField.query.filter_by(id=option.tracker_field_id).first()
+        if not tracker_field:
+            raise ValueError("Tracker field not found")
         tracker = Tracker.query.filter_by(
-            category_id=option.tracker_field.category_id,
+            category_id=tracker_field.category_id,
             user_id=user_id
         ).first()
     elif option.tracker_user_field_id:
+        tracker_user_field = TrackerUserField.query.filter_by(id=option.tracker_user_field_id).first()
+        if not tracker_user_field:
+            raise ValueError("Tracker user field not found")
         tracker = Tracker.query.filter_by(
-            id=option.tracker_user_field.tracker_id,
+            id=tracker_user_field.tracker_id,
             user_id=user_id
         ).first()
     else:
