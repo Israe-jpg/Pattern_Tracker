@@ -4,7 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { colors } from "../../constants/colors";
 
 const FormFieldEdit = React.memo(
-  ({ field, onDeleteField, onEditField, onDeleteOption, onEditOption, onAddOption, onToggleField, onToggleOption }) => {
+  ({ field, onDeleteField, onEditField, onDeleteOption, onAddOption, onToggleField, onToggleOption }) => {
     if (!field.options || field.options.length === 0) return null;
 
     // Check if this is a custom field (editable/deletable)
@@ -136,20 +136,12 @@ const FormFieldEdit = React.memo(
                   </Text>
                 </View>
                 {isCustomField && !isOptionMasked && (
-                  <View style={styles.optionActions}>
-                    <TouchableOpacity
-                      style={styles.iconButton}
-                      onPress={() => onEditOption(field, option)}
-                    >
-                      <Ionicons name="create-outline" size={16} color={colors.primary} />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.iconButton}
-                      onPress={() => onDeleteOption(field, option)}
-                    >
-                      <Ionicons name="trash-outline" size={16} color={colors.error} />
-                    </TouchableOpacity>
-                  </View>
+                  <TouchableOpacity
+                    style={styles.iconButton}
+                    onPress={() => onDeleteOption(field, option)}
+                  >
+                    <Ionicons name="trash-outline" size={16} color={colors.error} />
+                  </TouchableOpacity>
                 )}
               </View>
             );

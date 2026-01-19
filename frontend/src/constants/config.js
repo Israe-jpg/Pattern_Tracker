@@ -64,6 +64,12 @@ export const API_ENDPOINTS = {
   TRACKER_SETTINGS: (id) => `/trackers/${id}/tracker-settings`,
   UPDATE_DEFAULT_TRACKER: (id) => `/trackers/update-default-tracker/${id}`,
   CREATE_NEW_FIELD: (id) => `/trackers/${id}/create-new-field`,
+  DELETE_FIELD: (fieldId) => `/trackers/${fieldId}/delete-field`,
+  DELETE_OPTION: (optionId) => `/trackers/${optionId}/delete-option`,
+  GET_FIELD_DETAILS: (fieldId) => `/trackers/${fieldId}/field-details`,
+  UPDATE_FIELD_LABEL: (fieldId) => `/trackers/${fieldId}/update-field-display-label`,
+  UPDATE_OPTION: (optionId) => `/trackers/${optionId}/update-option-info`,
+  CREATE_OPTION: (fieldId) => `/trackers/${fieldId}/create-new-option`,
   TOGGLE_FIELD_ACTIVE: (fieldId) => `/trackers/${fieldId}/toggle-field-active-status`,
   TOGGLE_OPTION_ACTIVE: (optionId) => `/trackers/${optionId}/toggle-option-active-status`,
 

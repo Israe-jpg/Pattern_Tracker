@@ -31,11 +31,16 @@ export default function LogSymptomsScreen({ route, navigation }) {
   const [entryDate] = useState(new Date().toISOString().split("T")[0]); // Today's date
   const [isEditMode, setIsEditMode] = useState(false);
   const [showFieldModal, setShowFieldModal] = useState(false);
+  const [editingField, setEditingField] = useState(null);
   const [showMaskedFields, setShowMaskedFields] = useState(false);
   const [hasEditModeChanges, setHasEditModeChanges] = useState(false);
   const [pendingChanges, setPendingChanges] = useState({
     fieldToggles: new Map(), // fieldId -> { activate: boolean }
     optionToggles: new Map(), // optionId -> { activate: boolean }
+    fieldEdits: new Map(), // fieldId -> { fieldData, originalField }
+    fieldCreates: [], // Array of { fieldData }
+    fieldDeletes: new Set(), // Set of fieldIds to delete
+    optionDeletes: new Set(), // Set of optionIds to delete
   });
   const scrollViewRef = useRef(null);
   const isHandlingNavigation = useRef(false);
@@ -44,6 +49,18 @@ export default function LogSymptomsScreen({ route, navigation }) {
   useEffect(() => {
     initializeForm();
   }, [trackerId]);
+
+  // Automatically detect if there are pending changes
+  useEffect(() => {
+    const hasChanges =
+      pendingChanges.fieldToggles.size > 0 ||
+      pendingChanges.optionToggles.size > 0 ||
+      pendingChanges.fieldEdits.size > 0 ||
+      pendingChanges.fieldCreates.length > 0 ||
+      pendingChanges.fieldDeletes.size > 0 ||
+      pendingChanges.optionDeletes.size > 0;
+    setHasEditModeChanges(hasChanges);
+  }, [pendingChanges]);
 
   /**
    * Reload existing data when screen comes into focus
@@ -122,7 +139,12 @@ export default function LogSymptomsScreen({ route, navigation }) {
               setPendingChanges({
                 fieldToggles: new Map(),
                 optionToggles: new Map(),
+                fieldEdits: new Map(),
+                fieldCreates: [],
+                fieldDeletes: new Set(),
+                optionDeletes: new Set(),
               });
+              setEditingField(null);
               setIsEditMode(false);
               loadManagementSchema(); // Reload to revert changes
               navigation.dispatch(e.data.action);
@@ -385,35 +407,79 @@ export default function LogSymptomsScreen({ route, navigation }) {
       "Delete Field",
       `Are you sure you want to delete "${
         field.display_label || field.field_name
-      }"?`,
+      }"? This will also delete all its options.`,
       [
         { text: "Cancel", style: "cancel" },
         {
           text: "Delete",
           style: "destructive",
           onPress: () => {
-            // TODO: Implement field deletion API call
-            setHasEditModeChanges(true); // Mark that changes were made
+            // Store deletion in pending changes (don't save immediately)
+            setPendingChanges((prev) => {
+              const newFieldDeletes = new Set(prev.fieldDeletes);
+              newFieldDeletes.add(field.id);
+              // Remove from edits if it was being edited
+              const newFieldEdits = new Map(prev.fieldEdits);
+              newFieldEdits.delete(field.id);
+              return {
+                ...prev,
+                fieldDeletes: newFieldDeletes,
+                fieldEdits: newFieldEdits,
+              };
+            });
+
+            // Update UI optimistically
+            setManagementSchema((prevSchema) => {
+              if (!prevSchema) return prevSchema;
+              const updatedSchema = { ...prevSchema };
+              const fieldArrays = [
+                updatedSchema.baseline_fields,
+                updatedSchema.category_fields,
+                updatedSchema.custom_fields,
+              ];
+              for (const fieldArray of fieldArrays) {
+                const index = fieldArray.findIndex((f) => f.id === field.id);
+                if (index !== -1) {
+                  fieldArray.splice(index, 1);
+                  break;
+                }
+              }
+              return updatedSchema;
+            });
+
+            setHasEditModeChanges(true);
           },
         },
       ]
     );
   };
 
-  const handleEditField = (field) => {
-    // TODO: Navigate to field edit screen or show modal
-    // When implemented, mark changes here
-    Alert.alert(
-      "Edit Field",
-      `Editing "${field.display_label || field.field_name}"`
-    );
+  const handleEditField = async (field) => {
+    try {
+      // Fetch full field details including all options
+      const fieldDetails = await trackerService.getFieldDetails(field.id);
+      const fieldData = fieldDetails.field || fieldDetails.data?.field;
+      if (fieldData) {
+        setEditingField(fieldData);
+        setShowFieldModal(true);
+      } else {
+        // Fallback to using the field from schema
+        setEditingField(field);
+        setShowFieldModal(true);
+      }
+    } catch (error) {
+      console.error("Error loading field details:", error);
+      // Fallback to using the field from schema
+      setEditingField(field);
+      setShowFieldModal(true);
+    }
   };
 
   const handleDeleteOption = (field, option) => {
     Alert.alert(
       "Delete Option",
-      `Delete "${option.display_label || option.option_name}" from "${
-        field.display_label || field.field_name
+      `Are you sure you want to delete "${
+        option.display_label || option.option_name
       }"?`,
       [
         { text: "Cancel", style: "cancel" },
@@ -421,47 +487,157 @@ export default function LogSymptomsScreen({ route, navigation }) {
           text: "Delete",
           style: "destructive",
           onPress: () => {
-            // TODO: Implement option deletion API call
-            setHasEditModeChanges(true); // Mark that changes were made
+            // Store deletion in pending changes (don't save immediately)
+            setPendingChanges((prev) => {
+              const newOptionDeletes = new Set(prev.optionDeletes);
+              newOptionDeletes.add(option.id);
+              return {
+                ...prev,
+                optionDeletes: newOptionDeletes,
+              };
+            });
+
+            // Update UI optimistically
+            setManagementSchema((prevSchema) => {
+              if (!prevSchema) return prevSchema;
+              const updatedSchema = { ...prevSchema };
+              const fieldArrays = [
+                updatedSchema.baseline_fields,
+                updatedSchema.category_fields,
+                updatedSchema.custom_fields,
+              ];
+              for (const fieldArray of fieldArrays) {
+                const fieldIndex = fieldArray.findIndex(
+                  (f) => f.id === field.id
+                );
+                if (fieldIndex !== -1) {
+                  const updatedField = {
+                    ...fieldArray[fieldIndex],
+                    options: fieldArray[fieldIndex].options.filter(
+                      (opt) => opt.id !== option.id
+                    ),
+                  };
+                  fieldArray[fieldIndex] = updatedField;
+                  break;
+                }
+              }
+              return updatedSchema;
+            });
+
+            setHasEditModeChanges(true);
           },
         },
       ]
     );
   };
 
-  const handleEditOption = (field, option) => {
-    // TODO: Navigate to option edit screen or show modal
-    // When implemented, mark changes here
-    Alert.alert(
-      "Edit Option",
-      `Editing "${option.display_label || option.option_name}"`
-    );
-  };
-
   const handleAddField = () => {
+    setEditingField(null);
     setShowFieldModal(true);
   };
 
   const handleFieldSubmit = async (fieldData) => {
     try {
-      setSubmitting(true);
-      await trackerService.createNewField(trackerId, fieldData);
-      Alert.alert("Success", "Field created successfully!");
-      setShowFieldModal(false);
-      setHasEditModeChanges(true); // Mark that changes were made
-      // Reload management schema to show new field
-      if (isEditMode) {
-        await loadManagementSchema();
+      if (editingField) {
+        // Update mode: Store edit in pending changes
+        setPendingChanges((prev) => {
+          const newFieldEdits = new Map(prev.fieldEdits);
+          newFieldEdits.set(editingField.id, {
+            fieldData,
+            originalField: editingField,
+          });
+          return {
+            ...prev,
+            fieldEdits: newFieldEdits,
+          };
+        });
+
+        // Update UI optimistically
+        setManagementSchema((prevSchema) => {
+          if (!prevSchema) return prevSchema;
+          const updatedSchema = { ...prevSchema };
+          const fieldArrays = [
+            updatedSchema.baseline_fields,
+            updatedSchema.category_fields,
+            updatedSchema.custom_fields,
+          ];
+          for (const fieldArray of fieldArrays) {
+            const fieldIndex = fieldArray.findIndex(
+              (f) => f.id === editingField.id
+            );
+            if (fieldIndex !== -1) {
+              const updatedField = {
+                ...fieldArray[fieldIndex],
+                display_label: fieldData.display_label,
+                field_name: fieldData.field_name,
+                options: fieldData.options.map((opt, index) => ({
+                  id: opt.optionId,
+                  option_name: opt.option_name,
+                  option_type: opt.option_type,
+                  display_label: opt.display_label,
+                  option_order: index,
+                  choices: opt.choices,
+                  min_value: opt.min_value,
+                  max_value: opt.max_value,
+                  is_active: true,
+                })),
+              };
+              fieldArray[fieldIndex] = updatedField;
+              break;
+            }
+          }
+          return updatedSchema;
+        });
+      } else {
+        // Create mode: Store creation in pending changes
+        setPendingChanges((prev) => {
+          return {
+            ...prev,
+            fieldCreates: [...prev.fieldCreates, fieldData],
+          };
+        });
+
+        // Update UI optimistically - add to custom fields
+        setManagementSchema((prevSchema) => {
+          if (!prevSchema) return prevSchema;
+          const newField = {
+            id: `pending_${Date.now()}`, // Temporary ID
+            field_name: fieldData.field_name,
+            display_label: fieldData.display_label,
+            field_group: "custom",
+            is_user_field: true,
+            is_active: true,
+            options: fieldData.options.map((opt, index) => ({
+              id: `pending_option_${Date.now()}_${index}`,
+              option_name: opt.option_name,
+              option_type: opt.option_type,
+              display_label: opt.display_label,
+              option_order: index,
+              choices: opt.choices,
+              min_value: opt.min_value,
+              max_value: opt.max_value,
+              is_active: true,
+            })),
+          };
+          return {
+            ...prevSchema,
+            custom_fields: [...(prevSchema.custom_fields || []), newField],
+          };
+        });
       }
+
+      setShowFieldModal(false);
+      setEditingField(null);
+      setHasEditModeChanges(true);
     } catch (error) {
-      console.error("Error creating field:", error);
+      console.error("Error preparing field changes:", error);
       const errorMessage =
         error.response?.data?.error ||
         error.message ||
-        "Failed to create field. Please try again.";
+        `Failed to prepare ${
+          editingField ? "update" : "create"
+        } field. Please try again.`;
       Alert.alert("Error", errorMessage);
-    } finally {
-      setSubmitting(false);
     }
   };
 
@@ -611,6 +787,108 @@ export default function LogSymptomsScreen({ route, navigation }) {
         await trackerService.toggleOptionActive(optionId);
       }
 
+      // Delete fields marked for deletion
+      for (const fieldId of pendingChanges.fieldDeletes) {
+        await trackerService.deleteField(fieldId);
+      }
+
+      // Delete options marked for deletion
+      for (const optionId of pendingChanges.optionDeletes) {
+        await trackerService.deleteOption(optionId);
+      }
+
+      // Create new fields
+      for (const fieldData of pendingChanges.fieldCreates) {
+        await trackerService.createNewField(trackerId, fieldData);
+      }
+
+      // Update edited fields
+      for (const [
+        fieldId,
+        { fieldData, originalField },
+      ] of pendingChanges.fieldEdits) {
+        // Update field display label
+        await trackerService.updateFieldLabel(fieldId, fieldData.display_label);
+
+        // Get existing option IDs
+        const existingOptionIds = new Set(
+          (originalField.options || []).map((opt) => opt.id)
+        );
+        const newOptionIds = new Set(
+          fieldData.options
+            .map((opt) => opt.optionId)
+            .filter((id) => id !== undefined)
+        );
+
+        // Delete options that were removed
+        const optionsToDelete = Array.from(existingOptionIds).filter(
+          (id) => !newOptionIds.has(id)
+        );
+        for (const optionId of optionsToDelete) {
+          await trackerService.deleteOption(optionId);
+        }
+
+        // Update existing options and create new ones
+        for (let i = 0; i < fieldData.options.length; i++) {
+          const option = fieldData.options[i];
+          const optionData = {
+            option_name: option.option_name,
+            option_type: option.option_type,
+            display_label: option.display_label,
+            option_order: i,
+          };
+
+          // Only include type-specific fields based on option_type
+          if (
+            option.option_type === "rating" ||
+            option.option_type === "number_input"
+          ) {
+            if (option.min_value !== undefined && option.min_value !== null) {
+              optionData.min_value = option.min_value;
+            }
+            if (option.max_value !== undefined && option.max_value !== null) {
+              optionData.max_value = option.max_value;
+            }
+            if (option.step !== undefined && option.step !== null) {
+              optionData.step = option.step;
+            }
+          } else if (
+            option.option_type === "single_choice" ||
+            option.option_type === "multiple_choice"
+          ) {
+            if (
+              option.choices &&
+              Array.isArray(option.choices) &&
+              option.choices.length > 0
+            ) {
+              optionData.choices = option.choices;
+            }
+            if (
+              option.choice_labels &&
+              Object.keys(option.choice_labels).length > 0
+            ) {
+              optionData.choice_labels = option.choice_labels;
+            }
+          } else if (
+            option.option_type === "text" ||
+            option.option_type === "notes"
+          ) {
+            if (option.max_length !== undefined && option.max_length !== null) {
+              optionData.max_length = option.max_length;
+            }
+          }
+          // For 'yes_no' and 'time' types, no additional fields needed
+
+          if (option.optionId) {
+            // Update existing option
+            await trackerService.updateOption(option.optionId, optionData);
+          } else {
+            // Create new option
+            await trackerService.createOption(fieldId, optionData);
+          }
+        }
+      }
+
       // Reload both schemas and existing data to sync with backend
       const [schemaResponse, dataResponse] = await Promise.all([
         // Reload form schema so the form reflects the changes
@@ -651,7 +929,14 @@ export default function LogSymptomsScreen({ route, navigation }) {
       }
 
       // Clear pending changes
-      setPendingChanges({ fieldToggles: new Map(), optionToggles: new Map() });
+      setPendingChanges({
+        fieldToggles: new Map(),
+        optionToggles: new Map(),
+        fieldEdits: new Map(),
+        fieldCreates: [],
+        fieldDeletes: new Set(),
+        optionDeletes: new Set(),
+      });
       setHasEditModeChanges(false);
 
       return true;
@@ -684,8 +969,13 @@ export default function LogSymptomsScreen({ route, navigation }) {
                 setPendingChanges({
                   fieldToggles: new Map(),
                   optionToggles: new Map(),
+                  fieldEdits: new Map(),
+                  fieldCreates: [],
+                  fieldDeletes: new Set(),
+                  optionDeletes: new Set(),
                 });
                 setHasEditModeChanges(false);
+                setEditingField(null);
                 loadManagementSchema(); // Reload to revert changes
                 setIsEditMode(false);
                 setShowMaskedFields(false);
@@ -724,7 +1014,14 @@ export default function LogSymptomsScreen({ route, navigation }) {
     setIsEditMode(true);
     setHasEditModeChanges(false);
     setShowMaskedFields(false);
-    setPendingChanges({ fieldToggles: new Map(), optionToggles: new Map() });
+    setPendingChanges({
+      fieldToggles: new Map(),
+      optionToggles: new Map(),
+      fieldEdits: new Map(),
+      fieldCreates: [],
+      fieldDeletes: new Set(),
+      optionDeletes: new Set(),
+    });
 
     // Scroll to top when entering edit mode
     setTimeout(() => {
@@ -896,8 +1193,12 @@ export default function LogSymptomsScreen({ route, navigation }) {
                       setPendingChanges({
                         fieldToggles: new Map(),
                         optionToggles: new Map(),
+                        fieldEdits: new Map(),
+                        fieldCreates: [],
+                        fieldDeletes: new Set(),
+                        optionDeletes: new Set(),
                       });
-                      setHasEditModeChanges(false);
+                      setEditingField(null);
                       loadManagementSchema(); // Reload to revert changes
                       setIsEditMode(false);
                       setShowMaskedFields(false);
@@ -1036,7 +1337,6 @@ export default function LogSymptomsScreen({ route, navigation }) {
                 onDeleteField={handleDeleteField}
                 onEditField={handleEditField}
                 onDeleteOption={handleDeleteOption}
-                onEditOption={handleEditOption}
                 onAddOption={handleAddOption}
                 onToggleField={handleToggleField}
                 onToggleOption={handleToggleOption}
@@ -1114,8 +1414,12 @@ export default function LogSymptomsScreen({ route, navigation }) {
       {/* Field Creation Modal */}
       <FieldCreationModal
         visible={showFieldModal}
-        onClose={() => setShowFieldModal(false)}
+        onClose={() => {
+          setShowFieldModal(false);
+          setEditingField(null);
+        }}
         onSubmit={handleFieldSubmit}
+        editingField={editingField}
       />
     </View>
   );

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -24,7 +24,12 @@ const OPTION_TYPES = [
   { value: "time", label: "Time Picker" },
 ];
 
-export default function FieldCreationModal({ visible, onClose, onSubmit }) {
+export default function FieldCreationModal({
+  visible,
+  onClose,
+  onSubmit,
+  editingField = null,
+}) {
   const [fieldName, setFieldName] = useState("");
   const [options, setOptions] = useState([
     {
@@ -36,6 +41,42 @@ export default function FieldCreationModal({ visible, onClose, onSubmit }) {
       maxValue: 10,
     },
   ]);
+
+  // Pre-populate form when editing
+  React.useEffect(() => {
+    if (editingField && visible) {
+      setFieldName(editingField.display_label || editingField.field_name || "");
+
+      // Convert field options to modal format
+      const fieldOptions = (editingField.options || []).map((opt) => ({
+        optionName: opt.display_label || opt.option_name || "",
+        optionType: opt.option_type || "",
+        choices: opt.choices || [],
+        currentChoiceInput: "",
+        minValue: opt.min_value ?? 0,
+        maxValue: opt.max_value ?? 10,
+        optionId: opt.id, // Keep track of existing option ID for updates
+      }));
+
+      setOptions(
+        fieldOptions.length > 0
+          ? fieldOptions
+          : [
+              {
+                optionName: "",
+                optionType: "",
+                choices: [],
+                currentChoiceInput: "",
+                minValue: 0,
+                maxValue: 10,
+              },
+            ]
+      );
+    } else if (!visible) {
+      // Reset when modal closes
+      handleReset();
+    }
+  }, [editingField, visible]);
 
   const handleAddOption = () => {
     setOptions([
@@ -145,7 +186,10 @@ export default function FieldCreationModal({ visible, onClose, onSubmit }) {
     const fieldData = {
       field_name: fieldName.trim().toLowerCase().replace(/\s+/g, "_"),
       display_label: fieldName.trim(),
-      options: validatedOptions,
+      options: validatedOptions.map((opt, index) => ({
+        ...opt,
+        optionId: options[index]?.optionId, // Preserve existing option ID for updates
+      })),
     };
 
     onSubmit(fieldData);
@@ -184,7 +228,9 @@ export default function FieldCreationModal({ visible, onClose, onSubmit }) {
       >
         <View style={styles.modalContent}>
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Create New Field</Text>
+            <Text style={styles.modalTitle}>
+              {editingField ? "Update Field" : "Create New Field"}
+            </Text>
             <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
               <Ionicons name="close" size={24} color={colors.text} />
             </TouchableOpacity>

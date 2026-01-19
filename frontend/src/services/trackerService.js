@@ -78,4 +78,44 @@ export const trackerService = {
     const response = await api.patch(API_ENDPOINTS.TOGGLE_OPTION_ACTIVE(optionId));
     return response.data;
   },
+
+  // Delete field
+  deleteField: async (fieldId) => {
+    const response = await api.delete(API_ENDPOINTS.DELETE_FIELD(fieldId));
+    return response.data;
+  },
+
+  // Delete option
+  deleteOption: async (optionId) => {
+    const response = await api.delete(API_ENDPOINTS.DELETE_OPTION(optionId));
+    return response.data;
+  },
+
+  // Get field details (for editing)
+  getFieldDetails: async (fieldId) => {
+    const response = await api.get(API_ENDPOINTS.GET_FIELD_DETAILS(fieldId));
+    return response.data;
+  },
+
+  // Update field display label
+  updateFieldLabel: async (fieldId, newLabel) => {
+    const response = await api.patch(API_ENDPOINTS.UPDATE_FIELD_LABEL(fieldId), {
+      new_label: newLabel,
+    });
+    return response.data;
+  },
+
+  // Update option
+  updateOption: async (optionId, optionData) => {
+    const response = await api.put(API_ENDPOINTS.UPDATE_OPTION(optionId), optionData);
+    return response.data;
+  },
+
+  // Create new option for existing field
+  createOption: async (fieldId, optionData) => {
+    const response = await api.post(API_ENDPOINTS.CREATE_OPTION(fieldId), {
+      option_data: optionData,
+    });
+    return response.data;
+  },
 };
