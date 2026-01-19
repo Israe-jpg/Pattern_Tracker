@@ -135,6 +135,69 @@ class FieldOptionSchema(Schema):
     choice_labels = fields.Dict(allow_none=True)
     validation_rules = fields.Dict(allow_none=True)
     display_options = fields.Dict(allow_none=True)
+    
+    @post_load
+    def validate_option_type_specific(self, data, **kwargs):
+        """Clean up irrelevant fields based on option type"""
+        option_type = data.get('option_type')
+        
+        if option_type == 'rating':
+            # Rating: needs min_value, max_value
+            data.pop('choices', None)
+            data.pop('choice_labels', None)
+            data.pop('max_length', None)
+            data.pop('step', None)
+            
+            # Set defaults if not provided
+            if data.get('min_value') is None:
+                data['min_value'] = 1
+            if data.get('max_value') is None:
+                data['max_value'] = 10
+                
+        elif option_type in ['single_choice', 'multiple_choice']:
+            # Choice fields: need choices
+            data.pop('min_value', None)
+            data.pop('max_value', None)
+            data.pop('step', None)
+            data.pop('max_length', None)
+            
+        elif option_type == 'number_input':
+            # Number input: needs min_value, max_value, optional step
+            data.pop('choices', None)
+            data.pop('choice_labels', None)
+            data.pop('max_length', None)
+            
+        elif option_type in ['text', 'notes']:
+            # Text/Notes: needs max_length
+            data.pop('min_value', None)
+            data.pop('max_value', None)
+            data.pop('step', None)
+            data.pop('choices', None)
+            data.pop('choice_labels', None)
+            
+            # Set default max_length if not provided
+            if data.get('max_length') is None and option_type == 'notes':
+                data['max_length'] = 500
+                
+        elif option_type == 'yes_no':
+            # Yes/No: clean all validation fields
+            data.pop('min_value', None)
+            data.pop('max_value', None)
+            data.pop('step', None)
+            data.pop('max_length', None)
+            data.pop('choices', None)
+            data.pop('choice_labels', None)
+            
+        elif option_type == 'time':
+            # Time: clean all validation fields
+            data.pop('min_value', None)
+            data.pop('max_value', None)
+            data.pop('step', None)
+            data.pop('max_length', None)
+            data.pop('choices', None)
+            data.pop('choice_labels', None)
+            
+        return data
 
 
 class CustomCategorySchema(Schema):

@@ -830,27 +830,61 @@ class CategoryService:
             if not field_option:
                 raise ValueError("Field option not found")
             
-            field = field_option.tracker_field
-            category = TrackerCategory.query.filter_by(id=field.category_id).first()
+            # Handle both TrackerField and TrackerUserField
+            from app.models.tracker_field import TrackerField
+            from app.models.tracker_user_field import TrackerUserField
+            
+            field = None
+            category = None
+            field_name = None
+            is_user_field = False
+            
+            if field_option.tracker_field_id:
+                field = TrackerField.query.filter_by(id=field_option.tracker_field_id).first()
+                if field:
+                    category = TrackerCategory.query.filter_by(id=field.category_id).first()
+                    field_name = field.field_name
+            elif field_option.tracker_user_field_id:
+                field = TrackerUserField.query.filter_by(id=field_option.tracker_user_field_id).first()
+                if field:
+                    # For user fields, get category from tracker
+                    tracker = Tracker.query.filter_by(id=field.tracker_id).first()
+                    if tracker:
+                        category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
+                    field_name = field.field_name
+                    is_user_field = True
+            
+            if not field:
+                raise ValueError("Field not found for this option")
             
             option_name = field_option.option_name
-            field_name = field.field_name
             
             db.session.delete(field_option)
             db.session.flush()
             
-            if category:
+            if category and field_name:
                 SchemaManager.remove_option_from_schema(category, field_name, option_name)
             
             # Check if field has remaining options
-            remaining = FieldOption.query.filter_by(
-                tracker_field_id=field.id,
-                is_active=True
-            ).count()
+            if is_user_field:
+                remaining = FieldOption.query.filter_by(
+                    tracker_user_field_id=field.id,
+                    is_active=True
+                ).count()
+            else:
+                remaining = FieldOption.query.filter_by(
+                    tracker_field_id=field.id,
+                    is_active=True
+                ).count()
             
             # Only delete custom fields if no options left
-            if remaining == 0 and field.field_group == 'custom':
-                CategoryService.delete_field_from_category(field.id)
+            if remaining == 0:
+                if is_user_field:
+                    CategoryService.delete_user_field(field.id)
+                elif hasattr(field, 'field_group') and field.field_group == 'custom':
+                    CategoryService.delete_field_from_category(field.id)
+                else:
+                    db.session.commit()
             else:
                 db.session.commit()
         except Exception as e:
@@ -1137,8 +1171,26 @@ class CategoryService:
             if not field:
                 raise ValueError("User field not found")
             
+            # Get tracker and category for schema rebuild
+            tracker = Tracker.query.filter_by(id=field.tracker_id).first()
+            category = None
+            if tracker:
+                category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
+            
+            field_name = field.field_name
+            
+            # Remove field from schema if category exists
+            if category and field_name:
+                SchemaManager.remove_field_from_schema(category, field_name)
+            
             # Options are cascade deleted automatically
             db.session.delete(field)
+            db.session.flush()
+            
+            # Rebuild schema for prebuilt tracker
+            if category and tracker:
+                CategoryService.rebuild_category_schema(category, tracker)
+            
             db.session.commit()
         except Exception as e:
             db.session.rollback()

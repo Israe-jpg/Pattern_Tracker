@@ -1233,10 +1233,38 @@ def update_option_info(option_id: int):
         if not option:
             return error_response("Option not found", 404)
         
+        # Get the new option type (if it's being changed)
+        new_option_type = validated_data.get('option_type', option.option_type)
+        
         # Update only the allowed fields (excluding option_order)
         for key, value in validated_data.items():
             if hasattr(option, key):
                 setattr(option, key, value)
+        
+        # Explicitly clear irrelevant fields based on the new option type
+        # This ensures old fields from previous type are cleared
+        if new_option_type in ['time', 'yes_no']:
+            option.min_value = None
+            option.max_value = None
+            option.step = None
+            option.max_length = None
+            option.choices = None
+            option.choice_labels = None
+        elif new_option_type in ['rating', 'number_input']:
+            option.choices = None
+            option.choice_labels = None
+            option.max_length = None
+        elif new_option_type in ['single_choice', 'multiple_choice']:
+            option.min_value = None
+            option.max_value = None
+            option.step = None
+            option.max_length = None
+        elif new_option_type in ['text', 'notes']:
+            option.min_value = None
+            option.max_value = None
+            option.step = None
+            option.choices = None
+            option.choice_labels = None
         
         db.session.commit()
         
