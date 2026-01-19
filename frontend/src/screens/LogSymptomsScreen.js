@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
+import { useFocusEffect } from "@react-navigation/native";
 import {
   View,
   Text,
@@ -38,10 +39,52 @@ export default function LogSymptomsScreen({ route, navigation }) {
   });
   const scrollViewRef = useRef(null);
   const isHandlingNavigation = useRef(false);
+  const formInitializedRef = useRef(false);
 
   useEffect(() => {
     initializeForm();
   }, [trackerId]);
+
+  /**
+   * Reload existing data when screen comes into focus
+   * This ensures the form shows the latest saved data when user returns to the screen
+   */
+  useFocusEffect(
+    React.useCallback(() => {
+      // Only reload if we're not in edit mode and form is already initialized
+      if (!isEditMode && formSchema && !loading) {
+        const reloadExistingData = async () => {
+          try {
+            const response = await dataTrackingService.getDataByDate(
+              trackerId,
+              entryDate
+            );
+
+            // The service returns response.data from axios
+            // Backend returns: { message: "...", tracking_data: { id, tracker_id, entry_date, data: {...}, ... } }
+            // But the response has nested data structure, so access: response.data.tracking_data
+            const trackingData =
+              response?.data?.tracking_data || response?.tracking_data;
+            const data = trackingData?.data;
+
+            if (data && Object.keys(data).length > 0) {
+              setExistingData(data);
+            } else {
+              setExistingData(null);
+            }
+          } catch (error) {
+            // 404 means no data exists - that's fine
+            if (error.response?.status === 404) {
+              setExistingData(null);
+            } else {
+              console.error("Error reloading existing data:", error);
+            }
+          }
+        };
+        reloadExistingData();
+      }
+    }, [isEditMode, formSchema, loading, trackerId, entryDate])
+  );
 
   // Handle hardware back button navigation with unsaved changes check
   useEffect(() => {
@@ -120,12 +163,14 @@ export default function LogSymptomsScreen({ route, navigation }) {
           entryDate
         );
 
-        // The service returns response.data, which contains { tracking_data: {...}, message: "..." }
+        // The service returns response.data from axios
+        // Backend returns: { message: "...", tracking_data: { id, tracker_id, entry_date, data: {...}, ... } }
+        // But the response has nested data structure, so access: response.data.tracking_data
         const trackingData =
           response?.data?.tracking_data || response?.tracking_data;
         const data = trackingData?.data;
 
-        if (data && Object.keys(data).length > 0) {
+        if (data && typeof data === "object" && Object.keys(data).length > 0) {
           setExistingData(data);
         } else {
           setExistingData(null);
@@ -252,18 +297,27 @@ export default function LogSymptomsScreen({ route, navigation }) {
     handleSubmit,
     formState: { errors, isDirty },
     reset,
+    getValues,
+    watch,
   } = useForm({
     resolver: zodSchema ? zodResolver(zodSchema) : undefined,
     defaultValues,
     mode: "onBlur",
   });
 
-  // Reset form when defaultValues change (after existing data loads)
+  // Reset form when defaultValues change (after existing data loads) - only once on initial load
   useEffect(() => {
-    if (defaultValues && Object.keys(defaultValues).length > 0) {
+    if (
+      defaultValues &&
+      Object.keys(defaultValues).length > 0 &&
+      formSchema &&
+      !loading &&
+      !formInitializedRef.current
+    ) {
       reset(defaultValues);
+      formInitializedRef.current = true;
     }
-  }, [defaultValues, reset]);
+  }, [defaultValues, reset, formSchema, loading]);
 
   /**
    * Handle form submission (create or update)
@@ -272,10 +326,14 @@ export default function LogSymptomsScreen({ route, navigation }) {
     try {
       setSubmitting(true);
 
+      // Use getValues as fallback if handleSubmit data is empty
+      const currentValues = getValues();
+      const formData = Object.keys(data).length > 0 ? data : currentValues;
+
       // Filter out empty values
       const cleanedData = {};
-      Object.keys(data).forEach((fieldName) => {
-        const fieldData = data[fieldName];
+      Object.keys(formData).forEach((fieldName) => {
+        const fieldData = formData[fieldName];
         if (!fieldData || typeof fieldData !== "object") return;
 
         Object.keys(fieldData).forEach((optionName) => {
@@ -296,9 +354,7 @@ export default function LogSymptomsScreen({ route, navigation }) {
       await dataTrackingService.saveData(trackerId, cleanedData, entryDate);
 
       // Update state to reflect that data now exists
-      if (!existingData) {
-        setExistingData(cleanedData);
-      }
+      setExistingData(cleanedData);
 
       const message = existingData
         ? "Symptoms updated successfully!"
@@ -555,12 +611,44 @@ export default function LogSymptomsScreen({ route, navigation }) {
         await trackerService.toggleOptionActive(optionId);
       }
 
-      // Reload both schemas to sync with backend
-      await Promise.all([
-        loadManagementSchema(),
+      // Reload both schemas and existing data to sync with backend
+      const [schemaResponse, dataResponse] = await Promise.all([
         // Reload form schema so the form reflects the changes
-        trackerService.getFormSchema(trackerId).then(setFormSchema),
+        trackerService.getFormSchema(trackerId),
+        // Reload existing data to ensure form shows latest saved values
+        dataTrackingService
+          .getDataByDate(trackerId, entryDate)
+          .catch((error) => {
+            // 404 means no data exists - that's fine
+            if (error.response?.status === 404) {
+              return null;
+            }
+            throw error;
+          }),
       ]);
+
+      // Also reload management schema
+      await loadManagementSchema();
+
+      // Set form schema
+      setFormSchema(schemaResponse);
+
+      // Set existing data if available
+      if (dataResponse) {
+        // The service returns response.data from axios
+        // Backend returns: { message: "...", tracking_data: { id, tracker_id, entry_date, data: {...}, ... } }
+        // But the console shows response has nested data, so try: response.data.tracking_data
+        const trackingData =
+          dataResponse?.data?.tracking_data || dataResponse?.tracking_data;
+        const data = trackingData?.data;
+        if (data && typeof data === "object" && Object.keys(data).length > 0) {
+          setExistingData(data);
+        } else {
+          setExistingData(null);
+        }
+      } else {
+        setExistingData(null);
+      }
 
       // Clear pending changes
       setPendingChanges({ fieldToggles: new Map(), optionToggles: new Map() });
