@@ -45,41 +45,26 @@ export default function LogSymptomsScreen({ route, navigation }) {
       setFormSchema(schemaResponse);
 
       // Step 2: Check if data exists for today
-      console.log("🔍 Checking for existing data:");
-      console.log("  Tracker ID:", trackerId);
-      console.log("  Date:", entryDate);
-
       try {
         const response = await dataTrackingService.getDataByDate(
           trackerId,
           entryDate
         );
-        console.log("📦 Full API response:", JSON.stringify(response, null, 2));
 
         // The service returns response.data, which contains { tracking_data: {...}, message: "..." }
         const trackingData =
           response?.data?.tracking_data || response?.tracking_data;
         const data = trackingData?.data;
-        console.log("📊 Tracking data object:", trackingData);
-        console.log("📊 Extracted data field:", data);
 
         if (data && Object.keys(data).length > 0) {
           setExistingData(data);
-          console.log("✅ Found existing data for today:", data);
         } else {
           setExistingData(null);
-          console.log("⚠️ Response returned but data is empty");
         }
       } catch (error) {
-        console.log("❌ Error fetching data:");
-        console.log("  Status:", error.response?.status);
-        console.log("  Message:", error.message);
-        console.log("  Response data:", error.response?.data);
-
         // 404 means no data exists - that's fine
         if (error.response?.status === 404) {
           setExistingData(null);
-          console.log("📝 No existing data for today - new entry (404)");
         } else {
           throw error;
         }
@@ -207,7 +192,6 @@ export default function LogSymptomsScreen({ route, navigation }) {
   // Reset form when defaultValues change (after existing data loads)
   useEffect(() => {
     if (defaultValues && Object.keys(defaultValues).length > 0) {
-      console.log("🔄 Resetting form with values:", defaultValues);
       reset(defaultValues);
     }
   }, [defaultValues, reset]);
@@ -283,7 +267,6 @@ export default function LogSymptomsScreen({ route, navigation }) {
           text: "Delete",
           style: "destructive",
           onPress: () => {
-            console.log("Delete field:", field.field_name);
             // TODO: Implement field deletion API call
           },
         },
@@ -292,7 +275,6 @@ export default function LogSymptomsScreen({ route, navigation }) {
   };
 
   const handleEditField = (field) => {
-    console.log("Edit field:", field.field_name);
     // TODO: Navigate to field edit screen or show modal
     Alert.alert(
       "Edit Field",
@@ -312,12 +294,6 @@ export default function LogSymptomsScreen({ route, navigation }) {
           text: "Delete",
           style: "destructive",
           onPress: () => {
-            console.log(
-              "Delete option:",
-              option.option_name,
-              "from field:",
-              field.field_name
-            );
             // TODO: Implement option deletion API call
           },
         },
@@ -326,12 +302,6 @@ export default function LogSymptomsScreen({ route, navigation }) {
   };
 
   const handleEditOption = (field, option) => {
-    console.log(
-      "Edit option:",
-      option.option_name,
-      "from field:",
-      field.field_name
-    );
     // TODO: Navigate to option edit screen or show modal
     Alert.alert(
       "Edit Option",
@@ -340,13 +310,11 @@ export default function LogSymptomsScreen({ route, navigation }) {
   };
 
   const handleAddField = () => {
-    console.log("Add new field");
     // TODO: Navigate to field creation screen or show modal
     Alert.alert("Add Field", "Create a new field for this form");
   };
 
   const handleAddOption = (field) => {
-    console.log("Add option to field:", field.field_name);
     // TODO: Navigate to option creation screen or show modal
     Alert.alert(
       "Add Option",
@@ -364,7 +332,6 @@ export default function LogSymptomsScreen({ route, navigation }) {
         {
           text: action,
           onPress: () => {
-            console.log(`${action} field:`, field.field_name);
             // TODO: Implement field toggle API call
           },
         },
@@ -384,12 +351,6 @@ export default function LogSymptomsScreen({ route, navigation }) {
         {
           text: action,
           onPress: () => {
-            console.log(
-              `${action} option:`,
-              option.option_name,
-              "from field:",
-              field.field_name
-            );
             // TODO: Implement option toggle API call
           },
         },
@@ -402,12 +363,10 @@ export default function LogSymptomsScreen({ route, navigation }) {
    */
   const loadManagementSchema = async () => {
     try {
-      console.log("📋 Loading management schema for edit mode...");
       const schema = await trackerService.getManagementSchema(trackerId);
       setManagementSchema(schema);
-      console.log("✅ Management schema loaded:", schema);
     } catch (error) {
-      console.error("❌ Error loading management schema:", error);
+      console.error("Error loading management schema:", error);
       Alert.alert("Error", "Failed to load form editor. Please try again.");
     }
   };
