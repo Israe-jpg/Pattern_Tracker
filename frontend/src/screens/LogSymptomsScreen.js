@@ -32,11 +32,75 @@ export default function LogSymptomsScreen({ route, navigation }) {
   const [showFieldModal, setShowFieldModal] = useState(false);
   const [showMaskedFields, setShowMaskedFields] = useState(false);
   const [hasEditModeChanges, setHasEditModeChanges] = useState(false);
+  const [pendingChanges, setPendingChanges] = useState({
+    fieldToggles: new Map(), // fieldId -> { activate: boolean }
+    optionToggles: new Map(), // optionId -> { activate: boolean }
+  });
   const scrollViewRef = useRef(null);
+  const isHandlingNavigation = useRef(false);
 
   useEffect(() => {
     initializeForm();
   }, [trackerId]);
+
+  // Handle hardware back button navigation with unsaved changes check
+  useEffect(() => {
+    const unsubscribe = navigation.addListener("beforeRemove", (e) => {
+      // If we're already handling navigation (from back button click), allow it
+      if (isHandlingNavigation.current) {
+        isHandlingNavigation.current = false;
+        return;
+      }
+
+      if (!isEditMode || !hasEditModeChanges) {
+        // No unsaved changes, allow navigation
+        return;
+      }
+
+      // Prevent default behavior of leaving the screen
+      e.preventDefault();
+
+      // Show confirmation dialog
+      Alert.alert(
+        "Unsaved Changes",
+        "You have unsaved changes. What would you like to do?",
+        [
+          {
+            text: "Cancel",
+            style: "cancel",
+            onPress: () => {},
+          },
+          {
+            text: "Don't Save",
+            style: "destructive",
+            onPress: () => {
+              // Clear changes and navigate back
+              setHasEditModeChanges(false);
+              setPendingChanges({
+                fieldToggles: new Map(),
+                optionToggles: new Map(),
+              });
+              setIsEditMode(false);
+              loadManagementSchema(); // Reload to revert changes
+              navigation.dispatch(e.data.action);
+            },
+          },
+          {
+            text: "Save",
+            onPress: async () => {
+              const success = await savePendingChanges();
+              if (success) {
+                setIsEditMode(false);
+                navigation.dispatch(e.data.action);
+              }
+            },
+          },
+        ]
+      );
+    });
+
+    return unsubscribe;
+  }, [navigation, isEditMode, hasEditModeChanges, pendingChanges]);
 
   /**
    * Initialize form: Load schema and check for existing data
@@ -354,8 +418,18 @@ export default function LogSymptomsScreen({ route, navigation }) {
     );
   };
 
-  const handleToggleField = async (field, activate) => {
-    // Optimistic update: update the UI immediately
+  const handleToggleField = (field, activate) => {
+    // Store change locally (don't save to backend yet)
+    setPendingChanges((prev) => {
+      const newFieldToggles = new Map(prev.fieldToggles);
+      newFieldToggles.set(field.id, { activate });
+      return {
+        ...prev,
+        fieldToggles: newFieldToggles,
+      };
+    });
+
+    // Update UI optimistically
     setManagementSchema((prevSchema) => {
       if (!prevSchema) return prevSchema;
 
@@ -372,7 +446,6 @@ export default function LogSymptomsScreen({ route, navigation }) {
           : [],
       };
 
-      // Search through all field arrays
       const fieldArrays = [
         updatedSchema.baseline_fields,
         updatedSchema.category_fields,
@@ -393,26 +466,21 @@ export default function LogSymptomsScreen({ route, navigation }) {
       return updatedSchema;
     });
 
-    setHasEditModeChanges(true); // Mark that changes were made
-
-    try {
-      await trackerService.toggleFieldActive(field.id);
-      // Reload management schema to sync with backend
-      await loadManagementSchema();
-    } catch (error) {
-      console.error("Error toggling field:", error);
-      // Revert optimistic update on error
-      await loadManagementSchema();
-      const errorMessage =
-        error.response?.data?.error ||
-        error.message ||
-        "Failed to update field. Please try again.";
-      Alert.alert("Error", errorMessage);
-    }
+    setHasEditModeChanges(true);
   };
 
-  const handleToggleOption = async (field, option, activate) => {
-    // Optimistic update: update the UI immediately
+  const handleToggleOption = (field, option, activate) => {
+    // Store change locally (don't save to backend yet)
+    setPendingChanges((prev) => {
+      const newOptionToggles = new Map(prev.optionToggles);
+      newOptionToggles.set(option.id, { activate });
+      return {
+        ...prev,
+        optionToggles: newOptionToggles,
+      };
+    });
+
+    // Update UI optimistically
     setManagementSchema((prevSchema) => {
       if (!prevSchema) return prevSchema;
 
@@ -429,7 +497,6 @@ export default function LogSymptomsScreen({ route, navigation }) {
           : [],
       };
 
-      // Search through all field arrays
       const fieldArrays = [
         updatedSchema.baseline_fields,
         updatedSchema.category_fields,
@@ -455,22 +522,7 @@ export default function LogSymptomsScreen({ route, navigation }) {
       return updatedSchema;
     });
 
-    setHasEditModeChanges(true); // Mark that changes were made
-
-    try {
-      await trackerService.toggleOptionActive(option.id);
-      // Reload management schema to sync with backend
-      await loadManagementSchema();
-    } catch (error) {
-      console.error("Error toggling option:", error);
-      // Revert optimistic update on error
-      await loadManagementSchema();
-      const errorMessage =
-        error.response?.data?.error ||
-        error.message ||
-        "Failed to update option. Please try again.";
-      Alert.alert("Error", errorMessage);
-    }
+    setHasEditModeChanges(true);
   };
 
   /**
@@ -489,50 +541,107 @@ export default function LogSymptomsScreen({ route, navigation }) {
   /**
    * Toggle edit mode
    */
-  const toggleEditMode = async () => {
-    const wasInEditMode = isEditMode;
+  const savePendingChanges = async () => {
+    try {
+      setSubmitting(true);
 
-    // Don't allow exiting edit mode if there are unsaved changes
-    if (wasInEditMode && hasEditModeChanges) {
-      Alert.alert(
-        "Unsaved Changes",
-        "You have unsaved changes. Are you sure you want to exit edit mode?",
-        [
-          { text: "Cancel", style: "cancel" },
-          {
-            text: "Exit",
-            style: "destructive",
-            onPress: async () => {
-              setIsEditMode(false);
-              setShowMaskedFields(false);
-              setHasEditModeChanges(false);
+      // Save all pending field toggles
+      for (const [fieldId, { activate }] of pendingChanges.fieldToggles) {
+        await trackerService.toggleFieldActive(fieldId);
+      }
+
+      // Save all pending option toggles
+      for (const [optionId, { activate }] of pendingChanges.optionToggles) {
+        await trackerService.toggleOptionActive(optionId);
+      }
+
+      // Reload both schemas to sync with backend
+      await Promise.all([
+        loadManagementSchema(),
+        // Reload form schema so the form reflects the changes
+        trackerService.getFormSchema(trackerId).then(setFormSchema),
+      ]);
+
+      // Clear pending changes
+      setPendingChanges({ fieldToggles: new Map(), optionToggles: new Map() });
+      setHasEditModeChanges(false);
+
+      return true;
+    } catch (error) {
+      console.error("Error saving changes:", error);
+      const errorMessage =
+        error.response?.data?.error ||
+        error.message ||
+        "Failed to save changes. Please try again.";
+      Alert.alert("Error", errorMessage);
+      return false;
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const toggleEditMode = async () => {
+    // If clicking checkmark in edit mode, show save confirmation
+    if (isEditMode) {
+      if (hasEditModeChanges) {
+        Alert.alert(
+          "Save Changes?",
+          "Your changes will be saved.",
+          [
+            {
+              text: "Don't Save",
+              style: "destructive",
+              onPress: () => {
+                // Discard changes and reload original schema
+                setPendingChanges({
+                  fieldToggles: new Map(),
+                  optionToggles: new Map(),
+                });
+                setHasEditModeChanges(false);
+                loadManagementSchema(); // Reload to revert changes
+                setIsEditMode(false);
+                setShowMaskedFields(false);
+              },
             },
-          },
-        ]
-      );
+            {
+              text: "Cancel",
+              style: "cancel",
+            },
+            {
+              text: "Save",
+              onPress: async () => {
+                const success = await savePendingChanges();
+                if (success) {
+                  setIsEditMode(false);
+                  setShowMaskedFields(false);
+                }
+              },
+            },
+          ],
+          { cancelable: true }
+        );
+      } else {
+        // No changes, just exit
+        setIsEditMode(false);
+        setShowMaskedFields(false);
+      }
       return;
     }
 
-    if (!isEditMode && !managementSchema) {
-      // Entering edit mode - load management schema
+    // Entering edit mode - load management schema if needed
+    if (!managementSchema) {
       await loadManagementSchema();
     }
 
-    setIsEditMode(!isEditMode);
+    setIsEditMode(true);
     setHasEditModeChanges(false);
-
-    // Reset masked fields toggle when exiting edit mode
-    if (wasInEditMode) {
-      setShowMaskedFields(false);
-    }
+    setShowMaskedFields(false);
+    setPendingChanges({ fieldToggles: new Map(), optionToggles: new Map() });
 
     // Scroll to top when entering edit mode
-    if (!wasInEditMode) {
-      // Wait for state update and DOM render
-      setTimeout(() => {
-        scrollViewRef.current?.scrollTo({ y: 0, animated: true });
-      }, 300);
-    }
+    setTimeout(() => {
+      scrollViewRef.current?.scrollTo({ y: 0, animated: true });
+    }, 300);
   };
 
   /**
@@ -674,7 +783,58 @@ export default function LogSymptomsScreen({ route, navigation }) {
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backButton}
-          onPress={() => navigation.goBack()}
+          onPress={() => {
+            // Check for unsaved changes when clicking back button
+            if (isEditMode && hasEditModeChanges) {
+              // Set flag to prevent navigation listener from showing duplicate dialog
+              isHandlingNavigation.current = true;
+
+              Alert.alert(
+                "Unsaved Changes",
+                "You have unsaved changes. What would you like to do?",
+                [
+                  {
+                    text: "Cancel",
+                    style: "cancel",
+                    onPress: () => {
+                      isHandlingNavigation.current = false;
+                    },
+                  },
+                  {
+                    text: "Don't Save",
+                    style: "destructive",
+                    onPress: () => {
+                      // Discard changes and reload original schema
+                      setPendingChanges({
+                        fieldToggles: new Map(),
+                        optionToggles: new Map(),
+                      });
+                      setHasEditModeChanges(false);
+                      loadManagementSchema(); // Reload to revert changes
+                      setIsEditMode(false);
+                      setShowMaskedFields(false);
+                      navigation.goBack();
+                    },
+                  },
+                  {
+                    text: "Save",
+                    onPress: async () => {
+                      const success = await savePendingChanges();
+                      if (success) {
+                        setIsEditMode(false);
+                        setShowMaskedFields(false);
+                        navigation.goBack();
+                      } else {
+                        isHandlingNavigation.current = false;
+                      }
+                    },
+                  },
+                ]
+              );
+            } else {
+              navigation.goBack();
+            }
+          }}
         >
           <Ionicons name="arrow-back" size={24} color={colors.textOnPrimary} />
         </TouchableOpacity>
@@ -687,19 +847,24 @@ export default function LogSymptomsScreen({ route, navigation }) {
             isEditMode &&
               !hasEditModeChanges &&
               styles.headerEditButtonDisabled,
+            submitting && styles.headerEditButtonDisabled,
           ]}
           onPress={toggleEditMode}
-          disabled={isEditMode && !hasEditModeChanges}
+          disabled={(isEditMode && !hasEditModeChanges) || submitting}
         >
-          <Ionicons
-            name={isEditMode ? "checkmark" : "create-outline"}
-            size={24}
-            color={
-              isEditMode && !hasEditModeChanges
-                ? colors.textLight
-                : colors.textOnPrimary
-            }
-          />
+          {submitting ? (
+            <ActivityIndicator size="small" color={colors.textOnPrimary} />
+          ) : (
+            <Ionicons
+              name={isEditMode ? "checkmark" : "create-outline"}
+              size={24}
+              color={
+                isEditMode && !hasEditModeChanges
+                  ? colors.textLight
+                  : colors.textOnPrimary
+              }
+            />
+          )}
         </TouchableOpacity>
       </View>
 
