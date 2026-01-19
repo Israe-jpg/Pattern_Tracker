@@ -13,6 +13,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import FormField from "../components/form/FormField";
 import FormFieldEdit from "../components/form/FormFieldEdit";
+import FieldCreationModal from "../components/FieldCreationModal";
 import { Ionicons } from "@expo/vector-icons";
 import { trackerService } from "../services/trackerService";
 import { dataTrackingService } from "../services/dataTrackingService";
@@ -28,6 +29,7 @@ export default function LogSymptomsScreen({ route, navigation }) {
   const [existingData, setExistingData] = useState(null);
   const [entryDate] = useState(new Date().toISOString().split("T")[0]); // Today's date
   const [isEditMode, setIsEditMode] = useState(false);
+  const [showFieldModal, setShowFieldModal] = useState(false);
 
   useEffect(() => {
     initializeForm();
@@ -310,8 +312,29 @@ export default function LogSymptomsScreen({ route, navigation }) {
   };
 
   const handleAddField = () => {
-    // TODO: Navigate to field creation screen or show modal
-    Alert.alert("Add Field", "Create a new field for this form");
+    setShowFieldModal(true);
+  };
+
+  const handleFieldSubmit = async (fieldData) => {
+    try {
+      setSubmitting(true);
+      await trackerService.createNewField(trackerId, fieldData);
+      Alert.alert("Success", "Field created successfully!");
+      setShowFieldModal(false);
+      // Reload management schema to show new field
+      if (isEditMode) {
+        await loadManagementSchema();
+      }
+    } catch (error) {
+      console.error("Error creating field:", error);
+      const errorMessage =
+        error.response?.data?.error ||
+        error.message ||
+        "Failed to create field. Please try again.";
+      Alert.alert("Error", errorMessage);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleAddOption = (field) => {
@@ -662,6 +685,13 @@ export default function LogSymptomsScreen({ route, navigation }) {
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      {/* Field Creation Modal */}
+      <FieldCreationModal
+        visible={showFieldModal}
+        onClose={() => setShowFieldModal(false)}
+        onSubmit={handleFieldSubmit}
+      />
     </View>
   );
 }

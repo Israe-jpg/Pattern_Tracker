@@ -54,4 +54,16 @@ export const trackerService = {
     const response = await api.put(API_ENDPOINTS.UPDATE_DEFAULT_TRACKER(trackerId));
     return response.data;
   },
+
+  // Create new field for a tracker
+  createNewField: async (trackerId, fieldData) => {
+    const response = await api.post(API_ENDPOINTS.CREATE_NEW_FIELD(trackerId), {
+      field_data: {
+        field_name: fieldData.field_name,
+        display_label: fieldData.display_label,
+      },
+      options: fieldData.options,
+    });
+    return response.data;
+  },
 };
