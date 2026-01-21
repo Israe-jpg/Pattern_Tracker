@@ -147,18 +147,7 @@ const FormFieldEdit = React.memo(
             );
           })}
         </View>
-
-          {/* Add option button - only for custom fields */}
-          {isCustomField && (
-            <TouchableOpacity
-              style={styles.addOptionButton}
-              onPress={() => onAddOption && onAddOption(field)}
-            >
-              <Ionicons name="add-circle-outline" size={20} color={colors.primary} />
-              <Text style={styles.addOptionText}>Add Option</Text>
-            </TouchableOpacity>
-          )}
-        </View>
+      </View>
       </View>
     );
   },
@@ -341,29 +330,12 @@ const styles = StyleSheet.create({
     gap: 8,
     alignItems: "center",
   },
-  addOptionButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 12,
-    padding: 8,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderStyle: "dashed",
-    gap: 6,
-  },
   noOptionsText: {
     fontSize: 14,
     color: colors.textLight,
     fontStyle: "italic",
     textAlign: "center",
     paddingVertical: 12,
-  },
-  addOptionText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.primary,
   },
 });
 

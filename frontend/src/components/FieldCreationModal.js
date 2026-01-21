@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
+  Keyboard,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { colors } from "../constants/colors";
@@ -41,6 +42,27 @@ export default function FieldCreationModal({
       maxValue: 10,
     },
   ]);
+  const scrollViewRef = useRef(null);
+  const optionRefs = useRef({});
+  const choiceInputRefs = useRef({});
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+  const [fieldError, setFieldError] = useState("");
+  const [optionErrors, setOptionErrors] = useState([]); // [{ name?, type?, choices? }, ...]
+
+  // Listen for keyboard show/hide to adjust UI (hide Add Option when keyboard is up)
+  useEffect(() => {
+    const showSub = Keyboard.addListener("keyboardDidShow", () => {
+      setIsKeyboardVisible(true);
+    });
+    const hideSub = Keyboard.addListener("keyboardDidHide", () => {
+      setIsKeyboardVisible(false);
+    });
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   // Pre-populate form when editing
   React.useEffect(() => {
@@ -90,6 +112,10 @@ export default function FieldCreationModal({
         maxValue: 10,
       },
     ]);
+    // Scroll to bottom to show the new option
+    setTimeout(() => {
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+    }, 150);
   };
 
   const handleRemoveOption = (index) => {
@@ -115,6 +141,19 @@ export default function FieldCreationModal({
     updated[optionIndex].choices.push(currentInput.trim());
     updated[optionIndex].currentChoiceInput = "";
     setOptions(updated);
+
+    // Scroll to keep the choice input visible after adding a choice
+    setTimeout(() => {
+      const inputKey = `${optionIndex}-choice-input`;
+      if (choiceInputRefs.current[inputKey]) {
+        // Refocus the input and let KeyboardAvoidingView handle the scroll
+        choiceInputRefs.current[inputKey]?.focus();
+        // Also scroll a bit more to ensure visibility
+        setTimeout(() => {
+          scrollViewRef.current?.scrollToEnd({ animated: true });
+        }, 200);
+      }
+    }, 100);
   };
 
   const handleRemoveChoice = (optionIndex, choiceIndex) => {
@@ -126,70 +165,83 @@ export default function FieldCreationModal({
   };
 
   const handleSave = () => {
+    let hasError = false;
+
+    // Reset errors
+    setFieldError("");
+    setOptionErrors([]);
+
     // Validate field name
     if (!fieldName.trim()) {
-      alert("Please enter a field name");
-      return;
+      setFieldError("Please enter a field name");
+      hasError = true;
     }
 
     // Validate all options
-    const validatedOptions = options
-      .map((opt, index) => {
-        if (!opt.optionName.trim()) {
-          alert(`Please enter a name for option ${index + 1}`);
-          return null;
-        }
-        if (!opt.optionType) {
-          alert(`Please select a type for option ${index + 1}`);
-          return null;
-        }
-        if (
-          (opt.optionType === "multiple_choice" ||
-            opt.optionType === "single_choice") &&
-          (!opt.choices || opt.choices.length === 0)
-        ) {
-          alert(
-            `Please add at least one choice for option ${index + 1} (${
-              opt.optionType
-            })`
-          );
-          return null;
-        }
+    const newOptionErrors = options.map(() => ({}));
 
-        const optionData = {
-          option_name: opt.optionName.trim().toLowerCase().replace(/\s+/g, "_"),
-          option_type: opt.optionType,
-          display_label: opt.optionName.trim(),
-        };
+    options.forEach((opt, index) => {
+      const errors = {};
 
-        if (
-          opt.optionType === "multiple_choice" ||
-          opt.optionType === "single_choice"
-        ) {
-          optionData.choices = opt.choices;
-        }
+      if (!opt.optionName.trim()) {
+        errors.name = "Please enter an option name";
+        hasError = true;
+      }
 
-        if (opt.optionType === "rating") {
-          optionData.min_value = opt.minValue ?? 0;
-          optionData.max_value = opt.maxValue ?? 10;
-        }
+      if (!opt.optionType) {
+        errors.type = "Please select an option type";
+        hasError = true;
+      }
 
-        return optionData;
-      })
-      .filter((opt) => opt !== null);
+      if (
+        (opt.optionType === "multiple_choice" ||
+          opt.optionType === "single_choice") &&
+        (!opt.choices || opt.choices.length === 0)
+      ) {
+        errors.choices = "Please add at least one choice";
+        hasError = true;
+      }
 
-    if (validatedOptions.length === 0) {
-      alert("Please add at least one valid option");
+      newOptionErrors[index] = errors;
+    });
+
+    setOptionErrors(newOptionErrors);
+
+    // If any validation error, keep modal open and show inline errors
+    if (hasError) {
       return;
     }
+
+    // All good: build payload
+    const validatedOptions = options.map((opt, index) => {
+      const optionData = {
+        option_name: opt.optionName.trim().toLowerCase().replace(/\s+/g, "_"),
+        option_type: opt.optionType,
+        display_label: opt.optionName.trim(),
+      };
+
+      if (
+        opt.optionType === "multiple_choice" ||
+        opt.optionType === "single_choice"
+      ) {
+        optionData.choices = opt.choices;
+      }
+
+      if (opt.optionType === "rating") {
+        optionData.min_value = opt.minValue ?? 0;
+        optionData.max_value = opt.maxValue ?? 10;
+      }
+
+      return {
+        ...optionData,
+        optionId: options[index]?.optionId, // Preserve existing option ID for updates
+      };
+    });
 
     const fieldData = {
       field_name: fieldName.trim().toLowerCase().replace(/\s+/g, "_"),
       display_label: fieldName.trim(),
-      options: validatedOptions.map((opt, index) => ({
-        ...opt,
-        optionId: options[index]?.optionId, // Preserve existing option ID for updates
-      })),
+      options: validatedOptions,
     };
 
     onSubmit(fieldData);
@@ -225,6 +277,7 @@ export default function FieldCreationModal({
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={styles.modalOverlay}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
       >
         <View style={styles.modalContent}>
           <View style={styles.modalHeader}>
@@ -237,25 +290,42 @@ export default function FieldCreationModal({
           </View>
 
           <ScrollView
+            ref={scrollViewRef}
             style={styles.scrollView}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={true}
+            contentContainerStyle={styles.scrollViewContent}
           >
             {/* Field Name Input */}
             <View style={styles.inputSection}>
               <Text style={styles.label}>Field Name</Text>
               <TextInput
-                style={styles.textInput}
+                style={[
+                  styles.textInput,
+                  fieldError ? styles.inputErrorBorder : null,
+                ]}
                 placeholder="e.g., Mood, Energy, Sleep"
                 value={fieldName}
-                onChangeText={setFieldName}
+                onChangeText={(text) => {
+                  setFieldName(text);
+                  if (fieldError) setFieldError("");
+                }}
                 placeholderTextColor={colors.textLight}
               />
+              {fieldError ? (
+                <Text style={styles.errorText}>{fieldError}</Text>
+              ) : null}
             </View>
 
             {/* Options */}
             {options.map((option, optionIndex) => (
-              <View key={optionIndex} style={styles.optionSection}>
+              <View
+                key={optionIndex}
+                ref={(ref) => {
+                  if (ref) optionRefs.current[optionIndex] = ref;
+                }}
+                style={styles.optionSection}
+              >
                 <View style={styles.optionHeader}>
                   <Text style={styles.optionTitle}>
                     Option {optionIndex + 1}
@@ -278,14 +348,32 @@ export default function FieldCreationModal({
                 <View style={styles.inputGroup}>
                   <Text style={styles.label}>Option Name</Text>
                   <TextInput
-                    style={styles.textInput}
+                    style={[
+                      styles.textInput,
+                      optionErrors[optionIndex]?.name
+                        ? styles.inputErrorBorder
+                        : null,
+                    ]}
                     placeholder="e.g., overall, level, quality"
                     value={option.optionName}
-                    onChangeText={(text) =>
-                      handleUpdateOption(optionIndex, "optionName", text)
-                    }
+                    onChangeText={(text) => {
+                      handleUpdateOption(optionIndex, "optionName", text);
+                      if (optionErrors[optionIndex]?.name) {
+                        const updatedErrors = [...optionErrors];
+                        updatedErrors[optionIndex] = {
+                          ...updatedErrors[optionIndex],
+                          name: "",
+                        };
+                        setOptionErrors(updatedErrors);
+                      }
+                    }}
                     placeholderTextColor={colors.textLight}
                   />
+                  {optionErrors[optionIndex]?.name ? (
+                    <Text style={styles.errorText}>
+                      {optionErrors[optionIndex].name}
+                    </Text>
+                  ) : null}
                 </View>
 
                 {/* Option Type Picker */}
@@ -324,6 +412,11 @@ export default function FieldCreationModal({
                       </TouchableOpacity>
                     ))}
                   </ScrollView>
+                  {optionErrors[optionIndex]?.type ? (
+                    <Text style={styles.errorText}>
+                      {optionErrors[optionIndex].type}
+                    </Text>
+                  ) : null}
                 </View>
 
                 {/* Rating Scale Min/Max */}
@@ -503,6 +596,12 @@ export default function FieldCreationModal({
                     {/* Choice Input */}
                     <View style={styles.choiceInputContainer}>
                       <TextInput
+                        ref={(ref) => {
+                          if (ref) {
+                            const inputKey = `${optionIndex}-choice-input`;
+                            choiceInputRefs.current[inputKey] = ref;
+                          }
+                        }}
                         style={styles.choiceInput}
                         placeholder="Type a choice and press Enter"
                         value={option.currentChoiceInput || ""}
@@ -518,6 +617,14 @@ export default function FieldCreationModal({
                         }}
                         returnKeyType="done"
                         placeholderTextColor={colors.textLight}
+                        onFocus={() => {
+                          // Scroll to keep input visible when keyboard appears
+                          setTimeout(() => {
+                            scrollViewRef.current?.scrollToEnd({
+                              animated: true,
+                            });
+                          }, 300);
+                        }}
                       />
                       <TouchableOpacity
                         onPress={() => handleAddChoice(optionIndex)}
@@ -535,23 +642,32 @@ export default function FieldCreationModal({
                         />
                       </TouchableOpacity>
                     </View>
+                    {optionErrors[optionIndex]?.choices ? (
+                      <Text style={styles.errorText}>
+                        {optionErrors[optionIndex].choices}
+                      </Text>
+                    ) : null}
                   </View>
                 )}
               </View>
             ))}
 
-            {/* Add Option Button */}
-            <TouchableOpacity
-              onPress={handleAddOption}
-              style={styles.addOptionButton}
-            >
-              <Ionicons
-                name="add-circle-outline"
-                size={24}
-                color={colors.primary}
-              />
-              <Text style={styles.addOptionText}>Add Another Option</Text>
-            </TouchableOpacity>
+            {/* Add Option Button - Icon with text on the right (hidden while keyboard is up) */}
+            {!isKeyboardVisible && (
+              <View style={styles.addOptionContainer}>
+                <TouchableOpacity
+                  onPress={handleAddOption}
+                  style={styles.addOptionButton}
+                >
+                  <Ionicons
+                    name="add-circle"
+                    size={24}
+                    color={colors.primary}
+                  />
+                  <Text style={styles.addOptionText}>Add Option</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </ScrollView>
 
           {/* Action Buttons */}
@@ -719,19 +835,17 @@ const styles = StyleSheet.create({
   addChoiceButton: {
     padding: 4,
   },
+  addOptionContainer: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+  },
   addOptionButton: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    padding: 16,
-    margin: 20,
-    marginTop: 10,
-    borderRadius: 12,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderStyle: "dashed",
-    gap: 8,
+    gap: 6,
+    padding: 4,
   },
   addOptionText: {
     fontSize: 16,
@@ -740,11 +854,22 @@ const styles = StyleSheet.create({
   },
   modalButtons: {
     flexDirection: "row",
-    padding: 20,
-    paddingTop: 10,
+    padding: 12,
+    paddingBottom: Platform.OS === "ios" ? 12 : 12,
     gap: 12,
     borderTopWidth: 1,
     borderTopColor: colors.border,
+  },
+  scrollViewContent: {
+    paddingBottom: 20,
+  },
+  inputErrorBorder: {
+    borderColor: colors.error,
+  },
+  errorText: {
+    marginTop: 4,
+    fontSize: 12,
+    color: colors.error,
   },
   button: {
     flex: 1,
