@@ -215,33 +215,70 @@ class TrackingService:
     @staticmethod
     def _process_update_data(data: Dict[str, Any], schema: Dict[str, Any], 
                             tracker: Tracker = None, cycle_info: Dict[str, Any] = None) -> Dict[str, Any]:
-        # Separate null values (for removal) and non-null values (for validation)
+        # Combine all field groups to check what fields exist in current schema
+        all_fields = {}
+        if 'baseline' in schema:
+            all_fields.update(schema['baseline'])
+        if 'custom' in schema:
+            all_fields.update(schema['custom'])
+        if 'period_tracker' in schema:
+            all_fields.update(schema['period_tracker'])
+        if 'workout_tracker' in schema:
+            all_fields.update(schema['workout_tracker'])
+        if 'symptom_tracker' in schema:
+            all_fields.update(schema['symptom_tracker'])
+        
+        # Filter out fields that don't exist in current schema (e.g., deleted fields)
+        # This preserves historical data while allowing updates with current schema only
+        filtered_data = {}
         data_to_validate = {}
+        
         for field_name, field_data in data.items():
-            if field_data is None:
-                # Null field - will be removed, no validation needed
+            # Skip fields that don't exist in current schema (deleted fields)
+            if field_name not in all_fields:
+                # Field was deleted - skip it silently to preserve historical data
                 continue
             
+            if field_data is None:
+                # Null field - will be removed, no validation needed
+                filtered_data[field_name] = None
+                continue
+            
+            field_schema = all_fields[field_name]
+            
             if isinstance(field_data, dict):
-                # Check field options
+                # Check field options - filter out deleted options too
                 options_to_validate = {}
+                filtered_options = {}
+                
                 for option_name, option_value in field_data.items():
+                    # Skip options that don't exist in current schema
+                    if option_name not in field_schema:
+                        # Option was deleted - skip it
+                        continue
+                    
                     if option_value is None:
                         # Null option - will be removed, no validation needed
+                        filtered_options[option_name] = None
                         continue
+                    
                     options_to_validate[option_name] = option_value
+                    filtered_options[option_name] = option_value
                 
                 if options_to_validate:
                     data_to_validate[field_name] = options_to_validate
+                if filtered_options or None in filtered_options.values():
+                    filtered_data[field_name] = filtered_options
             else:
                 data_to_validate[field_name] = field_data
+                filtered_data[field_name] = field_data
         
-        # Validate non-null values only
+        # Validate only fields/options that exist in current schema
         if data_to_validate:
             TrackingService._validate_data_against_schema(data_to_validate, schema, tracker, cycle_info)
         
-        # Return original data (with nulls) for processing
-        return data
+        # Return filtered data (only fields/options that exist in current schema)
+        return filtered_data
     
     @staticmethod
     def _validate_data_against_schema(data: Dict[str, Any], schema: Dict[str, Any], 
@@ -340,11 +377,15 @@ class TrackingService:
             
             # Validate range if specified
             if 'range' in option_schema:
-                min_val, max_val = option_schema['range']
-                if not (min_val <= value <= max_val):
-                    raise ValueError(
-                        f"Option '{option_name}' value {value} is out of range [{min_val}, {max_val}]"
-                    )
+                range_val = option_schema['range']
+                if range_val and len(range_val) == 2:
+                    min_val, max_val = range_val
+                    # Only validate if both min and max are not None
+                    if min_val is not None and max_val is not None:
+                        if not (min_val <= value <= max_val):
+                            raise ValueError(
+                                f"Option '{option_name}' value {value} is out of range [{min_val}, {max_val}]"
+                            )
         
         elif schema_type == 'string':
             if not isinstance(value, str):
@@ -426,11 +467,15 @@ class TrackingService:
             
             # Validate range if specified
             if 'range' in option_schema:
-                min_val, max_val = option_schema['range']
-                if not (min_val <= value <= max_val):
-                    raise ValueError(
-                        f"Option '{option_name}' value {value} is out of range [{min_val}, {max_val}]"
-                    )
+                range_val = option_schema['range']
+                if range_val and len(range_val) == 2:
+                    min_val, max_val = range_val
+                    # Only validate if both min and max are not None
+                    if min_val is not None and max_val is not None:
+                        if not (min_val <= value <= max_val):
+                            raise ValueError(
+                                f"Option '{option_name}' value {value} is out of range [{min_val}, {max_val}]"
+                            )
     
     @staticmethod
     def _handle_period_start_marker(tracker: Tracker, data: Dict[str, Any], entry_date: date) -> None:
