@@ -660,8 +660,8 @@ export default function FieldCreationModal({
                   style={styles.addOptionButton}
                 >
                   <Ionicons
-                    name="add-circle"
-                    size={24}
+                    name="add-circle-outline"
+                    size={18}
                     color={colors.primary}
                   />
                   <Text style={styles.addOptionText}>Add Option</Text>
@@ -836,19 +836,23 @@ const styles = StyleSheet.create({
     padding: 4,
   },
   addOptionContainer: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    paddingHorizontal: 20,
-    paddingVertical: 10,
+    alignItems: "flex-end",
+    marginBottom: 16,
+    marginHorizontal: 20,
   },
   addOptionButton: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    padding: 4,
+    backgroundColor: colors.formFieldBackground,
+    borderRadius: 50,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    gap: 8,
   },
   addOptionText: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: "600",
     color: colors.primary,
   },
