@@ -72,6 +72,8 @@ export const API_ENDPOINTS = {
   CREATE_OPTION: (fieldId) => `/trackers/${fieldId}/create-new-option`,
   TOGGLE_FIELD_ACTIVE: (fieldId) => `/trackers/${fieldId}/toggle-field-active-status`,
   TOGGLE_OPTION_ACTIVE: (optionId) => `/trackers/${optionId}/toggle-option-active-status`,
+  UPDATE_FIELD_ORDER: (fieldId) => `/trackers/${fieldId}/update-field-order`,
+  UPDATE_OPTION_ORDER: (optionId) => `/trackers/${optionId}/update-option-order`,
 
   // Data Tracking
   SAVE_DATA: (id) => `/data-tracking/${id}/save-tracking-data`,

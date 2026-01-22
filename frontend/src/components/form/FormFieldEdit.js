@@ -1,15 +1,30 @@
 import React from "react";
 import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
+import DraggableFlatList, {
+  ScaleDecorator,
+} from "react-native-draggable-flatlist";
 import { Ionicons } from "@expo/vector-icons";
 import { colors } from "../../constants/colors";
 
 const FormFieldEdit = React.memo(
-  ({ field, onDeleteField, onEditField, onDeleteOption, onAddOption, onToggleField, onToggleOption }) => {
+  ({
+    field,
+    onDeleteField,
+    onEditField,
+    onDeleteOption,
+    onAddOption,
+    onToggleField,
+    onToggleOption,
+    onDragField,
+    onOptionReorder,
+    isReorderable = false,
+  }) => {
     if (!field.options || field.options.length === 0) return null;
 
     // Check if this is a custom field (editable/deletable)
-    const isCustomField = field.field_group === 'custom' || field.is_user_field === true;
-    
+    const isCustomField =
+      field.field_group === "custom" || field.is_user_field === true;
+
     // Check if field is masked (inactive)
     const isMasked = field.is_active === false;
 
@@ -44,24 +59,50 @@ const FormFieldEdit = React.memo(
         )}
 
         {/* Field container */}
-        <View style={[
-          styles.fieldContainer,
-          styles.fieldContainerWithBorder,
-          isCustomField && styles.fieldContainerCustom,
-          isMasked && styles.fieldContainerMasked,
-        ]}>
+        <View
+          style={[
+            styles.fieldContainer,
+            styles.fieldContainerWithBorder,
+            isCustomField && styles.fieldContainerCustom,
+            isMasked && styles.fieldContainerMasked,
+          ]}
+        >
           {/* Field header with edit and trash icons */}
           <View style={styles.fieldHeader}>
             <View style={styles.fieldTitleContainer}>
-              {field.display_label && (
-                <Text style={[
-                  styles.fieldLabel,
-                  isMasked && styles.fieldLabelMasked,
-                ]}>{field.display_label}</Text>
-              )}
+              {field.display_label &&
+                (onDragField && isReorderable ? (
+                  <TouchableOpacity
+                    onLongPress={onDragField}
+                    delayLongPress={500}
+                    activeOpacity={0.7}
+                  >
+                    <Text
+                      style={[
+                        styles.fieldLabel,
+                        isMasked && styles.fieldLabelMasked,
+                      ]}
+                    >
+                      {field.display_label}
+                    </Text>
+                  </TouchableOpacity>
+                ) : (
+                  <Text
+                    style={[
+                      styles.fieldLabel,
+                      isMasked && styles.fieldLabelMasked,
+                    ]}
+                  >
+                    {field.display_label}
+                  </Text>
+                ))}
               {!isCustomField && !isMasked && (
                 <View style={styles.readOnlyBadge}>
-                  <Ionicons name="lock-closed" size={12} color={colors.textLight} />
+                  <Ionicons
+                    name="lock-closed"
+                    size={12}
+                    color={colors.textLight}
+                  />
                   <Text style={styles.readOnlyText}>Read-only</Text>
                 </View>
               )}
@@ -73,81 +114,208 @@ const FormFieldEdit = React.memo(
               )}
             </View>
             <View style={styles.fieldActions}>
-            {isCustomField && !isMasked && (
-              <>
-                <TouchableOpacity
-                  style={styles.iconButton}
-                  onPress={() => onEditField(field)}
-                >
-                  <Ionicons name="create-outline" size={20} color={colors.primary} />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.iconButton}
-                  onPress={() => onDeleteField(field)}
-                >
-                  <Ionicons name="trash-outline" size={20} color={colors.error} />
-                </TouchableOpacity>
-              </>
+              {isCustomField && !isMasked && (
+                <>
+                  <TouchableOpacity
+                    style={styles.iconButton}
+                    onPress={() => onEditField(field)}
+                  >
+                    <Ionicons
+                      name="create-outline"
+                      size={20}
+                      color={colors.primary}
+                    />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.iconButton}
+                    onPress={() => onDeleteField(field)}
+                  >
+                    <Ionicons
+                      name="trash-outline"
+                      size={20}
+                      color={colors.error}
+                    />
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
+          </View>
+
+          {/* Options */}
+          <View style={styles.optionsContainer}>
+            {isReorderable && onOptionReorder ? (
+              // Reorderable options (custom fields in edit mode)
+              <DraggableFlatList
+                data={sortedOptions}
+                onDragEnd={({ data }) => {
+                  // Pass the field ID and reordered options array
+                  onOptionReorder(field.id, data);
+                }}
+                keyExtractor={(item) => String(item.id)}
+                renderItem={({ item: option, drag, isActive }) => {
+                  const isOptionMasked = option.is_active === false;
+                  return (
+                    <ScaleDecorator>
+                      <View
+                        style={[
+                          styles.optionRow,
+                          isOptionMasked && styles.optionRowMasked,
+                          isActive && styles.optionRowActive,
+                        ]}
+                      >
+                        {/* Show plus for masked options, minus for active options */}
+                        {isOptionMasked ? (
+                          <TouchableOpacity
+                            style={styles.addOptionIconButton}
+                            onPress={() =>
+                              onToggleOption &&
+                              onToggleOption(field, option, true)
+                            }
+                          >
+                            <Ionicons
+                              name="add-circle"
+                              size={16}
+                              color={colors.success}
+                            />
+                          </TouchableOpacity>
+                        ) : (
+                          <TouchableOpacity
+                            style={styles.deleteOptionButton}
+                            onPress={() => {
+                              // For all options, mask them (set inactive)
+                              onToggleOption &&
+                                onToggleOption(field, option, false);
+                            }}
+                          >
+                            <Ionicons
+                              name="remove-circle"
+                              size={16}
+                              color={colors.error}
+                            />
+                          </TouchableOpacity>
+                        )}
+                        <View style={styles.optionContent}>
+                          <TouchableOpacity
+                            onLongPress={drag}
+                            delayLongPress={500}
+                            activeOpacity={0.7}
+                          >
+                            <Text
+                              style={[
+                                styles.optionLabel,
+                                isOptionMasked && styles.optionLabelMasked,
+                              ]}
+                            >
+                              {option.display_label || option.option_name}
+                            </Text>
+                          </TouchableOpacity>
+                          <Text
+                            style={[
+                              styles.optionType,
+                              isOptionMasked && styles.optionTypeMasked,
+                            ]}
+                          >
+                            {option.option_type}
+                            {isOptionMasked && " • Hidden"}
+                          </Text>
+                        </View>
+                        {isCustomField && !isOptionMasked && (
+                          <TouchableOpacity
+                            style={styles.iconButton}
+                            onPress={() => onDeleteOption(field, option)}
+                          >
+                            <Ionicons
+                              name="trash-outline"
+                              size={16}
+                              color={colors.error}
+                            />
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    </ScaleDecorator>
+                  );
+                }}
+                scrollEnabled={false}
+              />
+            ) : (
+              // Non-reorderable options (baseline, tracker-specific, or non-edit mode)
+              sortedOptions.map((option) => {
+                const isOptionMasked = option.is_active === false;
+                return (
+                  <View
+                    key={option.id}
+                    style={[
+                      styles.optionRow,
+                      isOptionMasked && styles.optionRowMasked,
+                    ]}
+                  >
+                    {/* Show plus for masked options, minus for active options */}
+                    {isOptionMasked ? (
+                      <TouchableOpacity
+                        style={styles.addOptionIconButton}
+                        onPress={() =>
+                          onToggleOption && onToggleOption(field, option, true)
+                        }
+                      >
+                        <Ionicons
+                          name="add-circle"
+                          size={16}
+                          color={colors.success}
+                        />
+                      </TouchableOpacity>
+                    ) : (
+                      <TouchableOpacity
+                        style={styles.deleteOptionButton}
+                        onPress={() => {
+                          // For all options, mask them (set inactive)
+                          onToggleOption &&
+                            onToggleOption(field, option, false);
+                        }}
+                      >
+                        <Ionicons
+                          name="remove-circle"
+                          size={16}
+                          color={colors.error}
+                        />
+                      </TouchableOpacity>
+                    )}
+                    <View style={styles.optionContent}>
+                      <Text
+                        style={[
+                          styles.optionLabel,
+                          isOptionMasked && styles.optionLabelMasked,
+                        ]}
+                      >
+                        {option.display_label || option.option_name}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.optionType,
+                          isOptionMasked && styles.optionTypeMasked,
+                        ]}
+                      >
+                        {option.option_type}
+                        {isOptionMasked && " • Hidden"}
+                      </Text>
+                    </View>
+                    {isCustomField && !isOptionMasked && (
+                      <TouchableOpacity
+                        style={styles.iconButton}
+                        onPress={() => onDeleteOption(field, option)}
+                      >
+                        <Ionicons
+                          name="trash-outline"
+                          size={16}
+                          color={colors.error}
+                        />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                );
+              })
             )}
           </View>
         </View>
-
-        {/* Options */}
-        <View style={styles.optionsContainer}>
-          {sortedOptions.map((option) => {
-            const isOptionMasked = option.is_active === false;
-            return (
-              <View key={option.id} style={[
-                styles.optionRow,
-                isOptionMasked && styles.optionRowMasked,
-              ]}>
-                {/* Show plus for masked options, minus for active options */}
-                {isOptionMasked ? (
-                  <TouchableOpacity
-                    style={styles.addOptionIconButton}
-                    onPress={() => onToggleOption && onToggleOption(field, option, true)}
-                  >
-                    <Ionicons name="add-circle" size={16} color={colors.success} />
-                  </TouchableOpacity>
-                ) : (
-                  <TouchableOpacity
-                    style={styles.deleteOptionButton}
-                    onPress={() => {
-                      // For all options, mask them (set inactive)
-                      onToggleOption && onToggleOption(field, option, false);
-                    }}
-                  >
-                    <Ionicons name="remove-circle" size={16} color={colors.error} />
-                  </TouchableOpacity>
-                )}
-                <View style={styles.optionContent}>
-                  <Text style={[
-                    styles.optionLabel,
-                    isOptionMasked && styles.optionLabelMasked,
-                  ]}>
-                    {option.display_label || option.option_name}
-                  </Text>
-                  <Text style={[
-                    styles.optionType,
-                    isOptionMasked && styles.optionTypeMasked,
-                  ]}>
-                    {option.option_type}
-                    {isOptionMasked && " • Hidden"}
-                  </Text>
-                </View>
-                {isCustomField && !isOptionMasked && (
-                  <TouchableOpacity
-                    style={styles.iconButton}
-                    onPress={() => onDeleteOption(field, option)}
-                  >
-                    <Ionicons name="trash-outline" size={16} color={colors.error} />
-                  </TouchableOpacity>
-                )}
-              </View>
-            );
-          })}
-        </View>
-      </View>
       </View>
     );
   },
@@ -164,7 +332,7 @@ const FormFieldEdit = React.memo(
     // Check if options changed (count or active status)
     const prevOptions = prevProps.field.options || [];
     const nextOptions = nextProps.field.options || [];
-    
+
     if (prevOptions.length !== nextOptions.length) {
       return false;
     }
@@ -173,7 +341,7 @@ const FormFieldEdit = React.memo(
     for (let i = 0; i < prevOptions.length; i++) {
       const prevOption = prevOptions[i];
       const nextOption = nextOptions[i];
-      
+
       if (
         prevOption.id !== nextOption.id ||
         prevOption.is_active !== nextOption.is_active
@@ -298,6 +466,9 @@ const styles = StyleSheet.create({
     opacity: 0.4,
     backgroundColor: colors.surface,
   },
+  optionRowActive: {
+    opacity: 0.6,
+  },
   deleteOptionButton: {
     padding: 2,
   },
@@ -340,4 +511,3 @@ const styles = StyleSheet.create({
 });
 
 export default FormFieldEdit;
-

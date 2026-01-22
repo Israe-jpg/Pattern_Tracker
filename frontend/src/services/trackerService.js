@@ -118,4 +118,20 @@ export const trackerService = {
     });
     return response.data;
   },
+
+  // Update field order
+  updateFieldOrder: async (fieldId, newOrder) => {
+    const response = await api.patch(API_ENDPOINTS.UPDATE_FIELD_ORDER(fieldId), {
+      new_order: newOrder,
+    });
+    return response.data;
+  },
+
+  // Update option order
+  updateOptionOrder: async (optionId, newOrder) => {
+    const response = await api.patch(API_ENDPOINTS.UPDATE_OPTION_ORDER(optionId), {
+      new_order: newOrder,
+    });
+    return response.data;
+  },
 };

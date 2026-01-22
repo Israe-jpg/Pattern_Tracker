@@ -6,12 +6,17 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  Pressable,
   ActivityIndicator,
   Alert,
   Platform,
 } from "react-native";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import DraggableFlatList, {
+  ScaleDecorator,
+} from "react-native-draggable-flatlist";
+import * as Haptics from "expo-haptics";
 import FormField from "../components/form/FormField";
 import FormFieldEdit from "../components/form/FormFieldEdit";
 import FieldCreationModal from "../components/FieldCreationModal";
@@ -41,6 +46,8 @@ export default function LogSymptomsScreen({ route, navigation }) {
     fieldCreates: [], // Array of { fieldData }
     fieldDeletes: new Set(), // Set of fieldIds to delete
     optionDeletes: new Set(), // Set of optionIds to delete
+    fieldOrders: new Map(), // fieldId -> newOrder
+    optionOrders: new Map(), // optionId -> newOrder
   });
   const scrollViewRef = useRef(null);
   const isHandlingNavigation = useRef(false);
@@ -52,13 +59,19 @@ export default function LogSymptomsScreen({ route, navigation }) {
 
   // Automatically detect if there are pending changes
   useEffect(() => {
+    if (!pendingChanges) {
+      setHasEditModeChanges(false);
+      return;
+    }
     const hasChanges =
-      pendingChanges.fieldToggles.size > 0 ||
-      pendingChanges.optionToggles.size > 0 ||
-      pendingChanges.fieldEdits.size > 0 ||
-      pendingChanges.fieldCreates.length > 0 ||
-      pendingChanges.fieldDeletes.size > 0 ||
-      pendingChanges.optionDeletes.size > 0;
+      (pendingChanges.fieldToggles?.size || 0) > 0 ||
+      (pendingChanges.optionToggles?.size || 0) > 0 ||
+      (pendingChanges.fieldEdits?.size || 0) > 0 ||
+      (pendingChanges.fieldCreates?.length || 0) > 0 ||
+      (pendingChanges.fieldDeletes?.size || 0) > 0 ||
+      (pendingChanges.optionDeletes?.size || 0) > 0 ||
+      (pendingChanges.fieldOrders?.size || 0) > 0 ||
+      (pendingChanges.optionOrders?.size || 0) > 0;
     setHasEditModeChanges(hasChanges);
   }, [pendingChanges]);
 
@@ -143,6 +156,8 @@ export default function LogSymptomsScreen({ route, navigation }) {
                 fieldCreates: [],
                 fieldDeletes: new Set(),
                 optionDeletes: new Set(),
+                fieldOrders: new Map(),
+                optionOrders: new Map(),
               });
               setEditingField(null);
               setIsEditMode(false);
@@ -473,6 +488,58 @@ export default function LogSymptomsScreen({ route, navigation }) {
       setEditingField(field);
       setShowFieldModal(true);
     }
+  };
+
+  const handleFieldReorder = (fieldId, newOrder) => {
+    // Store field order change in pending changes
+    setPendingChanges((prev) => {
+      const updated = new Map(prev.fieldOrders);
+      updated.set(fieldId, newOrder);
+      return {
+        ...prev,
+        fieldOrders: updated,
+      };
+    });
+    // Force hasEditModeChanges to true immediately
+    setHasEditModeChanges(true);
+  };
+
+  const handleOptionReorder = (fieldId, reorderedOptions) => {
+    // Store option order changes in pending changes
+    setPendingChanges((prev) => {
+      const updated = new Map(prev.optionOrders);
+      reorderedOptions.forEach((option, index) => {
+        updated.set(option.id, index);
+      });
+      return {
+        ...prev,
+        optionOrders: updated,
+      };
+    });
+
+    // Optimistically update managementSchema to maintain visual order
+    setManagementSchema((prev) => {
+      if (!prev) return prev;
+
+      // Update the field's options array in the appropriate section
+      const updateFieldOptions = (fields) => {
+        return fields?.map((field) => {
+          if (field.id === fieldId) {
+            return { ...field, options: reorderedOptions };
+          }
+          return field;
+        });
+      };
+
+      return {
+        ...prev,
+        baseline_fields: updateFieldOptions(prev.baseline_fields),
+        category_fields: updateFieldOptions(prev.category_fields),
+        custom_fields: updateFieldOptions(prev.custom_fields),
+      };
+    });
+    // Force hasEditModeChanges to true immediately
+    setHasEditModeChanges(true);
   };
 
   const handleDeleteOption = (field, option) => {
@@ -889,6 +956,20 @@ export default function LogSymptomsScreen({ route, navigation }) {
         }
       }
 
+      // Save field order changes
+      if (pendingChanges.fieldOrders) {
+        for (const [fieldId, newOrder] of pendingChanges.fieldOrders) {
+          await trackerService.updateFieldOrder(fieldId, newOrder);
+        }
+      }
+
+      // Save option order changes
+      if (pendingChanges.optionOrders) {
+        for (const [optionId, newOrder] of pendingChanges.optionOrders) {
+          await trackerService.updateOptionOrder(optionId, newOrder);
+        }
+      }
+
       // Reload both schemas and existing data to sync with backend
       const [schemaResponse, dataResponse] = await Promise.all([
         // Reload form schema so the form reflects the changes
@@ -936,6 +1017,8 @@ export default function LogSymptomsScreen({ route, navigation }) {
         fieldCreates: [],
         fieldDeletes: new Set(),
         optionDeletes: new Set(),
+        fieldOrders: new Map(),
+        optionOrders: new Map(),
       });
       setHasEditModeChanges(false);
 
@@ -973,6 +1056,8 @@ export default function LogSymptomsScreen({ route, navigation }) {
                   fieldCreates: [],
                   fieldDeletes: new Set(),
                   optionDeletes: new Set(),
+                  fieldOrders: new Map(),
+                  optionOrders: new Map(),
                 });
                 setHasEditModeChanges(false);
                 setEditingField(null);
@@ -1021,6 +1106,8 @@ export default function LogSymptomsScreen({ route, navigation }) {
       fieldCreates: [],
       fieldDeletes: new Set(),
       optionDeletes: new Set(),
+      fieldOrders: new Map(),
+      optionOrders: new Map(),
     });
 
     // Scroll to top when entering edit mode
@@ -1197,6 +1284,8 @@ export default function LogSymptomsScreen({ route, navigation }) {
                         fieldCreates: [],
                         fieldDeletes: new Set(),
                         optionDeletes: new Set(),
+                        fieldOrders: new Map(),
+                        optionOrders: new Map(),
                       });
                       setEditingField(null);
                       loadManagementSchema(); // Reload to revert changes
@@ -1330,18 +1419,108 @@ export default function LogSymptomsScreen({ route, navigation }) {
         {isEditMode ? (
           // Edit mode - show field editor
           <>
-            {fields.map((field) => (
-              <FormFieldEdit
-                key={field.id || field.field_name}
-                field={field}
-                onDeleteField={handleDeleteField}
-                onEditField={handleEditField}
-                onDeleteOption={handleDeleteOption}
-                onAddOption={handleAddOption}
-                onToggleField={handleToggleField}
-                onToggleOption={handleToggleOption}
-              />
-            ))}
+            {(() => {
+              // Separate fields into non-reorderable and reorderable
+              const nonReorderableFields = fields.filter(
+                (field) =>
+                  field.field_group === "baseline" ||
+                  (field.field_group !== "custom" && !field.is_user_field)
+              );
+              const reorderableFields = fields.filter(
+                (field) => field.field_group === "custom" || field.is_user_field
+              );
+
+              return (
+                <>
+                  {/* Non-reorderable fields (baseline, tracker-specific) */}
+                  {nonReorderableFields.map((field) => (
+                    <FormFieldEdit
+                      key={field.id || field.field_name}
+                      field={field}
+                      onDeleteField={handleDeleteField}
+                      onEditField={handleEditField}
+                      onDeleteOption={handleDeleteOption}
+                      onAddOption={handleAddOption}
+                      onToggleField={handleToggleField}
+                      onToggleOption={handleToggleOption}
+                    />
+                  ))}
+
+                  {/* Separator between non-reorderable and custom fields */}
+                  {nonReorderableFields.length > 0 &&
+                    reorderableFields.length > 0 && (
+                      <View style={styles.fieldGroupSeparator}>
+                        <View style={styles.separatorLine} />
+                        <Text style={styles.separatorText}>Custom Fields</Text>
+                        <View style={styles.separatorLine} />
+                      </View>
+                    )}
+
+                  {/* Hint text for dragging */}
+                  {reorderableFields.length > 0 && (
+                    <Text style={styles.dragHintText}>
+                      Long press field or option names to reorder
+                    </Text>
+                  )}
+
+                  {/* Reorderable fields (custom/user) - using DraggableFlatList */}
+                  {reorderableFields.length > 0 && (
+                    <View style={styles.draggableFieldsContainer}>
+                      <DraggableFlatList
+                        data={reorderableFields}
+                        onDragEnd={({ data }) => {
+                          // Update order for each field based on new position
+                          data.forEach((field, index) => {
+                            handleFieldReorder(field.id, index);
+                          });
+
+                          // Optimistically update managementSchema to maintain visual order
+                          setManagementSchema((prev) => {
+                            if (!prev || !prev.custom_fields) return prev;
+
+                            // Replace custom_fields with the reordered data
+                            return {
+                              ...prev,
+                              custom_fields: data,
+                            };
+                          });
+                        }}
+                        keyExtractor={(item) =>
+                          String(item.id || item.field_name)
+                        }
+                        renderItem={({ item: field, drag, isActive }) => (
+                          <ScaleDecorator>
+                            <View
+                              style={[isActive && styles.draggableFieldActive]}
+                            >
+                              <FormFieldEdit
+                                field={field}
+                                onDeleteField={handleDeleteField}
+                                onEditField={handleEditField}
+                                onDeleteOption={handleDeleteOption}
+                                onAddOption={handleAddOption}
+                                onToggleField={handleToggleField}
+                                onToggleOption={handleToggleOption}
+                                onDragField={() => {
+                                  Haptics.impactAsync(
+                                    Haptics.ImpactFeedbackStyle.Medium
+                                  );
+                                  drag();
+                                }}
+                                onOptionReorder={handleOptionReorder}
+                                isReorderable={true}
+                              />
+                            </View>
+                          </ScaleDecorator>
+                        )}
+                        scrollEnabled={false}
+                      />
+                    </View>
+                  )}
+                </>
+              );
+            })()}
+
             {/* Add field button - smaller, on the right - only show for active fields */}
             {!showMaskedFields && (
               <View style={styles.addFieldButtonContainer}>
@@ -1609,6 +1788,41 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     color: colors.primary,
+  },
+  fieldGroupSeparator: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginVertical: 24,
+    marginHorizontal: 0,
+  },
+  separatorLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: colors.border,
+    opacity: 0.3,
+  },
+  separatorText: {
+    marginHorizontal: 16,
+    fontSize: 11,
+    fontWeight: "600",
+    color: colors.textLight,
+    textTransform: "uppercase",
+    letterSpacing: 1.5,
+    opacity: 0.6,
+  },
+  dragHintText: {
+    fontSize: 11,
+    color: colors.textLight,
+    textAlign: "center",
+    marginBottom: 16,
+    opacity: 0.5,
+    fontStyle: "italic",
+  },
+  draggableFieldsContainer: {
+    paddingTop: 8,
+  },
+  draggableFieldActive: {
+    opacity: 0.6,
   },
   loadingText: {
     marginTop: 12,
