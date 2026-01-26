@@ -154,6 +154,8 @@ const FormFieldEdit = React.memo(
                 keyExtractor={(item) => String(item.id)}
                 renderItem={({ item: option, drag, isActive }) => {
                   const isOptionMasked = option.is_active === false;
+                  // Disable drag for masked options
+                  const canDrag = !isOptionMasked;
                   return (
                     <ScaleDecorator>
                       <View
@@ -195,20 +197,27 @@ const FormFieldEdit = React.memo(
                           </TouchableOpacity>
                         )}
                         <View style={styles.optionContent}>
-                          <TouchableOpacity
-                            onLongPress={drag}
-                            delayLongPress={500}
-                            activeOpacity={0.7}
-                          >
+                          {canDrag ? (
+                            <TouchableOpacity
+                              onLongPress={drag}
+                              delayLongPress={500}
+                              activeOpacity={0.7}
+                            >
+                              <Text style={styles.optionLabel}>
+                                {option.display_label || option.option_name}
+                              </Text>
+                            </TouchableOpacity>
+                          ) : (
+                            // Masked options are not draggable
                             <Text
                               style={[
                                 styles.optionLabel,
-                                isOptionMasked && styles.optionLabelMasked,
+                                styles.optionLabelMasked,
                               ]}
                             >
                               {option.display_label || option.option_name}
                             </Text>
-                          </TouchableOpacity>
+                          )}
                           <Text
                             style={[
                               styles.optionType,
