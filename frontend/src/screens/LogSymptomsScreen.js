@@ -1552,10 +1552,10 @@ export default function LogSymptomsScreen({ route, navigation }) {
         simultaneousHandlers={[]} // Allow ScrollView to handle scrolling
       >
         <NestableScrollContainer
-          style={styles.scrollView}
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={true}
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={true}
         >
         {/* Date indicator - only show in normal mode */}
         {!isEditMode && (
@@ -1898,28 +1898,28 @@ export default function LogSymptomsScreen({ route, navigation }) {
         ) : (
           // Normal mode - show form
           fields.map((field) => (
-            <FormField
-              key={field.id || field.field_name}
-              field={field}
-              control={control}
-            />
+          <FormField
+            key={field.id || field.field_name}
+            field={field}
+            control={control}
+          />
           ))
         )}
 
         {/* Submit and Edit buttons */}
         {!isEditMode && (
           <View style={styles.bottomButtonsContainer}>
-            <TouchableOpacity
-              style={[
-                styles.submitButton,
+        <TouchableOpacity
+          style={[
+            styles.submitButton,
                 (!isDirty || submitting) && styles.submitButtonDisabled,
-              ]}
+          ]}
               onPress={handleSubmit(onSubmit)}
               disabled={!isDirty || submitting}
-            >
-              {submitting ? (
-                <ActivityIndicator size="small" color={colors.textOnPrimary} />
-              ) : (
+        >
+          {submitting ? (
+            <ActivityIndicator size="small" color={colors.textOnPrimary} />
+          ) : (
                 <>
                   <Ionicons
                     name="checkmark"
@@ -1931,8 +1931,8 @@ export default function LogSymptomsScreen({ route, navigation }) {
                     {existingData ? "Update" : "Submit"}
                   </Text>
                 </>
-              )}
-            </TouchableOpacity>
+          )}
+        </TouchableOpacity>
             <TouchableOpacity
               style={styles.editFormButton}
               onPress={toggleEditMode}
@@ -2040,6 +2040,7 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 12,
     marginBottom: 20,
+    marginHorizontal: 0, // Align with fields (scrollContent padding handles spacing)
     borderWidth: 1,
     borderColor: colors.primary,
   },
@@ -2055,7 +2056,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 20,
-    marginHorizontal: 20,
+    marginHorizontal: 0, // Align with fields (scrollContent padding handles spacing)
     gap: 8,
   },
   fieldToggleButton: {

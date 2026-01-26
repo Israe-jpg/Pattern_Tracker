@@ -7,6 +7,23 @@ import DraggableFlatList, {
 import { Ionicons } from "@expo/vector-icons";
 import { colors } from "../../constants/colors";
 
+// User-friendly option type labels (matching backend OPTION_TYPE_LABELS)
+const OPTION_TYPE_LABELS = {
+  'rating': 'Rating Scale',
+  'single_choice': 'Single Choice',
+  'multiple_choice': 'Multiple Choice',
+  'yes_no': 'Yes/No',
+  'number_input': 'Number Input',
+  'text': 'Text Input',
+  'notes': 'Notes',
+  'time': 'Time Picker',
+};
+
+// Helper function to get user-friendly option type label
+const getOptionTypeLabel = (optionType) => {
+  return OPTION_TYPE_LABELS[optionType] || optionType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+};
+
 const FormFieldEdit = React.memo(
   ({
     field,
@@ -45,7 +62,7 @@ const FormFieldEdit = React.memo(
             style={styles.toggleButtonOutside}
             onPress={() => onToggleField && onToggleField(field, true)}
           >
-            <Ionicons name="add-circle" size={24} color={colors.success} />
+            <Ionicons name="add-circle" size={20} color={colors.success} />
           </TouchableOpacity>
         ) : (
           <TouchableOpacity
@@ -55,7 +72,7 @@ const FormFieldEdit = React.memo(
               onToggleField && onToggleField(field, false);
             }}
           >
-            <Ionicons name="remove-circle" size={24} color={colors.error} />
+            <Ionicons name="remove-circle" size={20} color={colors.error} />
           </TouchableOpacity>
         )}
 
@@ -64,9 +81,14 @@ const FormFieldEdit = React.memo(
           style={[
             styles.fieldContainer,
             styles.fieldContainerWithBorder,
-            isCustomField && styles.fieldContainerCustom,
-            !isReorderable && styles.fieldContainerNonReorderable, // Solid border for non-reorderable
-            isMasked && styles.fieldContainerMasked,
+            // Active custom fields: red border
+            isCustomField && !isMasked && styles.fieldContainerCustomActive,
+            // Masked custom fields: green border
+            isCustomField && isMasked && styles.fieldContainerCustomMasked,
+            // Non-custom fields (baseline/tracker-specific): grey border
+            !isCustomField && styles.fieldContainerNonCustom,
+            // Non-reorderable fields: solid border style
+            !isReorderable && styles.fieldContainerNonReorderable,
           ]}
         >
           {/* Field header with edit and trash icons */}
@@ -147,7 +169,7 @@ const FormFieldEdit = React.memo(
           <View style={styles.optionsContainer}>
             {isReorderable && onOptionReorder ? (
               // Reorderable options (custom fields in edit mode)
-              <DraggableFlatList
+              <NestableDraggableFlatList
                 data={sortedOptions}
                 onDragEnd={({ data }) => {
                   // Pass the field ID and reordered options array
@@ -229,10 +251,12 @@ const FormFieldEdit = React.memo(
                               isOptionMasked && styles.optionTypeMasked,
                             ]}
                           >
-                            {option.option_type}
+                            {getOptionTypeLabel(option.option_type)}
                             {isOptionMasked && " • Hidden"}
                           </Text>
                         </View>
+                        {/* Fading line separator */}
+                        <View style={styles.optionSeparator} />
                         {isCustomField && !isOptionMasked && (
                           <TouchableOpacity
                             style={styles.iconButton}
@@ -307,11 +331,13 @@ const FormFieldEdit = React.memo(
                           styles.optionType,
                           isOptionMasked && styles.optionTypeMasked,
                         ]}
-                      >
-                        {option.option_type}
-                        {isOptionMasked && " • Hidden"}
-                      </Text>
+                          >
+                            {getOptionTypeLabel(option.option_type)}
+                            {isOptionMasked && " • Hidden"}
+                          </Text>
                     </View>
+                    {/* Fading line separator */}
+                    <View style={styles.optionSeparator} />
                     {isCustomField && !isOptionMasked && (
                       <TouchableOpacity
                         style={styles.iconButton}
@@ -375,14 +401,17 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "flex-start",
     marginBottom: 16,
-    marginLeft: 0,
-    marginRight: 20,
+    marginLeft: -20, // Negative margin to position toggle button outside, aligned with scrollContent padding
+    marginRight: 0, // Align with header elements (scrollContent padding handles spacing)
   },
   toggleButtonOutside: {
-    marginRight: 8,
+    marginRight: 6, // Reduced to minimize width impact
     marginTop: 8,
-    padding: 4,
-    marginLeft: 12,
+    padding: 4, // Slightly increased for better touch target
+    marginLeft: 20, // Offset the negative margin to position icon outside field
+    alignItems: "center",
+    justifyContent: "center",
+    minWidth: 28, // Ensure consistent size without affecting field width much
   },
   fieldContainer: {
     flex: 1,
@@ -399,19 +428,26 @@ const styles = StyleSheet.create({
     elevation: 1,
   },
   fieldContainerWithBorder: {
-    borderWidth: 2,
+    borderWidth: 1, // Very thin border
+  },
+  fieldContainerCustomActive: {
+    // Active custom fields: red dashed border
     borderColor: colors.error,
     borderStyle: "dashed",
   },
-  fieldContainerCustom: {
-    // Custom fields keep the red dashed border
+  fieldContainerCustomMasked: {
+    // Masked custom fields: green dashed border
+    borderColor: colors.success,
+    borderStyle: "dashed",
+    opacity: 0.6,
+  },
+  fieldContainerNonCustom: {
+    // Non-custom fields (baseline/tracker-specific): very light grey solid border
+    borderColor: "#E5E7EB", // Much lighter grey
+    borderStyle: "solid",
   },
   fieldContainerNonReorderable: {
     borderStyle: "solid", // Continuous line for non-reorderable fields
-  },
-  fieldContainerMasked: {
-    opacity: 0.6,
-    borderColor: colors.textLight,
   },
   fieldHeader: {
     flexDirection: "row",
@@ -421,12 +457,15 @@ const styles = StyleSheet.create({
   },
   fieldTitleContainer: {
     flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
   },
   fieldLabel: {
     fontSize: 18,
     fontWeight: "600",
     color: colors.text,
-    marginBottom: 4,
+    marginRight: 8, // Space before badge
   },
   fieldLabelMasked: {
     color: colors.textLight,
@@ -435,11 +474,11 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    paddingHorizontal: 8,
+    paddingHorizontal: 6,
     paddingVertical: 2,
     backgroundColor: colors.surface,
     borderRadius: 12,
-    alignSelf: "flex-start",
+    alignSelf: "flex-start", // Wrap just the content
   },
   readOnlyText: {
     fontSize: 11,
@@ -450,11 +489,11 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    paddingHorizontal: 8,
+    paddingHorizontal: 6,
     paddingVertical: 2,
     backgroundColor: colors.background,
     borderRadius: 12,
-    alignSelf: "flex-start",
+    alignSelf: "flex-start", // Wrap just the content
   },
   maskedText: {
     fontSize: 11,
@@ -474,14 +513,17 @@ const styles = StyleSheet.create({
   optionRow: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: colors.calendar, // Light blue
+    backgroundColor: "#E6F2FF", // Light light blue background
     borderRadius: 8,
     padding: 12,
     gap: 8,
+    marginBottom: 8,
+    marginHorizontal: 8, // Reduce width by adding horizontal margins
+    position: "relative",
   },
   optionRowMasked: {
-    opacity: 0.4,
-    backgroundColor: colors.surface,
+    opacity: 0.9, // High opacity for visibility
+    backgroundColor: "#F3F4F6", // Universal grey background for masked options
   },
   optionRowActive: {
     opacity: 0.6,
@@ -496,22 +538,32 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   optionLabel: {
-    fontSize: 14,
+    fontSize: 16, // Bigger font size
     fontWeight: "600",
     color: colors.text,
-    marginBottom: 2,
+    marginBottom: 4,
   },
   optionLabelMasked: {
-    color: colors.textLight,
-    opacity: 0.5,
+    color: colors.text, // Clear black writing for masked options
+    opacity: 1, // Full opacity for better visibility
   },
   optionType: {
-    fontSize: 12,
+    fontSize: 14, // Bigger font size
     color: colors.textLight,
     fontStyle: "italic",
   },
+  optionSeparator: {
+    position: "absolute",
+    bottom: 0,
+    left: 12,
+    right: 12,
+    height: 1,
+    backgroundColor: colors.border,
+    opacity: 0.3, // Fading effect
+  },
   optionTypeMasked: {
-    opacity: 0.5,
+    color: colors.text, // Clear black writing for masked options
+    opacity: 0.7, // Slightly reduced opacity but still clear
   },
   optionActions: {
     flexDirection: "row",
