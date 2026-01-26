@@ -169,10 +169,13 @@ const FormFieldEdit = React.memo(
           <View style={styles.optionsContainer}>
             {isReorderable && onOptionReorder ? (
               // Reorderable options (custom fields in edit mode)
+              // Use field.options directly (already in correct order from state)
+              // Don't use sortedOptions to avoid mismatch with drag operation
               <NestableDraggableFlatList
-                data={sortedOptions}
+                data={field.options || []}
                 onDragEnd={({ data }) => {
-                  // Pass the field ID and reordered options array
+                  // Pass the field ID and reordered options array immediately
+                  // The delay for optimistic update is handled in handleOptionReorder
                   onOptionReorder(field.id, data);
                 }}
                 keyExtractor={(item) => String(item.id)}

@@ -12,6 +12,7 @@ import {
   Platform,
   Animated,
   Dimensions,
+  InteractionManager,
 } from "react-native";
 import { PanGestureHandler, State } from "react-native-gesture-handler";
 import { useForm } from "react-hook-form";
@@ -545,27 +546,40 @@ export default function LogSymptomsScreen({ route, navigation }) {
       };
     });
 
-    // Optimistically update managementSchema to maintain visual order
-    setManagementSchema((prev) => {
-      if (!prev) return prev;
+    // Update managementSchema optimistically AFTER all interactions/animations complete
+    // This prevents re-rendering during the drag animation which causes flickering
+    InteractionManager.runAfterInteractions(() => {
+      setManagementSchema((prev) => {
+        if (!prev) return prev;
 
-      // Update the field's options array in the appropriate section
-      const updateFieldOptions = (fields) => {
-        return fields?.map((field) => {
-          if (field.id === fieldId) {
-            return { ...field, options: reorderedOptions };
-          }
-          return field;
-        });
-      };
+        // Update the field's options array in the appropriate section
+        const updateFieldOptions = (fields) => {
+          return fields?.map((field) => {
+            if (field.id === fieldId) {
+              // Use the reordered options directly (same objects from drag operation)
+              // Just update option_order to keep sorting consistent
+              const updatedOptions = reorderedOptions.map((option, index) => {
+                // Only update option_order, keep the same object reference if possible
+                if (option.option_order === index) {
+                  return option; // No change needed, return same object
+                }
+                return { ...option, option_order: index };
+              });
+              return { ...field, options: updatedOptions };
+            }
+            return field;
+          });
+        };
 
-      return {
-        ...prev,
-        baseline_fields: updateFieldOptions(prev.baseline_fields),
-        category_fields: updateFieldOptions(prev.category_fields),
-        custom_fields: updateFieldOptions(prev.custom_fields),
-      };
+        return {
+          ...prev,
+          baseline_fields: updateFieldOptions(prev.baseline_fields),
+          category_fields: updateFieldOptions(prev.category_fields),
+          custom_fields: updateFieldOptions(prev.custom_fields),
+        };
+      });
     });
+    
     // Force hasEditModeChanges to true immediately
     setHasEditModeChanges(true);
   };
