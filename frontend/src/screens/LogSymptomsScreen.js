@@ -6,12 +6,23 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  Pressable,
   ActivityIndicator,
   Alert,
   Platform,
+  Animated,
+  Dimensions,
+  InteractionManager,
 } from "react-native";
+import { PanGestureHandler, State } from "react-native-gesture-handler";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import DraggableFlatList, {
+  ScaleDecorator,
+  NestableScrollContainer,
+  NestableDraggableFlatList,
+} from "react-native-draggable-flatlist";
+import * as Haptics from "expo-haptics";
 import FormField from "../components/form/FormField";
 import FormFieldEdit from "../components/form/FormFieldEdit";
 import FieldCreationModal from "../components/FieldCreationModal";
@@ -20,6 +31,9 @@ import { trackerService } from "../services/trackerService";
 import { dataTrackingService } from "../services/dataTrackingService";
 import { colors } from "../constants/colors";
 import { buildZodSchema } from "../utils/formSchemaBuilder";
+
+// Get screen width at module level for use in styles
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 export default function LogSymptomsScreen({ route, navigation }) {
   const { trackerId } = route.params || {};
@@ -34,6 +48,14 @@ export default function LogSymptomsScreen({ route, navigation }) {
   const [editingField, setEditingField] = useState(null);
   const [showMaskedFields, setShowMaskedFields] = useState(false);
   const [hasEditModeChanges, setHasEditModeChanges] = useState(false);
+  
+  // Animation values for smooth slide transition
+  const slideAnimActive = useRef(new Animated.Value(0)).current;
+  const slideAnimMasked = useRef(new Animated.Value(1)).current;
+  
+  // Track heights of both views to set container height dynamically
+  const [activeHeight, setActiveHeight] = useState(null);
+  const [maskedHeight, setMaskedHeight] = useState(null);
   const [pendingChanges, setPendingChanges] = useState({
     fieldToggles: new Map(), // fieldId -> { activate: boolean }
     optionToggles: new Map(), // optionId -> { activate: boolean }
@@ -41,6 +63,8 @@ export default function LogSymptomsScreen({ route, navigation }) {
     fieldCreates: [], // Array of { fieldData }
     fieldDeletes: new Set(), // Set of fieldIds to delete
     optionDeletes: new Set(), // Set of optionIds to delete
+    fieldOrders: new Map(), // fieldId -> newOrder
+    optionOrders: new Map(), // optionId -> newOrder
   });
   const scrollViewRef = useRef(null);
   const isHandlingNavigation = useRef(false);
@@ -52,13 +76,19 @@ export default function LogSymptomsScreen({ route, navigation }) {
 
   // Automatically detect if there are pending changes
   useEffect(() => {
+    if (!pendingChanges) {
+      setHasEditModeChanges(false);
+      return;
+    }
     const hasChanges =
-      pendingChanges.fieldToggles.size > 0 ||
-      pendingChanges.optionToggles.size > 0 ||
-      pendingChanges.fieldEdits.size > 0 ||
-      pendingChanges.fieldCreates.length > 0 ||
-      pendingChanges.fieldDeletes.size > 0 ||
-      pendingChanges.optionDeletes.size > 0;
+      (pendingChanges.fieldToggles?.size || 0) > 0 ||
+      (pendingChanges.optionToggles?.size || 0) > 0 ||
+      (pendingChanges.fieldEdits?.size || 0) > 0 ||
+      (pendingChanges.fieldCreates?.length || 0) > 0 ||
+      (pendingChanges.fieldDeletes?.size || 0) > 0 ||
+      (pendingChanges.optionDeletes?.size || 0) > 0 ||
+      (pendingChanges.fieldOrders?.size || 0) > 0 ||
+      (pendingChanges.optionOrders?.size || 0) > 0;
     setHasEditModeChanges(hasChanges);
   }, [pendingChanges]);
 
@@ -128,7 +158,9 @@ export default function LogSymptomsScreen({ route, navigation }) {
           {
             text: "Cancel",
             style: "cancel",
-            onPress: () => {},
+            onPress: () => {
+              // Do nothing, stay on screen
+            },
           },
           {
             text: "Don't Save",
@@ -143,11 +175,15 @@ export default function LogSymptomsScreen({ route, navigation }) {
                 fieldCreates: [],
                 fieldDeletes: new Set(),
                 optionDeletes: new Set(),
+                fieldOrders: new Map(),
+                optionOrders: new Map(),
               });
               setEditingField(null);
               setIsEditMode(false);
+              setShowMaskedFields(false);
               loadManagementSchema(); // Reload to revert changes
-              navigation.dispatch(e.data.action);
+              // Use navigation.goBack() instead of dispatch to avoid state issues
+              navigation.goBack();
             },
           },
           {
@@ -156,7 +192,9 @@ export default function LogSymptomsScreen({ route, navigation }) {
               const success = await savePendingChanges();
               if (success) {
                 setIsEditMode(false);
-                navigation.dispatch(e.data.action);
+                setShowMaskedFields(false);
+                // Use navigation.goBack() instead of dispatch to avoid state issues
+                navigation.goBack();
               }
             },
           },
@@ -165,7 +203,7 @@ export default function LogSymptomsScreen({ route, navigation }) {
     });
 
     return unsubscribe;
-  }, [navigation, isEditMode, hasEditModeChanges, pendingChanges]);
+  }, [navigation, isEditMode, hasEditModeChanges]);
 
   /**
    * Initialize form: Load schema and check for existing data
@@ -473,6 +511,77 @@ export default function LogSymptomsScreen({ route, navigation }) {
       setEditingField(field);
       setShowFieldModal(true);
     }
+  };
+
+  const handleFieldReorder = (fieldId, newOrder) => {
+    // Store field order change in pending changes
+    setPendingChanges((prev) => {
+      const updated = new Map(prev.fieldOrders);
+      updated.set(fieldId, newOrder);
+      return {
+        ...prev,
+        fieldOrders: updated,
+      };
+    });
+    // Force hasEditModeChanges to true immediately
+    setHasEditModeChanges(true);
+  };
+
+  const handleOptionReorder = (fieldId, reorderedOptions) => {
+    // Filter to only ACTIVE options (backend only considers active options)
+    const activeOptions = reorderedOptions.filter(
+      (option) => option.is_active !== false
+    );
+    
+    // Store option order changes in pending changes
+    // Only store orders for ACTIVE options, with indices relative to active options only
+    setPendingChanges((prev) => {
+      const updated = new Map(prev.optionOrders);
+      activeOptions.forEach((option, index) => {
+        updated.set(option.id, index);
+      });
+      return {
+        ...prev,
+        optionOrders: updated,
+      };
+    });
+
+    // Update managementSchema optimistically AFTER all interactions/animations complete
+    // This prevents re-rendering during the drag animation which causes flickering
+    InteractionManager.runAfterInteractions(() => {
+      setManagementSchema((prev) => {
+        if (!prev) return prev;
+
+        // Update the field's options array in the appropriate section
+        const updateFieldOptions = (fields) => {
+          return fields?.map((field) => {
+            if (field.id === fieldId) {
+              // Use the reordered options directly (same objects from drag operation)
+              // Just update option_order to keep sorting consistent
+              const updatedOptions = reorderedOptions.map((option, index) => {
+                // Only update option_order, keep the same object reference if possible
+                if (option.option_order === index) {
+                  return option; // No change needed, return same object
+                }
+                return { ...option, option_order: index };
+              });
+              return { ...field, options: updatedOptions };
+            }
+            return field;
+          });
+        };
+
+        return {
+          ...prev,
+          baseline_fields: updateFieldOptions(prev.baseline_fields),
+          category_fields: updateFieldOptions(prev.category_fields),
+          custom_fields: updateFieldOptions(prev.custom_fields),
+        };
+      });
+    });
+    
+    // Force hasEditModeChanges to true immediately
+    setHasEditModeChanges(true);
   };
 
   const handleDeleteOption = (field, option) => {
@@ -787,6 +896,15 @@ export default function LogSymptomsScreen({ route, navigation }) {
         await trackerService.toggleOptionActive(optionId);
       }
 
+      // Reload management schema after toggles to get accurate backend state
+      // This ensures order recalculation is based on actual backend state
+      if (
+        pendingChanges.fieldToggles.size > 0 ||
+        pendingChanges.optionToggles.size > 0
+      ) {
+        await loadManagementSchema();
+      }
+
       // Delete fields marked for deletion
       for (const fieldId of pendingChanges.fieldDeletes) {
         await trackerService.deleteField(fieldId);
@@ -800,6 +918,15 @@ export default function LogSymptomsScreen({ route, navigation }) {
       // Create new fields
       for (const fieldData of pendingChanges.fieldCreates) {
         await trackerService.createNewField(trackerId, fieldData);
+      }
+      
+      // Reload management schema after creates/deletes to get accurate backend state
+      if (
+        pendingChanges.fieldDeletes.size > 0 ||
+        pendingChanges.optionDeletes.size > 0 ||
+        pendingChanges.fieldCreates.length > 0
+      ) {
+        await loadManagementSchema();
       }
 
       // Update edited fields
@@ -889,6 +1016,130 @@ export default function LogSymptomsScreen({ route, navigation }) {
         }
       }
 
+      // Save field order changes
+      // Recalculate order indices based on final state (after toggles) to ensure they're valid
+      if (pendingChanges.fieldOrders && pendingChanges.fieldOrders.size > 0) {
+        // Get all active custom/user fields from current schema (after toggles saved)
+        const allFields = [
+          ...(managementSchema?.baseline_fields || []),
+          ...(managementSchema?.category_fields || []),
+          ...(managementSchema?.custom_fields || []),
+        ];
+        
+        // Get active reorderable fields and sort by their stored drag order
+        // Fields that were dragged have an order in pendingChanges.fieldOrders
+        // Fields that weren't dragged keep their current field_order
+        const activeReorderableFields = allFields
+          .filter(
+            (field) =>
+              (field.field_group === "custom" || field.is_user_field) &&
+              field.is_active !== false
+          )
+          .sort((a, b) => {
+            // Check if field was in the drag operation
+            const orderA = pendingChanges.fieldOrders.get(a.id);
+            const orderB = pendingChanges.fieldOrders.get(b.id);
+            
+            if (orderA !== undefined && orderB !== undefined) {
+              // Both were dragged - use drag order
+              return orderA - orderB;
+            } else if (orderA !== undefined) {
+              // Only A was dragged - A comes first (or use its current order)
+              return -1;
+            } else if (orderB !== undefined) {
+              // Only B was dragged - B comes first (or use its current order)
+              return 1;
+            } else {
+              // Neither was dragged - maintain current order
+              const currentOrderA = a.field_order ?? 0;
+              const currentOrderB = b.field_order ?? 0;
+              return currentOrderA - currentOrderB;
+            }
+          });
+
+        // Recalculate positions: only active fields that were dragged get new positions
+        // Position is based on their order in the sorted active list
+        for (let index = 0; index < activeReorderableFields.length; index++) {
+          const field = activeReorderableFields[index];
+          // Only update order if this field was in the drag operation
+          if (pendingChanges.fieldOrders.has(field.id)) {
+            await trackerService.updateFieldOrder(field.id, index);
+          }
+        }
+      }
+
+      // Save option order changes
+      // Recalculate order indices based on final state (after toggles) to ensure they're valid
+      if (pendingChanges.optionOrders && pendingChanges.optionOrders.size > 0) {
+        // Group option orders by field
+        const optionOrdersByField = new Map();
+        for (const [optionId, order] of pendingChanges.optionOrders) {
+          // Find which field this option belongs to
+          const allFields = [
+            ...(managementSchema?.baseline_fields || []),
+            ...(managementSchema?.category_fields || []),
+            ...(managementSchema?.custom_fields || []),
+          ];
+          for (const field of allFields) {
+            const option = field.options?.find((opt) => opt.id === optionId);
+            if (option) {
+              if (!optionOrdersByField.has(field.id)) {
+                optionOrdersByField.set(field.id, []);
+              }
+              optionOrdersByField.get(field.id).push({ optionId, order });
+              break;
+            }
+          }
+        }
+
+        // For each field, recalculate option orders based on active options only
+        for (const [fieldId, optionOrders] of optionOrdersByField) {
+          const allFields = [
+            ...(managementSchema?.baseline_fields || []),
+            ...(managementSchema?.category_fields || []),
+            ...(managementSchema?.custom_fields || []),
+          ];
+          const field = allFields.find((f) => f.id === fieldId);
+          if (!field || !field.options) continue;
+
+          // Get active options and sort by their stored drag order
+          // Options that were dragged have an order in pendingChanges.optionOrders
+          // Options that weren't dragged keep their current option_order
+          const activeOptions = field.options
+            .filter((opt) => opt.is_active !== false)
+            .sort((a, b) => {
+              // Check if option was in the drag operation
+              const orderA = pendingChanges.optionOrders.get(a.id);
+              const orderB = pendingChanges.optionOrders.get(b.id);
+              
+              if (orderA !== undefined && orderB !== undefined) {
+                // Both were dragged - use drag order
+                return orderA - orderB;
+              } else if (orderA !== undefined) {
+                // Only A was dragged - A comes first
+                return -1;
+              } else if (orderB !== undefined) {
+                // Only B was dragged - B comes first
+                return 1;
+              } else {
+                // Neither was dragged - maintain current order
+                const currentOrderA = a.option_order ?? 0;
+                const currentOrderB = b.option_order ?? 0;
+                return currentOrderA - currentOrderB;
+              }
+            });
+
+          // Recalculate positions: only active options that were dragged get new positions
+          for (let index = 0; index < activeOptions.length; index++) {
+            const option = activeOptions[index];
+            // Only update order if this option was in the drag operation
+            if (pendingChanges.optionOrders.has(option.id)) {
+              await trackerService.updateOptionOrder(option.id, index);
+            }
+          }
+        }
+      }
+
       // Reload both schemas and existing data to sync with backend
       const [schemaResponse, dataResponse] = await Promise.all([
         // Reload form schema so the form reflects the changes
@@ -936,6 +1187,8 @@ export default function LogSymptomsScreen({ route, navigation }) {
         fieldCreates: [],
         fieldDeletes: new Set(),
         optionDeletes: new Set(),
+        fieldOrders: new Map(),
+        optionOrders: new Map(),
       });
       setHasEditModeChanges(false);
 
@@ -973,6 +1226,8 @@ export default function LogSymptomsScreen({ route, navigation }) {
                   fieldCreates: [],
                   fieldDeletes: new Set(),
                   optionDeletes: new Set(),
+                  fieldOrders: new Map(),
+                  optionOrders: new Map(),
                 });
                 setHasEditModeChanges(false);
                 setEditingField(null);
@@ -1021,12 +1276,13 @@ export default function LogSymptomsScreen({ route, navigation }) {
       fieldCreates: [],
       fieldDeletes: new Set(),
       optionDeletes: new Set(),
+      fieldOrders: new Map(),
+      optionOrders: new Map(),
     });
 
     // Scroll to top when entering edit mode
-    setTimeout(() => {
-      scrollViewRef.current?.scrollTo({ y: 0, animated: true });
-    }, 300);
+    // Note: NestableScrollContainer handles scrolling internally
+    // The scroll will happen naturally when content changes
   };
 
   /**
@@ -1078,6 +1334,24 @@ export default function LogSymptomsScreen({ route, navigation }) {
       return uniqueFields;
     }
   }, [formSchema, managementSchema, isEditMode, showMaskedFields]);
+
+  // Animate slide transition when switching between active/masked
+  useEffect(() => {
+    if (isEditMode) {
+      Animated.parallel([
+        Animated.timing(slideAnimActive, {
+          toValue: showMaskedFields ? -1 : 0,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+        Animated.timing(slideAnimMasked, {
+          toValue: showMaskedFields ? 0 : 1,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  }, [showMaskedFields, isEditMode]);
 
   // Loading state - Professional skeleton loader
   if (loading) {
@@ -1169,58 +1443,66 @@ export default function LogSymptomsScreen({ route, navigation }) {
         <TouchableOpacity
           style={styles.backButton}
           onPress={() => {
-            // Check for unsaved changes when clicking back button
-            if (isEditMode && hasEditModeChanges) {
-              // Set flag to prevent navigation listener from showing duplicate dialog
-              isHandlingNavigation.current = true;
+            // If in edit mode, exit edit mode instead of going back
+            if (isEditMode) {
+              // Check for unsaved changes
+              if (hasEditModeChanges) {
+                // Set flag to prevent navigation listener from showing duplicate dialog
+                isHandlingNavigation.current = true;
 
-              Alert.alert(
-                "Unsaved Changes",
-                "You have unsaved changes. What would you like to do?",
-                [
-                  {
-                    text: "Cancel",
-                    style: "cancel",
-                    onPress: () => {
-                      isHandlingNavigation.current = false;
+                Alert.alert(
+                  "Unsaved Changes",
+                  "You have unsaved changes. What would you like to do?",
+                  [
+                    {
+                      text: "Cancel",
+                      style: "cancel",
+                      onPress: () => {
+                        isHandlingNavigation.current = false;
+                      },
                     },
-                  },
-                  {
-                    text: "Don't Save",
-                    style: "destructive",
-                    onPress: () => {
-                      // Discard changes and reload original schema
-                      setPendingChanges({
-                        fieldToggles: new Map(),
-                        optionToggles: new Map(),
-                        fieldEdits: new Map(),
-                        fieldCreates: [],
-                        fieldDeletes: new Set(),
-                        optionDeletes: new Set(),
-                      });
-                      setEditingField(null);
-                      loadManagementSchema(); // Reload to revert changes
-                      setIsEditMode(false);
-                      setShowMaskedFields(false);
-                      navigation.goBack();
-                    },
-                  },
-                  {
-                    text: "Save",
-                    onPress: async () => {
-                      const success = await savePendingChanges();
-                      if (success) {
+                    {
+                      text: "Don't Save",
+                      style: "destructive",
+                      onPress: () => {
+                        // Discard changes and reload original schema
+                        setPendingChanges({
+                          fieldToggles: new Map(),
+                          optionToggles: new Map(),
+                          fieldEdits: new Map(),
+                          fieldCreates: [],
+                          fieldDeletes: new Set(),
+                          optionDeletes: new Set(),
+                          fieldOrders: new Map(),
+                          optionOrders: new Map(),
+                        });
+                        setEditingField(null);
+                        loadManagementSchema(); // Reload to revert changes
                         setIsEditMode(false);
                         setShowMaskedFields(false);
-                        navigation.goBack();
-                      } else {
-                        isHandlingNavigation.current = false;
-                      }
+                      },
                     },
-                  },
-                ]
-              );
+                    {
+                      text: "Save",
+                      onPress: async () => {
+                        const success = await savePendingChanges();
+                        if (success) {
+                          setIsEditMode(false);
+                          setShowMaskedFields(false);
+                        } else {
+                          isHandlingNavigation.current = false;
+                        }
+                      },
+                    },
+                  ]
+                );
+              } else {
+                // No unsaved changes, just exit edit mode
+                setIsEditMode(false);
+                setShowMaskedFields(false);
+              }
             } else {
+              // Not in edit mode, go back to previous screen
               navigation.goBack();
             }
           }}
@@ -1257,12 +1539,38 @@ export default function LogSymptomsScreen({ route, navigation }) {
         </TouchableOpacity>
       </View>
 
-      <ScrollView
+      <PanGestureHandler
+        onGestureEvent={(event) => {
+          // Handle swipe gestures only in edit mode
+          if (!isEditMode) return;
+        }}
+        onHandlerStateChange={(event) => {
+          if (!isEditMode) return;
+          
+          if (event.nativeEvent.state === State.END) {
+            const { translationX } = event.nativeEvent;
+            const SWIPE_THRESHOLD = 50; // Minimum swipe distance
+            
+            // Swipe right (to active) - only if currently showing masked
+            if (translationX > SWIPE_THRESHOLD && showMaskedFields) {
+              setShowMaskedFields(false);
+            }
+            // Swipe left (to masked) - only if currently showing active
+            else if (translationX < -SWIPE_THRESHOLD && !showMaskedFields) {
+              setShowMaskedFields(true);
+            }
+          }
+        }}
+        activeOffsetX={[-10, 10]} // Only respond to horizontal swipes
+        failOffsetY={[-10, 10]} // Prevent conflicts with vertical scrolling
+        simultaneousHandlers={[]} // Allow ScrollView to handle scrolling
+      >
+        <NestableScrollContainer
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={true}
-      >
+        >
         {/* Date indicator - only show in normal mode */}
         {!isEditMode && (
           <View style={styles.dateContainer}>
@@ -1328,62 +1636,304 @@ export default function LogSymptomsScreen({ route, navigation }) {
 
         {/* Form fields */}
         {isEditMode ? (
-          // Edit mode - show field editor
-          <>
-            {fields.map((field) => (
-              <FormFieldEdit
-                key={field.id || field.field_name}
-                field={field}
-                onDeleteField={handleDeleteField}
-                onEditField={handleEditField}
-                onDeleteOption={handleDeleteOption}
-                onAddOption={handleAddOption}
-                onToggleField={handleToggleField}
-                onToggleOption={handleToggleOption}
-              />
-            ))}
-            {/* Add field button - smaller, on the right - only show for active fields */}
-            {!showMaskedFields && (
-              <View style={styles.addFieldButtonContainer}>
-                <TouchableOpacity
-                  style={styles.addFieldButtonSmall}
-                  onPress={handleAddField}
-                >
-                  <Ionicons
-                    name="add-circle-outline"
-                    size={18}
-                    color={colors.primary}
-                  />
-                  <Text style={styles.addFieldTextSmall}>Add New Field</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-          </>
+          // Edit mode - show field editor with animated slide transition
+          <View 
+            style={[
+              styles.fieldsAnimationContainer,
+              {
+                height: showMaskedFields 
+                  ? (maskedHeight || activeHeight || 'auto')
+                  : (activeHeight || maskedHeight || 'auto')
+              }
+            ]}
+          >
+            {/* Active fields view */}
+            <Animated.View
+              style={[
+                styles.fieldsAnimatedView,
+                {
+                  transform: [
+                    {
+                      translateX: slideAnimActive.interpolate({
+                        inputRange: [-1, 0],
+                        outputRange: [-(SCREEN_WIDTH - 40), 0],
+                      }),
+                    },
+                  ],
+                },
+              ]}
+              onLayout={(event) => {
+                const height = event.nativeEvent.layout.height;
+                setActiveHeight(height);
+              }}
+              collapsable={false}
+            >
+              {(() => {
+                // Get active fields only
+                const allFields = [
+                  ...(managementSchema?.baseline_fields || []),
+                  ...(managementSchema?.category_fields || []),
+                  ...(managementSchema?.custom_fields || []),
+                ];
+                const activeFields = allFields.filter(
+                  (field) => field.is_active !== false
+                );
+                
+                const nonReorderableFields = activeFields.filter(
+                  (field) =>
+                    field.field_group === "baseline" ||
+                    (field.field_group !== "custom" && !field.is_user_field)
+                );
+                const reorderableFields = activeFields.filter(
+                  (field) => field.field_group === "custom" || field.is_user_field
+                );
+
+                return (
+                  <>
+                    {/* Non-reorderable fields (baseline, tracker-specific) */}
+                    {nonReorderableFields.map((field) => (
+                      <FormFieldEdit
+                        key={field.id || field.field_name}
+                        field={field}
+                        onDeleteField={handleDeleteField}
+                        onEditField={handleEditField}
+                        onDeleteOption={handleDeleteOption}
+                        onAddOption={handleAddOption}
+                        onToggleField={handleToggleField}
+                        onToggleOption={handleToggleOption}
+                      />
+                    ))}
+
+                    {/* Separator between non-reorderable and custom fields */}
+                    {nonReorderableFields.length > 0 &&
+                      reorderableFields.length > 0 && (
+                        <View style={styles.fieldGroupSeparator}>
+                          <View style={styles.separatorLine} />
+                          <Text style={styles.separatorText}>Custom Fields</Text>
+                          <View style={styles.separatorLine} />
+                        </View>
+                      )}
+
+                    {/* Hint text for dragging */}
+                    {reorderableFields.length > 0 && (
+                      <Text style={styles.dragHintText}>
+                        Long press field or option names to reorder
+                      </Text>
+                    )}
+
+                    {/* Reorderable fields (custom/user) - using DraggableFlatList */}
+                    {reorderableFields.length > 0 && (
+                      <View 
+                        style={styles.draggableFieldsContainer}
+                        collapsable={false}
+                        nativeID="draggable-fields-wrapper"
+                      >
+                        <View collapsable={false} style={{ flex: 1 }}>
+                          <NestableDraggableFlatList
+                            data={reorderableFields}
+                            scrollEnabled={false}
+                            containerStyle={{ flexGrow: 0 }}
+                            dragItemOverflow={true}
+                          onDragEnd={({ data }) => {
+                            // Filter to only ACTIVE fields (backend only considers active fields)
+                            const activeFields = data.filter(
+                              (field) => field.is_active !== false
+                            );
+                            
+                            // Update order for each ACTIVE field based on new position within active fields only
+                            activeFields.forEach((field, index) => {
+                              handleFieldReorder(field.id, index);
+                            });
+
+                            // Optimistically update managementSchema to maintain visual order
+                            // IMPORTANT: Preserve masked fields that aren't in the reordered data
+                            setManagementSchema((prev) => {
+                              if (!prev || !prev.custom_fields) return prev;
+
+                              // Get masked fields that should be preserved
+                              const maskedFields = prev.custom_fields.filter(
+                                (field) => field.is_active === false
+                              );
+
+                              // Combine reordered active fields with preserved masked fields
+                              return {
+                                ...prev,
+                                custom_fields: [...data, ...maskedFields],
+                              };
+                            });
+                          }}
+                          keyExtractor={(item) =>
+                            String(item.id || item.field_name)
+                          }
+                          renderItem={({ item: field, drag, isActive }) => {
+                            // Disable dragging for masked fields
+                            const isFieldMasked = field.is_active === false;
+                            return (
+                              <ScaleDecorator>
+                                <View
+                                  style={[isActive && styles.draggableFieldActive]}
+                                  collapsable={false}
+                                >
+                                  <FormFieldEdit
+                                    field={field}
+                                    onDeleteField={handleDeleteField}
+                                    onEditField={handleEditField}
+                                    onDeleteOption={handleDeleteOption}
+                                    onAddOption={handleAddOption}
+                                    onToggleField={handleToggleField}
+                                    onToggleOption={handleToggleOption}
+                                    onDragField={
+                                      isFieldMasked
+                                        ? undefined
+                                        : () => {
+                                            Haptics.impactAsync(
+                                              Haptics.ImpactFeedbackStyle.Medium
+                                            );
+                                            drag();
+                                          }
+                                    }
+                                    onOptionReorder={handleOptionReorder}
+                                    isReorderable={!isFieldMasked}
+                                  />
+                                </View>
+                              </ScaleDecorator>
+                            );
+                          }}
+                          />
+                        </View>
+                      </View>
+                    )}
+
+                    {/* Add field button - smaller, on the right - only show for active fields */}
+                    <View style={styles.addFieldButtonContainer}>
+                      <TouchableOpacity
+                        style={styles.addFieldButtonSmall}
+                        onPress={handleAddField}
+                      >
+                        <Ionicons
+                          name="add-circle-outline"
+                          size={18}
+                          color={colors.primary}
+                        />
+                        <Text style={styles.addFieldTextSmall}>Add New Field</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </>
+                );
+              })()}
+            </Animated.View>
+
+            {/* Masked fields view */}
+            <Animated.View
+              style={[
+                styles.fieldsAnimatedView,
+                {
+                  transform: [
+                    {
+                      translateX: slideAnimMasked.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [0, SCREEN_WIDTH - 40],
+                      }),
+                    },
+                  ],
+                },
+              ]}
+              onLayout={(event) => {
+                const height = event.nativeEvent.layout.height;
+                setMaskedHeight(height);
+              }}
+              collapsable={false}
+            >
+              {(() => {
+                // Get masked fields only
+                const allFields = [
+                  ...(managementSchema?.baseline_fields || []),
+                  ...(managementSchema?.category_fields || []),
+                  ...(managementSchema?.custom_fields || []),
+                ];
+                const maskedFields = allFields.filter(
+                  (field) => field.is_active === false
+                );
+                
+                const nonReorderableFields = maskedFields.filter(
+                  (field) =>
+                    field.field_group === "baseline" ||
+                    (field.field_group !== "custom" && !field.is_user_field)
+                );
+                const reorderableFields = maskedFields.filter(
+                  (field) => field.field_group === "custom" || field.is_user_field
+                );
+
+                return (
+                  <>
+                    {/* Non-reorderable masked fields */}
+                    {nonReorderableFields.map((field) => (
+                      <FormFieldEdit
+                        key={field.id || field.field_name}
+                        field={field}
+                        onDeleteField={handleDeleteField}
+                        onEditField={handleEditField}
+                        onDeleteOption={handleDeleteOption}
+                        onAddOption={handleAddOption}
+                        onToggleField={handleToggleField}
+                        onToggleOption={handleToggleOption}
+                      />
+                    ))}
+
+                    {/* Separator */}
+                    {nonReorderableFields.length > 0 &&
+                      reorderableFields.length > 0 && (
+                        <View style={styles.fieldGroupSeparator}>
+                          <View style={styles.separatorLine} />
+                          <Text style={styles.separatorText}>Custom Fields</Text>
+                          <View style={styles.separatorLine} />
+                        </View>
+                      )}
+
+                    {/* Reorderable masked fields - no dragging allowed */}
+                    {reorderableFields.map((field) => (
+                      <FormFieldEdit
+                        key={field.id || field.field_name}
+                        field={field}
+                        onDeleteField={handleDeleteField}
+                        onEditField={handleEditField}
+                        onDeleteOption={handleDeleteOption}
+                        onAddOption={handleAddOption}
+                        onToggleField={handleToggleField}
+                        onToggleOption={handleToggleOption}
+                        isReorderable={false}
+                      />
+                    ))}
+                  </>
+                );
+              })()}
+            </Animated.View>
+          </View>
         ) : (
           // Normal mode - show form
           fields.map((field) => (
-            <FormField
-              key={field.id || field.field_name}
-              field={field}
-              control={control}
-            />
+          <FormField
+            key={field.id || field.field_name}
+            field={field}
+            control={control}
+          />
           ))
         )}
 
         {/* Submit and Edit buttons */}
         {!isEditMode && (
           <View style={styles.bottomButtonsContainer}>
-            <TouchableOpacity
-              style={[
-                styles.submitButton,
+        <TouchableOpacity
+          style={[
+            styles.submitButton,
                 (!isDirty || submitting) && styles.submitButtonDisabled,
-              ]}
+          ]}
               onPress={handleSubmit(onSubmit)}
               disabled={!isDirty || submitting}
-            >
-              {submitting ? (
-                <ActivityIndicator size="small" color={colors.textOnPrimary} />
-              ) : (
+        >
+          {submitting ? (
+            <ActivityIndicator size="small" color={colors.textOnPrimary} />
+          ) : (
                 <>
                   <Ionicons
                     name="checkmark"
@@ -1395,8 +1945,8 @@ export default function LogSymptomsScreen({ route, navigation }) {
                     {existingData ? "Update" : "Submit"}
                   </Text>
                 </>
-              )}
-            </TouchableOpacity>
+          )}
+        </TouchableOpacity>
             <TouchableOpacity
               style={styles.editFormButton}
               onPress={toggleEditMode}
@@ -1409,7 +1959,8 @@ export default function LogSymptomsScreen({ route, navigation }) {
             </TouchableOpacity>
           </View>
         )}
-      </ScrollView>
+      </NestableScrollContainer>
+      </PanGestureHandler>
 
       {/* Field Creation Modal */}
       <FieldCreationModal
@@ -1503,6 +2054,7 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 12,
     marginBottom: 20,
+    marginHorizontal: 0, // Align with fields (scrollContent padding handles spacing)
     borderWidth: 1,
     borderColor: colors.primary,
   },
@@ -1518,7 +2070,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 20,
-    marginHorizontal: 20,
+    marginHorizontal: 0, // Align with fields (scrollContent padding handles spacing)
     gap: 8,
   },
   fieldToggleButton: {
@@ -1609,6 +2161,52 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     color: colors.primary,
+  },
+  fieldGroupSeparator: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginVertical: 24,
+    marginHorizontal: 0,
+  },
+  separatorLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: colors.border,
+    opacity: 0.3,
+  },
+  separatorText: {
+    marginHorizontal: 16,
+    fontSize: 11,
+    fontWeight: "600",
+    color: colors.textLight,
+    textTransform: "uppercase",
+    letterSpacing: 1.5,
+    opacity: 0.6,
+  },
+  dragHintText: {
+    fontSize: 12,
+    color: colors.textLight,
+    textAlign: "center",
+    marginBottom: 16,
+    opacity: 0.5,
+    fontStyle: "italic",
+  },
+  draggableFieldsContainer: {
+    paddingTop: 8,
+  },
+  draggableFieldActive: {
+    opacity: 0.6,
+  },
+  fieldsAnimationContainer: {
+    position: "relative",
+    overflow: "hidden",
+  },
+  fieldsAnimatedView: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    width: SCREEN_WIDTH - 40, // Account for padding (20 on each side)
   },
   loadingText: {
     marginTop: 12,

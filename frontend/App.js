@@ -4,8 +4,41 @@ import { NavigationContainer } from "@react-navigation/native";
 import { CommonActions } from "@react-navigation/native";
 import { StatusBar } from "expo-status-bar";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { LogBox } from "react-native";
 import AppNavigator from "./src/navigation/AppNavigator";
 import { AuthProvider, useAuth } from "./src/context/AuthContext";
+
+// Suppress known harmless warning from react-native-draggable-flatlist
+// This warning occurs when the library tries to measure layout on Animated.View components
+// It's a known issue with the library and doesn't affect functionality
+if (__DEV__) {
+  // Suppress using LogBox
+  LogBox.ignoreLogs([
+    /ref\.measureLayout must be called with a ref to a native component/,
+    "ref.measureLayout must be called with a ref to a native component",
+    "Warning: ref.measureLayout must be called with a ref to a native component",
+  ]);
+  
+  // Also intercept console.warn to catch warnings that bypass LogBox
+  const originalWarn = console.warn;
+  const originalError = console.error;
+  
+  console.warn = (...args) => {
+    const message = args[0]?.toString() || "";
+    if (message.includes("measureLayout") && message.includes("native component")) {
+      return; // Suppress this specific warning
+    }
+    originalWarn.apply(console, args);
+  };
+  
+  console.error = (...args) => {
+    const message = args[0]?.toString() || "";
+    if (message.includes("measureLayout") && message.includes("native component")) {
+      return; // Suppress this specific error
+    }
+    originalError.apply(console, args);
+  };
+}
 
 // Handles navigation reset when user authenticates
 function NavigationWrapper() {
