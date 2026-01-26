@@ -18,6 +18,8 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import DraggableFlatList, {
   ScaleDecorator,
+  NestableScrollContainer,
+  NestableDraggableFlatList,
 } from "react-native-draggable-flatlist";
 import * as Haptics from "expo-haptics";
 import FormField from "../components/form/FormField";
@@ -1265,9 +1267,8 @@ export default function LogSymptomsScreen({ route, navigation }) {
     });
 
     // Scroll to top when entering edit mode
-    setTimeout(() => {
-      scrollViewRef.current?.scrollTo({ y: 0, animated: true });
-    }, 300);
+    // Note: NestableScrollContainer handles scrolling internally
+    // The scroll will happen naturally when content changes
   };
 
   /**
@@ -1428,60 +1429,66 @@ export default function LogSymptomsScreen({ route, navigation }) {
         <TouchableOpacity
           style={styles.backButton}
           onPress={() => {
-            // Check for unsaved changes when clicking back button
-            if (isEditMode && hasEditModeChanges) {
-              // Set flag to prevent navigation listener from showing duplicate dialog
-              isHandlingNavigation.current = true;
+            // If in edit mode, exit edit mode instead of going back
+            if (isEditMode) {
+              // Check for unsaved changes
+              if (hasEditModeChanges) {
+                // Set flag to prevent navigation listener from showing duplicate dialog
+                isHandlingNavigation.current = true;
 
-              Alert.alert(
-                "Unsaved Changes",
-                "You have unsaved changes. What would you like to do?",
-                [
-                  {
-                    text: "Cancel",
-                    style: "cancel",
-                    onPress: () => {
-                      isHandlingNavigation.current = false;
+                Alert.alert(
+                  "Unsaved Changes",
+                  "You have unsaved changes. What would you like to do?",
+                  [
+                    {
+                      text: "Cancel",
+                      style: "cancel",
+                      onPress: () => {
+                        isHandlingNavigation.current = false;
+                      },
                     },
-                  },
-                  {
-                    text: "Don't Save",
-                    style: "destructive",
-                    onPress: () => {
-                      // Discard changes and reload original schema
-                      setPendingChanges({
-                        fieldToggles: new Map(),
-                        optionToggles: new Map(),
-                        fieldEdits: new Map(),
-                        fieldCreates: [],
-                        fieldDeletes: new Set(),
-                        optionDeletes: new Set(),
-                        fieldOrders: new Map(),
-                        optionOrders: new Map(),
-                      });
-                      setEditingField(null);
-                      loadManagementSchema(); // Reload to revert changes
-                      setIsEditMode(false);
-                      setShowMaskedFields(false);
-                      navigation.goBack();
-                    },
-                  },
-                  {
-                    text: "Save",
-                    onPress: async () => {
-                      const success = await savePendingChanges();
-                      if (success) {
+                    {
+                      text: "Don't Save",
+                      style: "destructive",
+                      onPress: () => {
+                        // Discard changes and reload original schema
+                        setPendingChanges({
+                          fieldToggles: new Map(),
+                          optionToggles: new Map(),
+                          fieldEdits: new Map(),
+                          fieldCreates: [],
+                          fieldDeletes: new Set(),
+                          optionDeletes: new Set(),
+                          fieldOrders: new Map(),
+                          optionOrders: new Map(),
+                        });
+                        setEditingField(null);
+                        loadManagementSchema(); // Reload to revert changes
                         setIsEditMode(false);
                         setShowMaskedFields(false);
-                        navigation.goBack();
-                      } else {
-                        isHandlingNavigation.current = false;
-                      }
+                      },
                     },
-                  },
-                ]
-              );
+                    {
+                      text: "Save",
+                      onPress: async () => {
+                        const success = await savePendingChanges();
+                        if (success) {
+                          setIsEditMode(false);
+                          setShowMaskedFields(false);
+                        } else {
+                          isHandlingNavigation.current = false;
+                        }
+                      },
+                    },
+                  ]
+                );
+              } else {
+                // No unsaved changes, just exit edit mode
+                setIsEditMode(false);
+                setShowMaskedFields(false);
+              }
             } else {
+              // Not in edit mode, go back to previous screen
               navigation.goBack();
             }
           }}
@@ -1542,8 +1549,9 @@ export default function LogSymptomsScreen({ route, navigation }) {
         }}
         activeOffsetX={[-10, 10]} // Only respond to horizontal swipes
         failOffsetY={[-10, 10]} // Prevent conflicts with vertical scrolling
+        simultaneousHandlers={[]} // Allow ScrollView to handle scrolling
       >
-        <ScrollView
+        <NestableScrollContainer
           style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
@@ -1644,6 +1652,7 @@ export default function LogSymptomsScreen({ route, navigation }) {
                 const height = event.nativeEvent.layout.height;
                 setActiveHeight(height);
               }}
+              collapsable={false}
             >
               {(() => {
                 // Get active fields only
@@ -1700,9 +1709,17 @@ export default function LogSymptomsScreen({ route, navigation }) {
 
                     {/* Reorderable fields (custom/user) - using DraggableFlatList */}
                     {reorderableFields.length > 0 && (
-                      <View style={styles.draggableFieldsContainer}>
-                        <DraggableFlatList
-                          data={reorderableFields}
+                      <View 
+                        style={styles.draggableFieldsContainer}
+                        collapsable={false}
+                        nativeID="draggable-fields-wrapper"
+                      >
+                        <View collapsable={false} style={{ flex: 1 }}>
+                          <NestableDraggableFlatList
+                            data={reorderableFields}
+                            scrollEnabled={false}
+                            containerStyle={{ flexGrow: 0 }}
+                            dragItemOverflow={true}
                           onDragEnd={({ data }) => {
                             // Filter to only ACTIVE fields (backend only considers active fields)
                             const activeFields = data.filter(
@@ -1741,6 +1758,7 @@ export default function LogSymptomsScreen({ route, navigation }) {
                               <ScaleDecorator>
                                 <View
                                   style={[isActive && styles.draggableFieldActive]}
+                                  collapsable={false}
                                 >
                                   <FormFieldEdit
                                     field={field}
@@ -1767,8 +1785,8 @@ export default function LogSymptomsScreen({ route, navigation }) {
                               </ScaleDecorator>
                             );
                           }}
-                          scrollEnabled={false}
-                        />
+                          />
+                        </View>
                       </View>
                     )}
 
@@ -1810,6 +1828,7 @@ export default function LogSymptomsScreen({ route, navigation }) {
                 const height = event.nativeEvent.layout.height;
                 setMaskedHeight(height);
               }}
+              collapsable={false}
             >
               {(() => {
                 // Get masked fields only
@@ -1926,7 +1945,7 @@ export default function LogSymptomsScreen({ route, navigation }) {
             </TouchableOpacity>
           </View>
         )}
-      </ScrollView>
+      </NestableScrollContainer>
       </PanGestureHandler>
 
       {/* Field Creation Modal */}
@@ -2150,7 +2169,7 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   dragHintText: {
-    fontSize: 11,
+    fontSize: 12,
     color: colors.textLight,
     textAlign: "center",
     marginBottom: 16,

@@ -2,6 +2,7 @@ import React from "react";
 import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import DraggableFlatList, {
   ScaleDecorator,
+  NestableDraggableFlatList,
 } from "react-native-draggable-flatlist";
 import { Ionicons } from "@expo/vector-icons";
 import { colors } from "../../constants/colors";
@@ -64,6 +65,7 @@ const FormFieldEdit = React.memo(
             styles.fieldContainer,
             styles.fieldContainerWithBorder,
             isCustomField && styles.fieldContainerCustom,
+            !isReorderable && styles.fieldContainerNonReorderable, // Solid border for non-reorderable
             isMasked && styles.fieldContainerMasked,
           ]}
         >
@@ -152,6 +154,8 @@ const FormFieldEdit = React.memo(
                   onOptionReorder(field.id, data);
                 }}
                 keyExtractor={(item) => String(item.id)}
+                scrollEnabled={false}
+                dragItemOverflow={true}
                 renderItem={({ item: option, drag, isActive }) => {
                   const isOptionMasked = option.is_active === false;
                   // Disable drag for masked options
@@ -164,6 +168,7 @@ const FormFieldEdit = React.memo(
                           isOptionMasked && styles.optionRowMasked,
                           isActive && styles.optionRowActive,
                         ]}
+                        collapsable={false}
                       >
                         {/* Show plus for masked options, minus for active options */}
                         {isOptionMasked ? (
@@ -400,6 +405,9 @@ const styles = StyleSheet.create({
   },
   fieldContainerCustom: {
     // Custom fields keep the red dashed border
+  },
+  fieldContainerNonReorderable: {
+    borderStyle: "solid", // Continuous line for non-reorderable fields
   },
   fieldContainerMasked: {
     opacity: 0.6,
