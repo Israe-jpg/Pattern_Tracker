@@ -48,6 +48,7 @@ export default function LogSymptomsScreen({ route, navigation }) {
   const [editingField, setEditingField] = useState(null);
   const [showMaskedFields, setShowMaskedFields] = useState(false);
   const [hasEditModeChanges, setHasEditModeChanges] = useState(false);
+  const [showSettingsDropdown, setShowSettingsDropdown] = useState(false);
   
   // Animation values for smooth slide transition
   const slideAnimActive = useRef(new Animated.Value(0)).current;
@@ -98,6 +99,9 @@ export default function LogSymptomsScreen({ route, navigation }) {
    */
   useFocusEffect(
     React.useCallback(() => {
+      // Always hide settings dropdown when screen gains focus
+      setShowSettingsDropdown(false);
+
       // Only reload if we're not in edit mode and form is already initialized
       if (!isEditMode && formSchema && !loading) {
         const reloadExistingData = async () => {
@@ -1207,6 +1211,9 @@ export default function LogSymptomsScreen({ route, navigation }) {
   };
 
   const toggleEditMode = async () => {
+    // Close settings dropdown if open
+    setShowSettingsDropdown(false);
+
     // If clicking checkmark in edit mode, show save confirmation
     if (isEditMode) {
       if (hasEditModeChanges) {
@@ -1949,10 +1956,10 @@ export default function LogSymptomsScreen({ route, navigation }) {
         </TouchableOpacity>
             <TouchableOpacity
               style={styles.editFormButton}
-              onPress={toggleEditMode}
+              onPress={() => setShowSettingsDropdown((prev) => !prev)}
             >
               <Ionicons
-                name="create-outline"
+                name="settings-outline"
                 size={20}
                 color={colors.primary}
               />
@@ -1961,6 +1968,80 @@ export default function LogSymptomsScreen({ route, navigation }) {
         )}
       </NestableScrollContainer>
       </PanGestureHandler>
+
+      {/* Settings dropdown anchored to the settings button */}
+      {showSettingsDropdown && !isEditMode && (
+        <>
+          {/* Backdrop to close dropdown when tapping outside */}
+          <TouchableOpacity
+            style={styles.settingsDropdownBackdrop}
+            activeOpacity={1}
+            onPress={() => setShowSettingsDropdown(false)}
+          />
+          <View style={styles.settingsDropdown}>
+            {/* Edit my form */}
+            <TouchableOpacity
+              style={styles.settingsDropdownItem}
+              onPress={() => {
+                setShowSettingsDropdown(false);
+                toggleEditMode();
+              }}
+            >
+              <Ionicons
+                name="create-outline"
+                size={18}
+                color={colors.textOnPrimary}
+                style={styles.settingsDropdownIcon}
+              />
+              <Text style={styles.settingsDropdownText}>Edit my form</Text>
+            </TouchableOpacity>
+
+            <View style={styles.settingsDropdownDivider} />
+
+            {/* Export my form schema */}
+            <TouchableOpacity
+              style={styles.settingsDropdownItem}
+              onPress={() => {
+                setShowSettingsDropdown(false);
+                if (!formSchema) {
+                  Alert.alert(
+                    "Export form schema",
+                    "Form schema is not loaded yet. Please try again in a moment."
+                  );
+                  return;
+                }
+                try {
+                  // For now, log the schema for developer export
+                  console.log(
+                    "Export form schema:",
+                    JSON.stringify(formSchema, null, 2)
+                  );
+                  Alert.alert(
+                    "Export form schema",
+                    "The current form schema has been printed to the console for export."
+                  );
+                } catch (error) {
+                  console.error("Error exporting form schema:", error);
+                  Alert.alert(
+                    "Export form schema",
+                    "Failed to export form schema. Please try again."
+                  );
+                }
+              }}
+            >
+              <Ionicons
+                name="download-outline"
+                size={18}
+                color={colors.textOnPrimary}
+                style={styles.settingsDropdownIcon}
+              />
+              <Text style={styles.settingsDropdownText}>
+                Export my form schema
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </>
+      )}
 
       {/* Field Creation Modal */}
       <FieldCreationModal
@@ -2140,6 +2221,52 @@ const styles = StyleSheet.create({
   editFormButtonActive: {
     backgroundColor: colors.primary,
     borderColor: colors.primary,
+  },
+  settingsDropdownBackdrop: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "transparent",
+    zIndex: 998,
+  },
+  settingsDropdown: {
+    position: "absolute",
+    right: 20,
+    bottom: 110,
+    minWidth: 220,
+    backgroundColor: colors.navigation,
+    borderRadius: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    zIndex: 999,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  settingsDropdownItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+  },
+  settingsDropdownIcon: {
+    marginRight: 8,
+  },
+  settingsDropdownText: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: colors.textOnPrimary,
+  },
+  settingsDropdownDivider: {
+    height: 1,
+    backgroundColor: colors.border,
+    opacity: 0.3,
+    marginVertical: 4,
   },
   addFieldButtonContainer: {
     alignItems: "flex-end",
