@@ -74,6 +74,9 @@ export const API_ENDPOINTS = {
   TOGGLE_OPTION_ACTIVE: (optionId) => `/trackers/${optionId}/toggle-option-active-status`,
   UPDATE_FIELD_ORDER: (fieldId) => `/trackers/${fieldId}/update-field-order`,
   UPDATE_OPTION_ORDER: (optionId) => `/trackers/${optionId}/update-option-order`,
+  COMPLETE_SCHEMA: (id) => `/trackers/${id}/complete-schema`,
+  // User-facing config export (PDF) – matches backend route /export-config
+  EXPORT_SCHEMA: (id) => `/trackers/${id}/export-config`,
 
   // Data Tracking
   SAVE_DATA: (id) => `/data-tracking/${id}/save-tracking-data`,
