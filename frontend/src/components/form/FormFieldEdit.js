@@ -276,7 +276,6 @@ const FormFieldEdit = React.memo(
                     </ScaleDecorator>
                   );
                 }}
-                scrollEnabled={false}
               />
             ) : (
               // Non-reorderable options (baseline, tracker-specific, or non-edit mode)
