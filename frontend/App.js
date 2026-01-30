@@ -7,6 +7,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { LogBox } from "react-native";
 import AppNavigator from "./src/navigation/AppNavigator";
 import { AuthProvider, useAuth } from "./src/context/AuthContext";
+import { TrackerProvider } from "./src/context/TrackerContext";
 
 // Suppress known harmless warning from react-native-draggable-flatlist
 // This warning occurs when the library tries to measure layout on Animated.View components
@@ -71,7 +72,9 @@ export default function App() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <AuthProvider>
-        <NavigationWrapper />
+        <TrackerProvider>
+          <NavigationWrapper />
+        </TrackerProvider>
       </AuthProvider>
     </GestureHandlerRootView>
   );

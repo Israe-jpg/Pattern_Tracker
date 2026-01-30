@@ -11,6 +11,7 @@ import {
 import { PanGestureHandler, State } from "react-native-gesture-handler";
 import { useFocusEffect } from "@react-navigation/native";
 import { useAuth } from "../context/AuthContext";
+import { useTracker } from "../context/TrackerContext";
 import { colors } from "../constants/colors";
 import MenuDrawer from "../components/MenuDrawer";
 import HomeHeader from "../components/HomeHeader";
@@ -25,37 +26,31 @@ const SWIPE_THRESHOLD = 50; // Minimum distance to trigger swipe
 
 export default function HomeScreen({ navigation }) {
   const { logout } = useAuth();
+  const { activeTracker, trackers: contextTrackers, loadTrackers: loadContextTrackers, setActiveTracker } = useTracker();
   const [menuVisible, setMenuVisible] = useState(false);
   const [editMode, setEditMode] = useState(false);
-  const [tempSelectedTracker, setTempSelectedTracker] = useState(null); // Temporary selection, resets on app restart
 
   const {
-    trackers,
     loading,
     isInitialLoad,
-    defaultTracker,
     calendarData,
     selectedDate,
     setSelectedDate,
     needsSetup,
     insights,
     isPeriodTracker,
-    loadTrackers,
     loadCalendarData,
     loadInsights,
     checkPeriodTrackerSetup,
   } = useTrackerData();
 
-  // Use temporary selected tracker if available, otherwise use default
-  const activeTracker = tempSelectedTracker || defaultTracker;
-  
   // Track the previous tracker ID to ensure we reload when it changes
   const prevActiveTrackerIdRef = useRef(null);
 
-  // Reload trackers when screen comes into focus
+  // Reload trackers from context when screen comes into focus
   useFocusEffect(
     useCallback(() => {
-      loadTrackers();
+      loadContextTrackers();
       // Reset the ref when trackers are reloaded to allow re-triggering
       prevActiveTrackerIdRef.current = null;
       // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -102,7 +97,7 @@ export default function HomeScreen({ navigation }) {
   };
 
   const handleTrackerPress = (tracker) => {
-    setTempSelectedTracker(tracker);
+    setActiveTracker(tracker);
   };
 
   // Handle swipe-to-open gesture from left edge
@@ -127,7 +122,7 @@ export default function HomeScreen({ navigation }) {
   };
 
   // Only show loading screen on initial load when we have no data
-  if (loading && trackers.length === 0 && isInitialLoad) {
+  if (loading && contextTrackers.length === 0 && isInitialLoad) {
     return (
       <View style={styles.centerContainer}>
         <ActivityIndicator size="large" color={colors.primary} />
@@ -168,7 +163,7 @@ export default function HomeScreen({ navigation }) {
                 />
               ) : (
                 <CalendarSection
-                  trackerName={defaultTracker.name}
+                  trackerName={activeTracker?.name || "Loading..."}
                   selectedDate={selectedDate}
                   calendarData={calendarData}
                   isPeriodTracker={isPeriodTracker}
@@ -194,7 +189,7 @@ export default function HomeScreen({ navigation }) {
             setMenuVisible(false);
             setEditMode(false); // Reset edit mode when closing drawer
           }}
-          trackers={trackers}
+          trackers={contextTrackers}
           onTrackerPress={handleTrackerPress}
           onCreateCustomTracker={() => {
             // TODO: Navigate to create custom tracker screen
@@ -226,7 +221,7 @@ export default function HomeScreen({ navigation }) {
                       // TODO: Implement delete tracker API call
                       // await trackerService.deleteTracker(tracker.id);
                       Alert.alert("Success", "Tracker deleted successfully");
-                      loadTrackers(); // Reload trackers after deletion
+                      loadContextTrackers(); // Reload trackers after deletion
                     } catch (error) {
                       Alert.alert(
                         "Error",
@@ -252,7 +247,9 @@ export default function HomeScreen({ navigation }) {
                   onPress: async () => {
                     try {
                       await trackerService.setDefaultTracker(trackerId);
-                      loadTrackers(); // Reload trackers after update
+                      // Clear active tracker so it uses the new default
+                      await setActiveTracker(null);
+                      loadContextTrackers(); // Reload trackers after update
                     } catch (error) {
                       console.error("Error updating default tracker:", error);
                       Alert.alert(
@@ -266,7 +263,7 @@ export default function HomeScreen({ navigation }) {
               ]
             );
           }}
-          defaultTrackerId={defaultTracker?.id}
+          defaultTrackerId={contextTrackers.find(t => t.is_default)?.id}
           onProfilePress={() => navigation.navigate("Profile")}
           onLogout={logout}
         />
