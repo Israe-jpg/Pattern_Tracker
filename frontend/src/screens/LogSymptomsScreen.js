@@ -14,6 +14,8 @@ import {
   Dimensions,
   InteractionManager,
 } from "react-native";
+import { printToFileAsync } from "expo-print";
+import * as Sharing from "expo-sharing";
 import { PanGestureHandler, State } from "react-native-gesture-handler";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -1998,35 +2000,394 @@ export default function LogSymptomsScreen({ route, navigation }) {
 
             <View style={styles.settingsDropdownDivider} />
 
-            {/* Export my form schema */}
+            {/* Export config */}
             <TouchableOpacity
               style={styles.settingsDropdownItem}
               onPress={() => {
                 setShowSettingsDropdown(false);
                 if (!formSchema) {
                   Alert.alert(
-                    "Export form schema",
-                    "Form schema is not loaded yet. Please try again in a moment."
+                    "Export config",
+                    "Form configuration is not loaded yet. Please try again in a moment."
                   );
                   return;
                 }
-                try {
-                  // For now, log the schema for developer export
-                  console.log(
-                    "Export form schema:",
-                    JSON.stringify(formSchema, null, 2)
-                  );
-                  Alert.alert(
-                    "Export form schema",
-                    "The current form schema has been printed to the console for export."
-                  );
-                } catch (error) {
-                  console.error("Error exporting form schema:", error);
-                  Alert.alert(
-                    "Export form schema",
-                    "Failed to export form schema. Please try again."
-                  );
-                }
+
+                Alert.alert(
+                  "Export config",
+                  "Download the schema configuration?",
+                  [
+                    { text: "Cancel", style: "cancel" },
+                    {
+                      text: "Yes",
+                      onPress: () => {
+                        (async () => {
+                          try {
+                            // Use export-schema endpoint (user-facing config export)
+                            const exportResponse =
+                              await trackerService.exportSchema(trackerId);
+
+                            const trackerConfig =
+                              exportResponse?.tracker_config || {};
+
+                            const trackerName =
+                              trackerConfig.category_name ||
+                              formSchema?.tracker_name ||
+                              "Tracker";
+                            const trackerIdExport = trackerId;
+                            let dataSchema =
+                              trackerConfig.data_schema || {};
+
+                            // Also fetch management schema to get custom fields
+                            // (export-config doesn't include tracker-specific custom fields)
+                            try {
+                              const mgmtSchema = await trackerService.getManagementSchema(trackerId);
+                              const customFields = mgmtSchema?.custom_fields || [];
+                              
+                              if (customFields.length > 0) {
+                                // Convert custom fields to nested structure matching data_schema format
+                                const customSchema = {};
+                                customFields.forEach((field) => {
+                                  if (!field.is_active) return; // Skip inactive fields
+                                  
+                                  const fieldKey = field.field_name;
+                                  const fieldDef = {};
+                                  
+                                  // Process options for this field
+                                  const options = field.options || [];
+                                  options.forEach((option) => {
+                                    if (!option.is_active) return; // Skip inactive options
+                                    
+                                    const optKey = option.option_name;
+                                    const optDef = {
+                                      type: option.option_type === 'rating' ? 'integer' : 
+                                            option.option_type === 'number_input' ? 'float' :
+                                            option.option_type === 'multiple_choice' ? 'array' :
+                                            option.option_type === 'yes_no' ? 'boolean' : 'string',
+                                    };
+                                    
+                                    // Add range for rating/number
+                                    if (option.min_value !== undefined && option.max_value !== undefined) {
+                                      optDef.range = [option.min_value, option.max_value];
+                                    }
+                                    
+                                    // Add step for number inputs
+                                    if (option.step !== undefined) {
+                                      optDef.step = option.step;
+                                    }
+                                    
+                                    // Add choices for single/multiple choice
+                                    if (option.choices && Array.isArray(option.choices) && option.choices.length > 0) {
+                                      optDef.enum = option.choices;
+                                      if (option.choice_labels) {
+                                        optDef.labels = option.choice_labels;
+                                      }
+                                    }
+                                    
+                                    // Add max_length for text/notes
+                                    if (option.max_length !== undefined) {
+                                      optDef.max_length = option.max_length;
+                                    }
+                                    
+                                    // Add labels if available
+                                    if (option.display_label) {
+                                      optDef.labels = { [optKey]: option.display_label };
+                                    }
+                                    
+                                    fieldDef[optKey] = optDef;
+                                  });
+                                  
+                                  if (Object.keys(fieldDef).length > 0) {
+                                    customSchema[fieldKey] = fieldDef;
+                                  }
+                                });
+                                
+                                // Merge custom fields into dataSchema
+                                if (Object.keys(customSchema).length > 0) {
+                                  dataSchema.custom = { ...(dataSchema.custom || {}), ...customSchema };
+                                }
+                              }
+                            } catch (mgmtError) {
+                              console.warn("Could not fetch management schema for custom fields:", mgmtError);
+                              // Continue with export even if custom fields can't be loaded
+                            }
+
+                            // Helper to get friendly group title
+                            const groupTitleMap = {
+                              baseline: "Baseline fields",
+                              custom: "Custom fields",
+                              period_tracker: "Period tracker fields",
+                              workout_tracker: "Workout tracker fields",
+                              symptom_tracker: "Symptom tracker fields",
+                            };
+
+                            const fieldGroups = Object.keys(dataSchema);
+
+                            // Helper: recursively collect "options" (leaf nodes) for a field
+                            const collectOptions = (node, prefix = "") => {
+                              const results = [];
+                              if (!node || typeof node !== "object") {
+                                return results;
+                              }
+
+                              const hasLeafProps =
+                                node.type !== undefined ||
+                                node.enum !== undefined ||
+                                node.range !== undefined ||
+                                node.labels !== undefined ||
+                                node.auto_calculated !== undefined ||
+                                node.format !== undefined;
+
+                              if (hasLeafProps) {
+                                results.push({
+                                  keyPath: prefix || "value",
+                                  def: node,
+                                });
+                                return results;
+                              }
+
+                              Object.entries(node).forEach(([k, v]) => {
+                                if (v && typeof v === "object" && !Array.isArray(v)) {
+                                  const nextPrefix = prefix ? `${prefix}.${k}` : k;
+                                  results.push(...collectOptions(v, nextPrefix));
+                                }
+                              });
+
+                              return results;
+                            };
+
+                            // Build HTML content for PDF
+                            let html = `
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Form configuration export</title>
+    <style>
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        padding: 24px;
+        color: #111827;
+        background-color: #ffffff;
+      }
+      h1 {
+        font-size: 24px;
+        margin-bottom: 4px;
+      }
+      h2 {
+        font-size: 18px;
+        margin-top: 24px;
+        margin-bottom: 8px;
+        border-bottom: 1px solid #e5e7eb;
+        padding-bottom: 4px;
+      }
+      h3 {
+        font-size: 16px;
+        margin-top: 16px;
+        margin-bottom: 4px;
+      }
+      .meta {
+        font-size: 12px;
+        color: #6b7280;
+        margin-bottom: 16px;
+      }
+      .field-card {
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        padding: 12px;
+        margin-bottom: 8px;
+        background-color: #f9fafb;
+      }
+      .field-key {
+        font-size: 11px;
+        color: #6b7280;
+      }
+      .option-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 8px;
+        font-size: 12px;
+      }
+      .option-table th,
+      .option-table td {
+        border: 1px solid #e5e7eb;
+        padding: 4px 6px;
+        text-align: left;
+        vertical-align: top;
+      }
+      .option-table th {
+        background-color: #f3f4f6;
+        font-weight: 600;
+      }
+      .badge {
+        display: inline-block;
+        padding: 2px 6px;
+        border-radius: 999px;
+        font-size: 10px;
+        font-weight: 600;
+        margin-left: 4px;
+        background-color: #eef2ff;
+        color: #4338ca;
+      }
+      .badge-inactive {
+        background-color: #fef2f2;
+        color: #b91c1c;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Form configuration export</h1>
+    <div class="meta">
+      Tracker: ${trackerName} (ID: ${trackerIdExport})<br/>
+      Exported on: ${new Date().toLocaleString()}
+    </div>
+`;
+
+                            if (fieldGroups.length === 0) {
+                              html += `<p>No fields found in configuration.</p>`;
+                            } else {
+                              fieldGroups.forEach((groupKey) => {
+                                const fields = dataSchema[groupKey] || {};
+                                const groupTitle =
+                                  groupTitleMap[groupKey] ||
+                                  `${groupKey} fields`;
+
+                                html += `<h2>${groupTitle}</h2>`;
+
+                                const fieldNames = Object.keys(fields);
+                                if (fieldNames.length === 0) {
+                                  html += `<p><em>No fields</em></p>`;
+                                  return;
+                                }
+
+                                fieldNames.forEach((fieldName) => {
+                                  const fieldDef = fields[fieldName] || {};
+                                  const displayLabel = fieldName
+                                    .split("_")
+                                    .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
+                                    .join(" ");
+
+                                  html += `<div class="field-card">`;
+                                  html += `<h3>${displayLabel}</h3>`;
+                                  html += `<div class="field-key">Key: ${fieldName}</div>`;
+
+                                  if (fieldDef.description) {
+                                    html += `<div style="font-size:12px; margin-top:4px;">${fieldDef.description}</div>`;
+                                  }
+
+                                  const optionEntries = collectOptions(fieldDef);
+
+                                  if (optionEntries.length === 0) {
+                                    html += `<div style="font-size:12px; margin-top:4px;"><em>No options</em></div>`;
+                                    html += `</div>`;
+                                    return;
+                                  }
+
+                                  html += `<table class="option-table">`;
+                                  html += `<thead><tr><th>Label</th><th>Key</th><th>Type</th><th>Details</th></tr></thead><tbody>`;
+
+                                  optionEntries.forEach(({ keyPath, def: opt }) => {
+                                    const pathParts = keyPath.split(".");
+                                    const lastSegment = pathParts[pathParts.length - 1];
+                                    const optLabel = lastSegment
+                                      .split("_")
+                                      .map(
+                                        (s) => s.charAt(0).toUpperCase() + s.slice(1)
+                                      )
+                                      .join(" ");
+
+                                    const typeLabel =
+                                      opt.type ||
+                                      (opt.enum ? "enum" : "value");
+
+                                    let details = "";
+
+                                    // Type-specific details
+                                    if (
+                                      typeof opt.range !== "undefined" &&
+                                      Array.isArray(opt.range)
+                                    ) {
+                                      const [min, max] = opt.range;
+                                      details += `Range: ${min ?? "?"} – ${max ?? "?"}`;
+                                    }
+
+                                    if (
+                                      Array.isArray(opt.enum) &&
+                                      opt.enum.length > 0
+                                    ) {
+                                      const labels = opt.labels || {};
+                                      const choiceStrings = opt.enum.map((val) => {
+                                        const lbl = labels[val];
+                                        return lbl ? `${val} (${lbl})` : val;
+                                      });
+                                      if (details) details += "<br/>";
+                                      details += `Choices: ${choiceStrings.join(", ")}`;
+                                    }
+
+                                    if (
+                                      typeof opt.items !== "undefined"
+                                    ) {
+                                      if (details) details += "<br/>";
+                                      details += `Items type: ${opt.items}`;
+                                    }
+
+                                    if (opt.auto_calculated) {
+                                      if (details) details += "<br/>";
+                                      details += `<span class="badge">Auto-calculated</span>`;
+                                    }
+
+                                    if (opt.format) {
+                                      if (details) details += "<br/>";
+                                      details += `Format: ${opt.format}`;
+                                    }
+
+                                    html += `<tr>`;
+                                    html += `<td>${optLabel}</td>`;
+                                    html += `<td>${keyPath}</td>`;
+                                    html += `<td>${typeLabel}</td>`;
+                                    html += `<td>${details || ""}</td>`;
+                                    html += `</tr>`;
+                                  });
+
+                                  html += `</tbody></table>`;
+                                  html += `</div>`; // field-card
+                                });
+                              });
+                            }
+
+                            html += `
+  </body>
+</html>`;
+
+                            // Generate PDF from HTML
+                            const file = await printToFileAsync({
+                              html,
+                              base64: false,
+                            });
+
+                            if (await Sharing.isAvailableAsync()) {
+                              await Sharing.shareAsync(file.uri, {
+                                mimeType: "application/pdf",
+                                dialogTitle: "Share form configuration PDF",
+                              });
+                            } else {
+                              Alert.alert(
+                                "Export config",
+                                "PDF generated at:\n" + file.uri
+                              );
+                            }
+                          } catch (error) {
+                            console.error("Error exporting config:", error);
+                            Alert.alert(
+                              "Export config",
+                              "Failed to export configuration. Please try again."
+                            );
+                          }
+                        })();
+                      },
+                    },
+                  ]
+                );
               }}
             >
               <Ionicons
@@ -2035,9 +2396,7 @@ export default function LogSymptomsScreen({ route, navigation }) {
                 color={colors.textOnPrimary}
                 style={styles.settingsDropdownIcon}
               />
-              <Text style={styles.settingsDropdownText}>
-                Export my form schema
-              </Text>
+              <Text style={styles.settingsDropdownText}>Export config</Text>
             </TouchableOpacity>
           </View>
         </>

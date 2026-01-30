@@ -134,4 +134,16 @@ export const trackerService = {
     });
     return response.data;
   },
+
+  // Get complete schema (for export/debug)
+  getCompleteSchema: async (trackerId) => {
+    const response = await api.get(API_ENDPOINTS.COMPLETE_SCHEMA(trackerId));
+    return response.data;
+  },
+
+  // Export config/schema (user-facing export endpoint)
+  exportSchema: async (trackerId) => {
+    const response = await api.get(API_ENDPOINTS.EXPORT_SCHEMA(trackerId));
+    return response.data;
+  },
 };
