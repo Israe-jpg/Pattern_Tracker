@@ -137,6 +137,7 @@ export const useTrackerData = () => {
         setNeedsSetup(false);
         if (tracker) {
           loadCalendarData(tracker);
+          loadInsights(tracker);
         }
         return;
       }
@@ -236,5 +237,9 @@ export const useTrackerData = () => {
     insightsLoading,
     isPeriodTracker,
     loadTrackers,
+    // Expose functions to load data for a specific tracker
+    loadCalendarData,
+    loadInsights,
+    checkPeriodTrackerSetup,
   };
 };

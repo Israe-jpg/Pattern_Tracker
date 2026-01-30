@@ -34,18 +34,10 @@ export default function InsightsSection({ insights, isPeriodTracker }) {
         </>
       ) : (
         <View style={styles.noInsightsCard}>
-          <Ionicons
-            name="analytics-outline"
-            size={48}
-            color={colors.textLight}
-          />
           <Text style={styles.noInsightsTitle}>No insights yet</Text>
           <Text style={styles.noInsightsText}>
             Log at least 4 entries to start seeing insights about your tracking
             patterns and trends.
-          </Text>
-          <Text style={styles.noInsightsSubtext}>
-            Keep logging consistently to unlock more detailed analytics!
           </Text>
         </View>
       )}
@@ -95,31 +87,22 @@ const styles = StyleSheet.create({
   noInsightsCard: {
     backgroundColor: colors.secondary,
     borderRadius: 12,
-    padding: 24,
-    alignItems: "center",
+    padding: 16,
+    marginBottom: 12,
     borderWidth: 1,
     borderColor: colors.border,
-    borderStyle: "dashed",
+    alignSelf: "flex-start", // Wrap content instead of full width
   },
   noInsightsTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: "600",
     color: colors.textOnSecondary,
-    marginTop: 16,
     marginBottom: 8,
   },
   noInsightsText: {
     fontSize: 14,
     color: colors.textOnSecondary,
-    textAlign: "center",
     lineHeight: 20,
-    marginBottom: 8,
-  },
-  noInsightsSubtext: {
-    fontSize: 12,
-    color: colors.textLight,
-    textAlign: "center",
-    fontStyle: "italic",
   },
 });
 
