@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import {
   View,
   Text,
@@ -41,18 +41,42 @@ export default function HomeScreen({ navigation }) {
     insights,
     isPeriodTracker,
     loadTrackers,
+    loadCalendarData,
+    loadInsights,
+    checkPeriodTrackerSetup,
   } = useTrackerData();
 
   // Use temporary selected tracker if available, otherwise use default
   const activeTracker = tempSelectedTracker || defaultTracker;
+  
+  // Track the previous tracker ID to ensure we reload when it changes
+  const prevActiveTrackerIdRef = useRef(null);
 
   // Reload trackers when screen comes into focus
   useFocusEffect(
     useCallback(() => {
       loadTrackers();
+      // Reset the ref when trackers are reloaded to allow re-triggering
+      prevActiveTrackerIdRef.current = null;
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])
   );
+
+  // Reload calendar and insights when active tracker changes
+  useEffect(() => {
+    if (!activeTracker || !activeTracker.id) return;
+    
+    // Skip if this is the same tracker we just loaded
+    if (prevActiveTrackerIdRef.current === activeTracker.id) return;
+    
+    // Update the ref to track this tracker
+    prevActiveTrackerIdRef.current = activeTracker.id;
+
+    // checkPeriodTrackerSetup handles both period and non-period trackers
+    // It will load calendar and insights appropriately based on tracker type
+    checkPeriodTrackerSetup(activeTracker);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTracker?.id, activeTracker]);
 
   const onDayPress = (day) => {
     setSelectedDate(day.dateString);
