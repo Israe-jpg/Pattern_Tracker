@@ -24,8 +24,8 @@ const CustomDay = (props) => {
   let cycleDayColor = colors.textLight;
   if (phase === "menstrual" || phase === "period") {
     cycleDayColor = colors.menstrual;
-  } else if (phase === "ovulation") {
-    cycleDayColor = colors.ovulation;
+  } else if (phase === "ovulation" || isExactOvulationDay) {
+    cycleDayColor = colors.ovulation; // Blue for ovulation phase and exact ovulation day
   } else if (phase === "follicular") {
     cycleDayColor = colors.follicular;
   } else if (phase === "luteal") {
@@ -36,11 +36,11 @@ const CustomDay = (props) => {
   // ALWAYS use phase color for today, never brown/selected color
   const todayPhase = marking?.phase || phase;
   let todayBackgroundColor = colors.primary; // Default fallback (blue-gray, not brown)
-  if (isToday && todayPhase) {
+  if (isToday) {
     if (todayPhase === "menstrual" || todayPhase === "period") {
       todayBackgroundColor = colors.menstrual;
-    } else if (todayPhase === "ovulation") {
-      todayBackgroundColor = colors.ovulation;
+    } else if (todayPhase === "ovulation" || isExactOvulationDay) {
+      todayBackgroundColor = colors.ovulation; // Blue for ovulation phase and exact ovulation day
     } else if (todayPhase === "follicular") {
       todayBackgroundColor = colors.follicular;
     } else if (todayPhase === "luteal") {
@@ -66,12 +66,16 @@ const CustomDay = (props) => {
     <TouchableOpacity
       style={[
         styles.dayContainer,
-        // Today's phase color takes precedence over selected state
+        // Today's phase color takes precedence over everything
         isToday && [styles.todayContainer, { backgroundColor: todayBackgroundColor }],
+        // Apply ovulation background for exact ovulation day (not today)
+        // Phase colors take precedence over selected state
         isExactOvulationDay && !isToday && [styles.ovulationContainer, { backgroundColor: colors.ovulation }],
+        // Apply menstrual background for menstrual days (not today, not ovulation)
+        // Phase colors take precedence over selected state
         isMenstrual && !isToday && !isExactOvulationDay && [styles.menstrualContainer, { backgroundColor: colors.menstrual }],
-        // Only apply selected style if it's not today (today uses phase color)
-        state === "selected" && !isToday && styles.selectedContainer,
+        // Only apply selected style if it's not today and not a phase-colored day
+        state === "selected" && !isToday && !isMenstrual && !isExactOvulationDay && styles.selectedContainer,
         state === "disabled" && styles.disabledContainer,
       ]}
       onPress={() => onPress && onPress(date)}
@@ -160,8 +164,15 @@ export default function CalendarSection({
       const isTodayDate = dateString === today;
       let calculated = null;
       
-      // Only calculate if needed (memoize the check)
-      if ((!dateMarking.cycleDay || (isTodayDate && !dateMarking.phase)) && calculateCycleDayForDate) {
+      // Preserve isExactOvulationDay from original marking if it exists
+      const originalIsExactOvulationDay = marking?.isExactOvulationDay || dateMarking?.isExactOvulationDay;
+      
+      // Always check for exact ovulation day if we need to calculate cycle day or phase
+      // OR if isExactOvulationDay is not already set (to ensure we don't miss it)
+      const needsCalculation = (!dateMarking.cycleDay || (isTodayDate && !dateMarking.phase)) && calculateCycleDayForDate;
+      const needsOvulationCheck = !originalIsExactOvulationDay && calculateCycleDayForDate;
+      
+      if (needsCalculation || needsOvulationCheck) {
         calculated = calculateCycleDayForDate(dateString);
         if (calculated && calculated.cycleDay) {
           dateMarking.cycleDay = calculated.cycleDay;
@@ -169,7 +180,7 @@ export default function CalendarSection({
           if (calculated.phase && !dateMarking.phase) {
             dateMarking.phase = calculated.phase;
           }
-          // Set exact ovulation day marker
+          // Set exact ovulation day marker (preserve from original or set from calculated)
           if (calculated.isExactOvulationDay) {
             dateMarking.isExactOvulationDay = true;
           }
@@ -179,6 +190,8 @@ export default function CalendarSection({
       const fullMarking = {
         ...(marking || {}),
         ...dateMarking, // Override with our marking data (includes cycleDay and phase)
+        // Ensure isExactOvulationDay is preserved from either source
+        isExactOvulationDay: originalIsExactOvulationDay || dateMarking.isExactOvulationDay || calculated?.isExactOvulationDay || false,
       };
       
       // Ensure today always has phase calculated (use already calculated value if available)
@@ -188,6 +201,10 @@ export default function CalendarSection({
           fullMarking.phase = todayCalculated.phase;
           if (todayCalculated.cycleDay) {
             fullMarking.cycleDay = todayCalculated.cycleDay;
+          }
+          // Also preserve isExactOvulationDay for today
+          if (todayCalculated.isExactOvulationDay) {
+            fullMarking.isExactOvulationDay = true;
           }
         }
       }
@@ -424,7 +441,7 @@ const styles = StyleSheet.create({
   },
   ovulationContainer: {
     borderRadius: 16,
-    backgroundColor: colors.ovulation,
+    backgroundColor: colors.ovulation, // Blue for exact ovulation day
   },
   menstrualContainer: {
     borderRadius: 16,
