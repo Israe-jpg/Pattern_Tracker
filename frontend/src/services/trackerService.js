@@ -146,4 +146,11 @@ export const trackerService = {
     const response = await api.get(API_ENDPOINTS.EXPORT_SCHEMA(trackerId));
     return response.data;
   },
+  // Get cycle history for period tracker
+  getCyclesHistory: async (trackerId, options = {}) => {
+    const response = await api.get(API_ENDPOINTS.CYCLES_HISTORY(trackerId), {
+      params: options.params || {},
+    });
+    return response.data;
+  },
 };

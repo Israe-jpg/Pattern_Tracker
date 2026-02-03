@@ -42,6 +42,7 @@ export default function HomeScreen({ navigation }) {
     loadCalendarData,
     loadInsights,
     checkPeriodTrackerSetup,
+    calculateCycleDayForDate,
   } = useTrackerData();
 
   // Track the previous tracker ID to ensure we reload when it changes
@@ -160,6 +161,10 @@ export default function HomeScreen({ navigation }) {
                   loading={false}
                   onDayPress={onDayPress}
                   onLogPress={handleLogPress}
+                  calculateCycleDayForDate={calculateCycleDayForDate}
+                  onMonthChange={(month) => {
+                    loadCalendarData(activeTracker, month);
+                  }}
                 />
               ) : (
                 <CalendarSection
@@ -170,6 +175,12 @@ export default function HomeScreen({ navigation }) {
                   loading={true}
                   onDayPress={onDayPress}
                   onLogPress={handleLogPress}
+                  calculateCycleDayForDate={calculateCycleDayForDate}
+                  onMonthChange={(month) => {
+                    if (activeTracker) {
+                      loadCalendarData(activeTracker, month);
+                    }
+                  }}
                 />
               )}
               {/* Insights Section - Show for all configured trackers */}

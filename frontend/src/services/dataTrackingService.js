@@ -21,9 +21,14 @@ export const dataTrackingService = {
   },
 
   // Get data for a date range
-  getDataRange: async (trackerId, startDate, endDate) => {
+  getDataRange: async (trackerId, startDate, endDate, options = {}) => {
+    const params = { 
+      start_date: startDate, 
+      end_date: endDate,
+      ...options.params
+    };
     const response = await api.get(API_ENDPOINTS.GET_DATA_RANGE(trackerId), {
-      params: { start_date: startDate, end_date: endDate },
+      params,
     });
     return response.data;
   },

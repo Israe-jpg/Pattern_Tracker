@@ -77,6 +77,8 @@ export const API_ENDPOINTS = {
   COMPLETE_SCHEMA: (id) => `/trackers/${id}/complete-schema`,
   // User-facing config export (PDF) – matches backend route /export-config
   EXPORT_SCHEMA: (id) => `/trackers/${id}/export-config`,
+  // Period Tracker cycles history
+  CYCLES_HISTORY: (id) => `/trackers/${id}/cycles-history`,
 
   // Data Tracking
   SAVE_DATA: (id) => `/data-tracking/${id}/save-tracking-data`,
