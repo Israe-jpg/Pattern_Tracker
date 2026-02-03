@@ -280,10 +280,9 @@ export default function CalendarSection({
         />
       </View>
 
-      {/* Cycle Phase Legend - Separate Section (Only for Period Tracker) */}
+      {/* Cycle Phase Legend - Compact, Right-Aligned (Only for Period Tracker) */}
       {isPeriodTracker && (
         <View style={styles.legendContainer}>
-          <Text style={styles.legendTitle}>Cycle Phases</Text>
           <View style={styles.legendRow}>
             <View style={styles.legendItem}>
               <View
@@ -325,8 +324,11 @@ export default function CalendarSection({
         </View>
       )}
 
-      {/* Log Symptoms Button - Separate Section */}
+      {/* Buttons Section - Calendar on left, Log Symptoms on right */}
       <View style={styles.buttonContainer}>
+        <TouchableOpacity style={styles.calendarButton} onPress={() => {}}>
+          <Ionicons name="calendar-outline" size={24} color={colors.textOnPrimary} />
+        </TouchableOpacity>
         <TouchableOpacity style={styles.logButton} onPress={onLogPress}>
           <Text style={styles.logButtonText}>Log Symptoms</Text>
         </TouchableOpacity>
@@ -351,52 +353,53 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   legendContainer: {
-    padding: 16,
-    backgroundColor: colors.background,
-    borderRadius: 12,
-    marginTop: 16,
+    padding: 8,
+    marginTop: 12,
     marginHorizontal: 20,
-  },
-  legendTitle: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.text,
-    marginBottom: 12,
+    alignItems: "flex-end",
   },
   legendRow: {
     flexDirection: "row",
     flexWrap: "wrap",
-    justifyContent: "space-between",
+    justifyContent: "flex-end",
   },
   legendItem: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 8,
-    minWidth: "45%",
+    marginLeft: 12,
   },
   legendColor: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    marginRight: 8,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginRight: 4,
   },
   legendText: {
-    fontSize: 12,
-    color: colors.text,
-    fontWeight: "500",
+    fontSize: 10,
+    color: colors.textLight,
+    fontWeight: "400",
   },
   buttonContainer: {
     marginTop: 16,
     marginHorizontal: 20,
     marginBottom: 20,
-    alignItems: "flex-end",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  calendarButton: {
+    backgroundColor: colors.primary,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 9999, // 50% border radius (pill shape)
+    justifyContent: "center",
+    alignItems: "center",
   },
   logButton: {
     backgroundColor: colors.primary,
     paddingVertical: 14,
     paddingHorizontal: 24,
     borderRadius: 9999, // 50% border radius (pill shape)
-    alignSelf: "flex-end",
   },
   logButtonText: {
     color: colors.textOnPrimary,
