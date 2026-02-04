@@ -57,6 +57,14 @@ export const dataTrackingService = {
     return response.data;
   },
 
+  // Get tracker calendar overview (for regular trackers)
+  getTrackerCalendarOverview: async (trackerId, options = {}) => {
+    const response = await api.get(API_ENDPOINTS.TRACKER_CALENDAR_OVERVIEW(trackerId), {
+      params: options.params || {},
+    });
+    return response.data;
+  },
+
   // Get all insights for a tracker
   getAllInsights: async (trackerId) => {
     const response = await api.get(API_ENDPOINTS.GET_INSIGHTS(trackerId));

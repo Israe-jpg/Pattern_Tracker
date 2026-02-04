@@ -89,6 +89,7 @@ export const API_ENDPOINTS = {
   CALENDAR: (id) => `/data-tracking/${id}/calendar`,
   CALENDAR_OVERVIEW: (id) => `/data-tracking/${id}/calendar/overview`,
   TRACKER_CALENDAR: (id) => `/data-tracking/${id}/tracker-calendar`,
+  TRACKER_CALENDAR_OVERVIEW: (id) => `/data-tracking/${id}/tracker-calendar/overview`,
 
   // Analytics
   GET_INSIGHTS: (id) => `/data-tracking/${id}/get-all-insights`,

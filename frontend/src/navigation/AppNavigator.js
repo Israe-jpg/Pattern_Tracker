@@ -11,6 +11,7 @@ import UserInfoScreen from "../screens/auth/UserInfoScreen";
 import ProfileScreen from "../screens/ProfileScreen";
 import HomeScreen from "../screens/HomeScreen";
 import CalendarScreen from "../screens/CalendarScreen";
+import CalendarOverviewScreen from "../screens/CalendarOverviewScreen";
 import TrackerDetailScreen from "../screens/TrackerDetailScreen";
 import LogSymptomsScreen from "../screens/LogSymptomsScreen";
 import ConfigurePeriodTrackerScreen from "../screens/ConfigurePeriodTrackerScreen";
@@ -45,6 +46,7 @@ export default function AppNavigator() {
           <Stack.Screen name="UserInfo" component={UserInfoScreen} />
           <Stack.Screen name="Profile" component={ProfileScreen} />
           <Stack.Screen name="Calendar" component={CalendarScreen} />
+          <Stack.Screen name="CalendarOverview" component={CalendarOverviewScreen} />
           <Stack.Screen name="TrackerDetail" component={TrackerDetailScreen} />
           <Stack.Screen name="LogSymptoms" component={LogSymptomsScreen} />
           <Stack.Screen

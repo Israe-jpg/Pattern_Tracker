@@ -131,6 +131,8 @@ export default function CalendarSection({
   onLogPress,
   calculateCycleDayForDate,
   onMonthChange,
+  navigation,
+  tracker,
 }) {
   // Memoize today's date to avoid recalculating
   const today = useMemo(() => new Date().toISOString().split("T")[0], []);
@@ -326,7 +328,14 @@ export default function CalendarSection({
 
       {/* Buttons Section - Calendar on left, Log Symptoms on right */}
       <View style={styles.buttonContainer}>
-        <TouchableOpacity style={styles.calendarButton} onPress={() => {}}>
+        <TouchableOpacity
+          style={styles.calendarButton}
+          onPress={() => {
+            if (navigation && tracker) {
+              navigation.navigate("CalendarOverview", { tracker: tracker });
+            }
+          }}
+        >
           <Ionicons name="calendar-outline" size={24} color={colors.textOnPrimary} />
         </TouchableOpacity>
         <TouchableOpacity style={styles.logButton} onPress={onLogPress}>

@@ -165,6 +165,8 @@ export default function HomeScreen({ navigation }) {
                   onMonthChange={(month) => {
                     loadCalendarData(activeTracker, month);
                   }}
+                  navigation={navigation}
+                  tracker={activeTracker}
                 />
               ) : (
                 <CalendarSection
@@ -173,6 +175,8 @@ export default function HomeScreen({ navigation }) {
                   calendarData={calendarData}
                   isPeriodTracker={isPeriodTracker}
                   loading={true}
+                  navigation={navigation}
+                  tracker={activeTracker}
                   onDayPress={onDayPress}
                   onLogPress={handleLogPress}
                   calculateCycleDayForDate={calculateCycleDayForDate}
