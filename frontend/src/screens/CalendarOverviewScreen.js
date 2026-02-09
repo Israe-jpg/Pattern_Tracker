@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   TouchableOpacity,
   Dimensions,
+  Alert,
 } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { CalendarList } from 'react-native-calendars';
@@ -27,12 +28,19 @@ export default function CalendarOverviewScreen() {
   
   const [loading, setLoading] = useState(true);
   const [markedDates, setMarkedDates] = useState({});
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [hasEditModeChanges, setHasEditModeChanges] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [pendingChanges, setPendingChanges] = useState(new Map()); // Track changes: dateString -> changes object
+  const isHandlingNavigation = useRef(false);
   
   const isPeriodTracker = tracker?.category_name === "Period Tracker";
   
   // Create dayComponent for period trackers (same as CalendarSection)
+  // Also use custom day component in edit mode for all trackers
   const dayComponent = useMemo(() => {
-    if (!isPeriodTracker) return undefined;
+    // Use custom day component for period trackers or when in edit mode
+    if (!isPeriodTracker && !isEditMode) return undefined;
     
     return (props) => {
       const { date, state, marking } = props;
@@ -47,15 +55,93 @@ export default function CalendarOverviewScreen() {
         ...dateMarking,
       };
       
-      return <CustomDay {...props} marking={fullMarking} />;
+      // Get pending changes for this date
+      const dateChanges = pendingChanges.get(dateString);
+      
+      return (
+        <CustomDay 
+          {...props} 
+          marking={fullMarking} 
+          isEditMode={isEditMode}
+          isSelected={dateChanges?.isSelected || false}
+          // IMPORTANT: pass through undefined so original menstrual styling still shows
+          isToggledPeriod={dateChanges?.isToggledPeriod}
+          onDayPress={isEditMode ? handleDayPress : undefined}
+        />
+      );
     };
-  }, [isPeriodTracker, markedDates]);
+  }, [isPeriodTracker, markedDates, isEditMode, pendingChanges, handleDayPress]);
 
   useEffect(() => {
     if (tracker) {
       loadCalendarData();
     }
   }, [tracker]);
+
+  // Automatically detect if there are pending changes
+  useEffect(() => {
+    const hasChanges = pendingChanges.size > 0;
+    setHasEditModeChanges(hasChanges);
+  }, [pendingChanges]);
+
+  // Handle navigation with unsaved changes
+  useEffect(() => {
+    const unsubscribe = navigation.addListener("beforeRemove", (e) => {
+      // If we're already handling navigation (from back button click), allow it
+      if (isHandlingNavigation.current) {
+        isHandlingNavigation.current = false;
+        return;
+      }
+
+      if (!isEditMode || !hasEditModeChanges) {
+        // No unsaved changes, allow navigation
+        return;
+      }
+
+      // Prevent default behavior of leaving the screen
+      e.preventDefault();
+
+      // Show confirmation dialog
+      Alert.alert(
+        "Unsaved Changes",
+        "You have unsaved changes. What would you like to do?",
+        [
+          {
+            text: "Cancel",
+            style: "cancel",
+            onPress: () => {
+              // Do nothing, stay on screen
+            },
+          },
+          {
+            text: "Don't Save",
+            style: "destructive",
+            onPress: () => {
+              // Clear changes and navigate back
+              setHasEditModeChanges(false);
+              setPendingChanges(new Map());
+              setIsEditMode(false);
+              // Use navigation.goBack() instead of dispatch to avoid state issues
+              navigation.goBack();
+            },
+          },
+          {
+            text: "Save",
+            onPress: async () => {
+              const success = await savePendingChanges();
+              if (success) {
+                setIsEditMode(false);
+                // Use navigation.goBack() instead of dispatch to avoid state issues
+                navigation.goBack();
+              }
+            },
+          },
+        ]
+      );
+    });
+
+    return unsubscribe;
+  }, [navigation, isEditMode, hasEditModeChanges]);
 
   const loadCalendarData = async () => {
     if (!tracker) {
@@ -181,6 +267,130 @@ export default function CalendarOverviewScreen() {
     }
   };
 
+  /**
+   * Save pending changes
+   */
+  const savePendingChanges = async () => {
+    try {
+      setSubmitting(true);
+      
+      // TODO: Implement actual save logic here
+      // For now, just clear pending changes
+      console.log('Saving pending changes:', Array.from(pendingChanges.entries()));
+      
+      // Simulate save delay
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Clear pending changes after successful save
+      setPendingChanges(new Map());
+      setHasEditModeChanges(false);
+      
+      return true;
+    } catch (error) {
+      console.error('Error saving pending changes:', error);
+      Alert.alert(
+        "Error",
+        "Failed to save changes. Please try again."
+      );
+      return false;
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  /**
+   * Handle day press in edit mode - toggle selection
+   */
+  const handleDayPress = useCallback((day) => {
+    if (!isEditMode) return;
+    
+    const dateString = day.dateString;
+    setPendingChanges(prev => {
+      const currentChanges = prev.get(dateString);
+      const dateMarking = markedDates[dateString] || {};
+      const originalIsMenstrual = dateMarking.phase === "menstrual" || dateMarking.phase === "period";
+      
+      const wasSelected = currentChanges?.isSelected || false;
+      
+      // Simple toggle: selected <-> unselected
+      const newIsSelected = !wasSelected;
+      
+      // Update pending changes
+      const newPendingChanges = new Map(prev);
+      
+      if (newIsSelected) {
+        // Selected: show red border, keep period state as original
+        newPendingChanges.set(dateString, {
+          isSelected: true,
+          isToggledPeriod: undefined,
+        });
+      } else {
+        // Unselected: for period days, toggle off period styling to show as normal (dashed)
+        if (originalIsMenstrual) {
+          newPendingChanges.set(dateString, {
+            isSelected: false,
+            isToggledPeriod: false, // Hide period styling, show as normal day
+          });
+        } else {
+          // Non-period day: just remove the change
+          newPendingChanges.delete(dateString);
+        }
+      }
+      
+      return newPendingChanges;
+    });
+  }, [isEditMode, markedDates]);
+
+  /**
+   * Toggle edit mode
+   */
+  const toggleEditMode = async () => {
+    // If clicking checkmark in edit mode, show save confirmation
+    if (isEditMode) {
+      if (hasEditModeChanges) {
+        Alert.alert(
+          "Save Changes?",
+          "Your changes will be saved.",
+          [
+            {
+              text: "Don't Save",
+              style: "destructive",
+              onPress: () => {
+                // Discard changes
+                setPendingChanges(new Map());
+                setHasEditModeChanges(false);
+                setIsEditMode(false);
+              },
+            },
+            {
+              text: "Cancel",
+              style: "cancel",
+            },
+            {
+              text: "Save",
+              onPress: async () => {
+                const success = await savePendingChanges();
+                if (success) {
+                  setIsEditMode(false);
+                }
+              },
+            },
+          ],
+          { cancelable: true }
+        );
+      } else {
+        // No changes, just exit
+        setIsEditMode(false);
+      }
+      return;
+    }
+
+    // Entering edit mode
+    setIsEditMode(true);
+    setHasEditModeChanges(false);
+    setPendingChanges(new Map());
+  };
+
   if (loading) {
     return (
       <View style={styles.container}>
@@ -206,12 +416,74 @@ export default function CalendarOverviewScreen() {
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backButton}
-          onPress={() => navigation.goBack()}
+          onPress={() => {
+            if (isEditMode && hasEditModeChanges) {
+              // Show confirmation dialog
+              Alert.alert(
+                "Unsaved Changes",
+                "You have unsaved changes. What would you like to do?",
+                [
+                  {
+                    text: "Cancel",
+                    style: "cancel",
+                  },
+                  {
+                    text: "Don't Save",
+                    style: "destructive",
+                    onPress: () => {
+                      isHandlingNavigation.current = true;
+                      setHasEditModeChanges(false);
+                      setPendingChanges(new Map());
+                      setIsEditMode(false);
+                      navigation.goBack();
+                    },
+                  },
+                  {
+                    text: "Save",
+                    onPress: async () => {
+                      const success = await savePendingChanges();
+                      if (success) {
+                        isHandlingNavigation.current = true;
+                        setIsEditMode(false);
+                        navigation.goBack();
+                      }
+                    },
+                  },
+                ]
+              );
+            } else {
+              navigation.goBack();
+            }
+          }}
         >
           <Ionicons name="arrow-back" size={24} color={colors.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Calendar Overview</Text>
-        <View style={styles.placeholder} />
+        <TouchableOpacity
+          style={[
+            styles.headerEditButton,
+            isEditMode &&
+              !hasEditModeChanges &&
+              styles.headerEditButtonDisabled,
+            submitting && styles.headerEditButtonDisabled,
+          ]}
+          onPress={toggleEditMode}
+          disabled={(isEditMode && !hasEditModeChanges) || submitting}
+        >
+          {submitting ? (
+            <ActivityIndicator size="small" color={colors.text} />
+          ) : (
+            <Ionicons
+              name={isEditMode ? "checkmark" : "create-outline"}
+              size={24}
+              color={
+                isEditMode && !hasEditModeChanges
+                  ? colors.textLight
+                  : colors.text
+              }
+            />
+          )}
+        </TouchableOpacity>
       </View>
 
       <CalendarList
@@ -228,7 +500,11 @@ export default function CalendarOverviewScreen() {
         calendarHeight={350}
         dayComponent={dayComponent}
         onDayPress={(day) => {
-          console.log('Selected day:', day);
+          if (isEditMode) {
+            handleDayPress(day);
+          } else {
+            console.log('Selected day:', day);
+          }
         }}
         contentContainerStyle={{
           paddingBottom: 100,
@@ -286,6 +562,15 @@ const styles = StyleSheet.create({
   },
   placeholder: {
     width: 40,
+  },
+  headerEditButton: {
+    padding: 4,
+    width: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerEditButtonDisabled: {
+    opacity: 0.4,
   },
   loadingContainer: {
     flex: 1,
