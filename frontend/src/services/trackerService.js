@@ -153,4 +153,24 @@ export const trackerService = {
     });
     return response.data;
   },
+
+  // Update cycle for period tracker
+  updateCycle: async (trackerId, cycleData) => {
+    const response = await api.put(API_ENDPOINTS.UPDATE_CYCLE(trackerId), cycleData);
+    return response.data;
+  },
+
+  // Delete cycle for period tracker
+  deleteCycle: async (trackerId, cycleId) => {
+    const response = await api.delete(API_ENDPOINTS.DELETE_CYCLE(trackerId, cycleId));
+    return response.data;
+  },
+
+  // Log period start for period tracker
+  logPeriod: async (trackerId, periodDate) => {
+    const response = await api.post(API_ENDPOINTS.LOG_PERIOD(trackerId), {
+      period_date: periodDate,
+    });
+    return response.data;
+  },
 };

@@ -24,17 +24,24 @@ export const calculateCycleDayForDate = (dateString, allCycles) => {
   let foundCycle = null;
   
   // Find the current cycle first (the one without cycle_end_date)
+  // There should only be one current cycle, but find the most recent one
   let currentCycle = null;
   let currentCycleStart = null;
+  let latestCurrentCycleStart = null;
   
   for (const cycle of allCycles) {
     if (!cycle.cycle_end_date) {
       const cycleStartStr = cycle.cycle_start_date || cycle.period_start_date;
       if (cycleStartStr) {
-        currentCycle = cycle;
-        currentCycleStart = new Date(cycleStartStr);
-        currentCycleStart.setHours(0, 0, 0, 0);
-        break;
+        const cycleStart = new Date(cycleStartStr);
+        cycleStart.setHours(0, 0, 0, 0);
+        
+        // Use the most recent current cycle (in case there are multiple)
+        if (!latestCurrentCycleStart || cycleStart > latestCurrentCycleStart) {
+          currentCycle = cycle;
+          currentCycleStart = cycleStart;
+          latestCurrentCycleStart = cycleStart;
+        }
       }
     }
   }
@@ -43,21 +50,28 @@ export const calculateCycleDayForDate = (dateString, allCycles) => {
   if (currentCycle && currentCycleStart && currentDate >= currentCycleStart) {
     foundCycle = currentCycle;
   } else {
-    // Priority 2: Check completed cycles
-    for (const cycle of allCycles) {
-      if (cycle.cycle_end_date) {
-        const cycleStartStr = cycle.cycle_start_date || cycle.period_start_date;
-        if (!cycleStartStr) continue;
-        
-        const cycleStart = new Date(cycleStartStr);
-        cycleStart.setHours(0, 0, 0, 0);
-        const cycleEnd = new Date(cycle.cycle_end_date);
-        cycleEnd.setHours(0, 0, 0, 0);
-        
-        if (currentDate >= cycleStart && currentDate <= cycleEnd) {
-          foundCycle = cycle;
-          break;
-        }
+    // Priority 2: Check completed cycles (sorted by start date, check most recent first)
+    // Sort cycles by start date descending to check most recent first
+    const completedCycles = allCycles
+      .filter(cycle => cycle.cycle_end_date)
+      .sort((a, b) => {
+        const dateA = new Date(a.cycle_start_date || a.period_start_date);
+        const dateB = new Date(b.cycle_start_date || b.period_start_date);
+        return dateB - dateA; // Descending order
+      });
+    
+    for (const cycle of completedCycles) {
+      const cycleStartStr = cycle.cycle_start_date || cycle.period_start_date;
+      if (!cycleStartStr) continue;
+      
+      const cycleStart = new Date(cycleStartStr);
+      cycleStart.setHours(0, 0, 0, 0);
+      const cycleEnd = new Date(cycle.cycle_end_date);
+      cycleEnd.setHours(0, 0, 0, 0);
+      
+      if (currentDate >= cycleStart && currentDate <= cycleEnd) {
+        foundCycle = cycle;
+        break;
       }
     }
   }

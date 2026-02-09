@@ -79,6 +79,9 @@ export const API_ENDPOINTS = {
   EXPORT_SCHEMA: (id) => `/trackers/${id}/export-config`,
   // Period Tracker cycles history
   CYCLES_HISTORY: (id) => `/trackers/${id}/cycles-history`,
+  UPDATE_CYCLE: (id) => `/trackers/${id}/update-cycle`,
+  DELETE_CYCLE: (id, cycleId) => `/trackers/${id}/cycles/${cycleId}`,
+  LOG_PERIOD: (id) => `/trackers/${id}/log-period`,
 
   // Data Tracking
   SAVE_DATA: (id) => `/data-tracking/${id}/save-tracking-data`,
