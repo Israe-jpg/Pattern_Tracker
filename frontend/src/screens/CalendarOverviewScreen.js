@@ -787,7 +787,7 @@ export default function CalendarOverviewScreen() {
         hideExtraDays={false}
         scrollEnabled={true}
         showScrollIndicator={true}
-        pagingEnabled={true}
+        pagingEnabled={false}
         horizontal={false}
         calendarWidth={SCREEN_WIDTH - 40}
         calendarHeight={350}
@@ -801,6 +801,9 @@ export default function CalendarOverviewScreen() {
         contentContainerStyle={{
           paddingBottom: 100,
         }}
+        removeClippedSubviews={false}
+        scrollEventThrottle={16}
+        nestedScrollEnabled={true}
         theme={{
           backgroundColor: colors.calendar,
           calendarBackground: colors.calendar,
