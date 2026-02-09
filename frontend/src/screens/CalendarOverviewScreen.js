@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -12,7 +12,10 @@ import { CalendarList } from 'react-native-calendars';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../constants/colors';
 import { dataTrackingService } from '../services/dataTrackingService';
+import { trackerService } from '../services/trackerService';
 import { useTracker } from '../context/TrackerContext';
+import { CustomDay } from '../components/calendar/CustomDay';
+import { calculateCycleDayForDate, sortCyclesByStartDate } from '../utils/cycleCalculations';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -24,6 +27,29 @@ export default function CalendarOverviewScreen() {
   
   const [loading, setLoading] = useState(true);
   const [markedDates, setMarkedDates] = useState({});
+  
+  const isPeriodTracker = tracker?.category_name === "Period Tracker";
+  
+  // Create dayComponent for period trackers (same as CalendarSection)
+  const dayComponent = useMemo(() => {
+    if (!isPeriodTracker) return undefined;
+    
+    return (props) => {
+      const { date, state, marking } = props;
+      const dateString = date.dateString;
+      // Get marking from markedDates - this should contain cycleDay, phase, etc.
+      const dateMarking = markedDates[dateString] || {};
+      
+      // Merge: props.marking (from CalendarList) + dateMarking (from our state)
+      // dateMarking takes precedence to ensure cycleDay/phase are included
+      const fullMarking = {
+        ...(marking || {}),
+        ...dateMarking,
+      };
+      
+      return <CustomDay {...props} marking={fullMarking} />;
+    };
+  }, [isPeriodTracker, markedDates]);
 
   useEffect(() => {
     if (tracker) {
@@ -54,17 +80,19 @@ export default function CalendarOverviewScreen() {
           { params: { per_page: 100 } }
         );
         
+        // Extract entries from response (handle different response structures)
         let allEntries = [];
-        if (entriesResponse?.data && Array.isArray(entriesResponse.data)) {
-          allEntries = entriesResponse.data;
-        } else if (Array.isArray(entriesResponse)) {
-          allEntries = entriesResponse;
+        const pageData = entriesResponse?.data?.tracking_data || entriesResponse?.tracking_data || entriesResponse?.data || entriesResponse;
+        
+        if (Array.isArray(pageData)) {
+          allEntries = pageData;
         }
         
         // Handle pagination
-        if (entriesResponse?.pagination) {
-          let currentPage = entriesResponse.pagination.current_page || 1;
-          const totalPages = entriesResponse.pagination.total_pages || 1;
+        const pagination = entriesResponse?.data?.pagination || entriesResponse?.pagination;
+        if (pagination) {
+          let currentPage = pagination.current_page || 1;
+          const totalPages = pagination.total_pages || pagination.pages || 1;
           
           while (currentPage < totalPages) {
             currentPage++;
@@ -76,10 +104,9 @@ export default function CalendarOverviewScreen() {
                 { params: { per_page: 100, page: currentPage } }
               );
               
-              if (pageResponse?.data && Array.isArray(pageResponse.data)) {
-                allEntries = allEntries.concat(pageResponse.data);
-              } else if (Array.isArray(pageResponse)) {
-                allEntries = allEntries.concat(pageResponse);
+              const nextPageData = pageResponse?.data?.tracking_data || pageResponse?.tracking_data || pageResponse?.data || pageResponse;
+              if (Array.isArray(nextPageData)) {
+                allEntries = allEntries.concat(nextPageData);
               }
             } catch (error) {
               break;
@@ -104,51 +131,45 @@ export default function CalendarOverviewScreen() {
         console.error('Error loading entries:', error);
       }
       
-      // For period trackers, also fetch calendar overview for cycle information
+      // For period trackers, fetch cycle history and calculate cycle days/phases
       if (isPeriodTracker) {
         try {
-          const overviewResponse = await dataTrackingService.getCalendarOverview(tracker.id, {
-            params: { months: 12 },
+          // Fetch cycle history (same approach as useTrackerData)
+          const cyclesResponse = await trackerService.getCyclesHistory(tracker.id, {
+            params: { months: 12, include_current: true },
           });
           
-          const overviewData = overviewResponse?.data || overviewResponse;
+          const allCycles = cyclesResponse.data?.cycles || cyclesResponse.cycles || [];
           
-          // Mark period dates from timeline
-          if (overviewData?.timeline) {
-            overviewData.timeline.forEach(cycle => {
-              // Mark period start
-              if (cycle.period_start) {
-                const startStr = cycle.period_start.split('T')[0];
-                if (!dates[startStr]) {
-                  dates[startStr] = { marked: true, dotColor: colors.menstrual };
-                } else {
-                  dates[startStr].dotColor = colors.menstrual;
-                }
-              }
-              
-              // Mark period end
-              if (cycle.period_end) {
-                const endStr = cycle.period_end.split('T')[0];
-                if (!dates[endStr]) {
-                  dates[endStr] = { marked: true, dotColor: colors.menstrual };
-                } else {
-                  dates[endStr].dotColor = colors.menstrual;
-                }
-              }
-              
-              // Mark predicted ovulation
-              if (cycle.predicted_ovulation) {
-                const ovStr = cycle.predicted_ovulation.split('T')[0];
-                if (!dates[ovStr]) {
-                  dates[ovStr] = { marked: true, dotColor: colors.ovulation };
-                } else {
-                  dates[ovStr].dotColor = colors.ovulation;
-                }
-              }
-            });
+          // Sort cycles by start date (oldest first) using shared utility
+          const sortedCycles = sortCyclesByStartDate(allCycles);
+          
+          // Calculate cycle day and phase for all dates in the range
+          // IMPORTANT: Preserve existing marked and dotColor properties from entries
+          const currentDate = new Date(startDate);
+          while (currentDate <= endDate) {
+            const dateStr = currentDate.toISOString().split('T')[0];
+            // Use shared utility function
+            const calculated = calculateCycleDayForDate(dateStr, sortedCycles);
+            
+            // Always set cycle day info if we have any calculated data
+            // This ensures phase colors and cycle day numbers show
+            const existingMarking = dates[dateStr] || {};
+            
+            // Only update if we have cycle data (cycleDay or phase)
+            if (calculated.cycleDay || calculated.phase) {
+              dates[dateStr] = {
+                ...existingMarking, // Preserve marked, dotColor, etc.
+                ...(calculated.cycleDay && { cycleDay: calculated.cycleDay }),
+                ...(calculated.phase && { phase: calculated.phase }),
+                ...(calculated.isExactOvulationDay && { isExactOvulationDay: true }),
+              };
+            }
+            
+            currentDate.setDate(currentDate.getDate() + 1);
           }
         } catch (error) {
-          console.error('Error loading period overview:', error);
+          console.error('Error loading cycle history:', error);
         }
       }
 
@@ -205,6 +226,7 @@ export default function CalendarOverviewScreen() {
         horizontal={false}
         calendarWidth={SCREEN_WIDTH - 40}
         calendarHeight={350}
+        dayComponent={dayComponent}
         onDayPress={(day) => {
           console.log('Selected day:', day);
         }}
@@ -212,8 +234,10 @@ export default function CalendarOverviewScreen() {
           paddingBottom: 100,
         }}
         theme={{
-          backgroundColor: colors.background,
+          backgroundColor: colors.calendar,
           calendarBackground: colors.calendar,
+          dayBackgroundColor: colors.calendar,
+          todayBackgroundColor: "transparent",
           textSectionTitleColor: colors.text,
           selectedDayBackgroundColor: colors.selected,
           selectedDayTextColor: colors.textOnPrimary,
@@ -224,62 +248,12 @@ export default function CalendarOverviewScreen() {
           selectedDotColor: colors.textOnPrimary,
           arrowColor: colors.primary,
           monthTextColor: colors.text,
-          indicatorColor: colors.primary,
-          textDayFontFamily: 'System',
-          textMonthFontFamily: 'System',
-          textDayHeaderFontFamily: 'System',
-          textDayFontWeight: '400',
-          textMonthFontWeight: '600',
-          textDayHeaderFontWeight: '600',
-          textDayFontSize: 15,
-          textMonthFontSize: 18,
+          textDayFontWeight: "500",
+          textMonthFontWeight: "bold",
+          textDayHeaderFontWeight: "600",
+          textDayFontSize: 14,
+          textMonthFontSize: 16,
           textDayHeaderFontSize: 13,
-          'stylesheet.calendar.main': {
-            container: {
-              paddingLeft: 12,
-              paddingRight: 12,
-              paddingTop: 8,
-              paddingBottom: 12,
-            },
-            week: {
-              marginTop: 4,
-              marginBottom: 4,
-              flexDirection: 'row',
-              justifyContent: 'space-around',
-            },
-          },
-          'stylesheet.calendar.header': {
-            header: {
-              flexDirection: 'row',
-              justifyContent: 'space-between',
-              paddingLeft: 12,
-              paddingRight: 12,
-              paddingTop: 12,
-              paddingBottom: 8,
-              alignItems: 'center',
-            },
-            monthText: {
-              fontSize: 18,
-              fontWeight: '600',
-              color: colors.text,
-            },
-            week: {
-              marginTop: 8,
-              marginBottom: 4,
-              flexDirection: 'row',
-              justifyContent: 'space-around',
-              paddingHorizontal: 4,
-            },
-            dayHeader: {
-              marginTop: 2,
-              marginBottom: 4,
-              width: 40,
-              textAlign: 'center',
-              fontSize: 13,
-              fontWeight: '600',
-              color: colors.textLight,
-            },
-          },
         }}
         style={styles.calendarList}
         calendarStyle={styles.calendarCard}
@@ -301,8 +275,6 @@ const styles = StyleSheet.create({
     paddingTop: 50,
     paddingBottom: 16,
     backgroundColor: colors.background,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border || 'rgba(0,0,0,0.08)',
   },
   backButton: {
     padding: 8,
@@ -323,6 +295,7 @@ const styles = StyleSheet.create({
   calendarList: {
     paddingHorizontal: 20,
     paddingTop: 12,
+    marginBottom: 30,
   },
   calendarCard: {
     backgroundColor: colors.calendar,
