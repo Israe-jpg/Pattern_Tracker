@@ -1851,3 +1851,56 @@ def get_cycle_history(tracker_id: int):
         return error_response(str(e), 400)
     except Exception as e:
         return error_response(f"Failed to retrieve cycle history: {str(e)}", 500)
+
+
+@trackers_bp.route('/<int:tracker_id>/cycles/<int:cycle_id>', methods=['DELETE'])
+@jwt_required()
+def delete_cycle(tracker_id: int, cycle_id: int):
+    """
+    Delete a period cycle from the database.
+    
+    Args:
+        tracker_id: The ID of the tracker
+        cycle_id: The ID of the cycle to delete
+    
+    Returns:
+        Success message if cycle is deleted successfully
+    """
+    try:
+        _, user_id = get_current_user()
+        tracker = verify_tracker_ownership(tracker_id, user_id)
+    except ValueError as e:
+        return error_response(str(e), 404)
+    
+    try:
+        # Verify this is a Period Tracker
+        category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
+        if not category or category.name != 'Period Tracker':
+            return error_response("This endpoint is only available for Period Tracker", 400)
+        
+        # Find the cycle and verify it belongs to this tracker
+        cycle = PeriodCycle.query.filter_by(
+            id=cycle_id,
+            tracker_id=tracker_id
+        ).first()
+        
+        if not cycle:
+            return error_response("Cycle not found or does not belong to this tracker", 404)
+        
+        # Delete the cycle
+        db.session.delete(cycle)
+        db.session.commit()
+        
+        return success_response(
+            "Cycle deleted successfully",
+            {
+                'deleted_cycle_id': cycle_id,
+                'tracker_id': tracker_id
+            }
+        )
+    
+    except ValueError as e:
+        return error_response(str(e), 400)
+    except Exception as e:
+        db.session.rollback()
+        return error_response(f"Failed to delete cycle: {str(e)}", 500)
