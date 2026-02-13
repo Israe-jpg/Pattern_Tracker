@@ -13,6 +13,7 @@ export default function CalendarSection({
   loading,
   onDayPress,
   onLogPress,
+  onLogPeriod,
   calculateCycleDayForDate,
   onMonthChange,
   navigation,
@@ -24,8 +25,8 @@ export default function CalendarSection({
   // Memoize markedDates - must be at top level, not conditional
   const markedDates = useMemo(() => ({
     ...calendarData,
-    // Only mark as selected if it's not today (today uses phase color)
-    ...(selectedDate !== today && {
+    // Only mark as selected if it's not today (today uses phase color) and selectedDate is not null
+    ...(selectedDate && selectedDate !== today && {
       [selectedDate]: {
         ...calendarData[selectedDate],
         selected: true,
@@ -95,8 +96,8 @@ export default function CalendarSection({
         }
       }
       
-      // Override with selected state if this is the selected date
-      const isSelected = dateString === selectedDate;
+      // Override with selected state if this is the selected date (and selectedDate is not null)
+      const isSelected = selectedDate && dateString === selectedDate;
       if (isSelected) {
         fullMarking.selected = true;
         fullMarking.selectedColor = colors.selected;
@@ -109,10 +110,12 @@ export default function CalendarSection({
           state={isSelected ? "selected" : state}
           marking={fullMarking}
           onPress={onDayPress}
+          onLogPeriod={isPeriodTracker ? onLogPeriod : undefined}
+          markedDates={calendarData}
         />
       );
     };
-  }, [isPeriodTracker, calendarData, calculateCycleDayForDate, selectedDate, onDayPress, today]);
+  }, [isPeriodTracker, calendarData, calculateCycleDayForDate, selectedDate, onDayPress, onLogPeriod, today]);
   
   if (loading) {
     return (
@@ -131,7 +134,7 @@ export default function CalendarSection({
       {/* Calendar Section - Separate */}
       <View style={styles.calendarSection}>
         <Calendar
-          current={selectedDate}
+          current={selectedDate || today}
           onDayPress={onDayPress}
           onMonthChange={(month) => {
             if (onMonthChange) {

@@ -8,7 +8,7 @@ import { colors } from "../../constants/colors";
  * Shows cycle day numbers, phase colors, and entry dots
  */
 export const CustomDay = (props) => {
-  const { date, state, marking, onPress, isEditMode, isSelected, isToggledPeriod, onDayPress } = props;
+  const { date, state, marking, onPress, isEditMode, isSelected, isToggledPeriod, onDayPress, onLogPeriod, markedDates } = props;
   const cycleDay = marking?.cycleDay;
   const phase = marking?.phase;
   const today = new Date().toISOString().split("T")[0];
@@ -72,12 +72,46 @@ export const CustomDay = (props) => {
     textColor = colors.textOnPrimary;
   }
 
+  // Check if selected day can show log period button
+  // Only show if: selected (check state, isSelected prop, or marking.selected), not a period day, not day before/after a period day, not in edit mode
+  const isDaySelected = state === "selected" || isSelected || marking?.selected === true;
+  const canShowLogPeriodButton = isDaySelected && !isEditMode && !isMenstrual && onLogPeriod;
+  let showLogPeriodButton = false;
+  
+  if (canShowLogPeriodButton) {
+    // Check if day before or after is a period day
+    const dateObj = new Date(date.dateString);
+    const dayBefore = new Date(dateObj);
+    dayBefore.setDate(dayBefore.getDate() - 1);
+    const dayBeforeStr = dayBefore.toISOString().split('T')[0];
+    
+    const dayAfter = new Date(dateObj);
+    dayAfter.setDate(dayAfter.getDate() + 1);
+    const dayAfterStr = dayAfter.toISOString().split('T')[0];
+    
+    const dayBeforeMarking = markedDates?.[dayBeforeStr] || {};
+    const dayAfterMarking = markedDates?.[dayAfterStr] || {};
+    const dayBeforeIsPeriod = dayBeforeMarking.phase === "menstrual" || dayBeforeMarking.phase === "period";
+    const dayAfterIsPeriod = dayAfterMarking.phase === "menstrual" || dayAfterMarking.phase === "period";
+    
+    // Show button only if neither day before nor day after is a period day
+    showLogPeriodButton = !dayBeforeIsPeriod && !dayAfterIsPeriod;
+  }
+
   // Handle press - use onDayPress if provided (edit mode), otherwise use onPress
   const handlePress = () => {
     if (isEditMode && onDayPress) {
       onDayPress(date);
     } else if (onPress) {
       onPress(date);
+    }
+  };
+
+  // Handle log period button press
+  const handleLogPeriodPress = (e) => {
+    e.stopPropagation(); // Prevent triggering the day press
+    if (onLogPeriod) {
+      onLogPeriod(date.dateString);
     }
   };
 
@@ -145,6 +179,16 @@ export const CustomDay = (props) => {
         <View style={styles.plusButtonContainer}>
           <Ionicons name="add" size={10} color={colors.textLight} />
         </View>
+      )}
+      {/* Log period button on selected day (only if not period day and not adjacent to period days) */}
+      {showLogPeriodButton && (
+        <TouchableOpacity
+          style={[styles.logPeriodButton, { backgroundColor: colors.menstrual }]}
+          onPress={handleLogPeriodPress}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="add" size={16} color={colors.textOnPrimary} style={styles.logPeriodPlusIcon} />
+        </TouchableOpacity>
       )}
     </TouchableOpacity>
   );
@@ -252,5 +296,20 @@ const styles = StyleSheet.create({
     backgroundColor: "pink",
     borderRadius: 5,
     color: "red",
+  },
+  logPeriodButton: {
+    position: "absolute",
+    right: -10,
+    top: "70%",
+    marginTop: -10,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 10,
+  },
+  logPeriodPlusIcon: {
+    fontWeight: "bold",
   },
 });
