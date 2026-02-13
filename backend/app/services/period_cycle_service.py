@@ -371,25 +371,25 @@ class PeriodCycleService:
                 raise ValueError("This endpoint is only available for Period Tracker")
             
             if limit:
-                cycles = PeriodCycle.query.filter_by(tracker_id=tracker_id).order_by(PeriodCycle.cycle_start_date.desc()).limit(limit).all()
+                cycles = PeriodCycle.query.filter_by(tracker_id=tracker_id).order_by(PeriodCycle.cycle_start_date.asc()).limit(limit).all()
             elif start_date and end_date:
                 cycles = PeriodCycle.query.filter(
                     PeriodCycle.tracker_id == tracker_id,
                     PeriodCycle.cycle_start_date >= start_date,
                     PeriodCycle.cycle_start_date <= end_date
-                ).order_by(PeriodCycle.cycle_start_date.desc()).all()
+                ).order_by(PeriodCycle.cycle_start_date.asc()).all()
             elif start_date and not end_date:
                 cycles = PeriodCycle.query.filter(
                     PeriodCycle.tracker_id == tracker_id,
                     PeriodCycle.cycle_start_date >= start_date
-                ).order_by(PeriodCycle.cycle_start_date.desc()).all()
+                ).order_by(PeriodCycle.cycle_start_date.asc()).all()
             elif end_date and not start_date:
                 cycles = PeriodCycle.query.filter(
                     PeriodCycle.tracker_id == tracker_id,
                     PeriodCycle.cycle_start_date <= end_date
-                ).order_by(PeriodCycle.cycle_start_date.desc()).all()
+                ).order_by(PeriodCycle.cycle_start_date.asc()).all()
             else:
-                cycles = PeriodCycle.query.filter_by(tracker_id=tracker_id).order_by(PeriodCycle.cycle_start_date.desc()).all()
+                cycles = PeriodCycle.query.filter_by(tracker_id=tracker_id).order_by(PeriodCycle.cycle_start_date.asc()).all()
             
             return cycles
         except Exception as e:

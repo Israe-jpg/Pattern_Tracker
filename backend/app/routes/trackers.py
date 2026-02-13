@@ -1595,6 +1595,23 @@ def update_cycles(tracker_id: int):
             
             if not cycle:
                 return error_response("Period cycle not found", 404)
+            
+            # If period_dates are also provided, update the period dates
+            if period_dates_str:
+                period_dates = [date.fromisoformat(d) for d in period_dates_str]
+                period_dates.sort()
+                
+                earliest = min(period_dates)
+                latest = max(period_dates)
+                
+                # Update period dates
+                cycle.period_start_date = earliest
+                cycle.period_end_date = latest
+                cycle.period_length = (latest - earliest).days + 1
+                
+                # Update cycle start if needed
+                if cycle.cycle_start_date > earliest:
+                    cycle.cycle_start_date = earliest
         
         elif period_dates_str:
             # Parse period dates
@@ -1655,6 +1672,32 @@ def update_cycles(tracker_id: int):
         
         # Update settings if most recent
         PeriodCycleService.update_tracker_settings(tracker, cycle)
+        
+        # After updating, ensure cycles are properly ordered and closed
+        try:
+            # Get all cycles
+            all_cycles = PeriodCycle.query.filter_by(
+                tracker_id=tracker_id
+            ).order_by(PeriodCycle.cycle_start_date.asc()).all()
+            
+            # Close cycles properly: each cycle ends the day before the next cycle starts
+            for i in range(len(all_cycles) - 1):
+                current_cycle = all_cycles[i]
+                next_cycle = all_cycles[i + 1]
+                
+                # If current cycle has no end date or end date is after next cycle start
+                if not current_cycle.cycle_end_date or current_cycle.cycle_end_date >= next_cycle.cycle_start_date:
+                    current_cycle.cycle_end_date = next_cycle.cycle_start_date - timedelta(days=1)
+                    current_cycle.cycle_length = (current_cycle.cycle_end_date - current_cycle.cycle_start_date).days + 1
+            
+            # The last cycle should have no end date (it's the current cycle)
+            if all_cycles:
+                last_cycle = all_cycles[-1]
+                last_cycle.cycle_end_date = None
+                last_cycle.cycle_length = None  # Current cycle length is calculated dynamically
+        except Exception as recalc_error:
+            # Log but don't fail the update
+            print(f"Warning: Failed to recalculate cycles after update: {str(recalc_error)}")
         
         db.session.commit()
         
@@ -1889,6 +1932,35 @@ def delete_cycle(tracker_id: int, cycle_id: int):
         
         # Delete the cycle
         db.session.delete(cycle)
+        db.session.flush()  # Flush to ensure deletion is processed
+        
+        # After deleting, recalculate cycles to ensure proper ordering and closure
+        # This ensures that remaining cycles have correct cycle_end_date values
+        try:
+            # Get all remaining cycles
+            remaining_cycles = PeriodCycle.query.filter_by(
+                tracker_id=tracker_id
+            ).order_by(PeriodCycle.cycle_start_date.asc()).all()
+            
+            # Close cycles properly: each cycle ends the day before the next cycle starts
+            for i in range(len(remaining_cycles) - 1):
+                current_cycle = remaining_cycles[i]
+                next_cycle = remaining_cycles[i + 1]
+                
+                # If current cycle has no end date or end date is after next cycle start
+                if not current_cycle.cycle_end_date or current_cycle.cycle_end_date >= next_cycle.cycle_start_date:
+                    current_cycle.cycle_end_date = next_cycle.cycle_start_date - timedelta(days=1)
+                    current_cycle.cycle_length = (current_cycle.cycle_end_date - current_cycle.cycle_start_date).days + 1
+            
+            # The last cycle should have no end date (it's the current cycle)
+            if remaining_cycles:
+                last_cycle = remaining_cycles[-1]
+                last_cycle.cycle_end_date = None
+                last_cycle.cycle_length = None  # Current cycle length is calculated dynamically
+        except Exception as recalc_error:
+            # Log but don't fail the deletion
+            print(f"Warning: Failed to recalculate cycles after deletion: {str(recalc_error)}")
+        
         db.session.commit()
         
         return success_response(
