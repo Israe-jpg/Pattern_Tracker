@@ -23,56 +23,61 @@ export const calculateCycleDayForDate = (dateString, allCycles) => {
   currentDate.setHours(0, 0, 0, 0);
   let foundCycle = null;
   
-  // Find the current cycle first (the one without cycle_end_date)
-  // There should only be one current cycle, but find the most recent one
-  let currentCycle = null;
-  let currentCycleStart = null;
-  let latestCurrentCycleStart = null;
+  // Strategy: Check all cycles (both current and completed) to find which one contains this date
+  // Prioritize cycles with cycle_end_date (completed) for dates that fall within their range
+  // Only use current cycle (no cycle_end_date) if date is on/after its start AND not in any completed cycle
   
-  for (const cycle of allCycles) {
-    if (!cycle.cycle_end_date) {
-      const cycleStartStr = cycle.cycle_start_date || cycle.period_start_date;
-      if (cycleStartStr) {
-        const cycleStart = new Date(cycleStartStr);
-        cycleStart.setHours(0, 0, 0, 0);
-        
-        // Use the most recent current cycle (in case there are multiple)
-        if (!latestCurrentCycleStart || cycleStart > latestCurrentCycleStart) {
-          currentCycle = cycle;
-          currentCycleStart = cycleStart;
-          latestCurrentCycleStart = cycleStart;
-        }
-      }
+  // First, check completed cycles (cycles with cycle_end_date)
+  // Sort by start date descending to check most recent first
+  const completedCycles = allCycles
+    .filter(cycle => cycle.cycle_end_date)
+    .sort((a, b) => {
+      const dateA = new Date(a.cycle_start_date || a.period_start_date);
+      const dateB = new Date(b.cycle_start_date || b.period_start_date);
+      return dateB - dateA; // Descending order (most recent first)
+    });
+  
+  for (const cycle of completedCycles) {
+    const cycleStartStr = cycle.cycle_start_date || cycle.period_start_date;
+    if (!cycleStartStr) continue;
+    
+    const cycleStart = new Date(cycleStartStr);
+    cycleStart.setHours(0, 0, 0, 0);
+    const cycleEnd = new Date(cycle.cycle_end_date);
+    cycleEnd.setHours(0, 0, 0, 0);
+    
+    // Check if date falls within this completed cycle's range
+    if (currentDate >= cycleStart && currentDate <= cycleEnd) {
+      foundCycle = cycle;
+      break; // Found the cycle, stop searching
     }
   }
   
-  // Priority 1: If date is on or after current cycle start, use current cycle
-  if (currentCycle && currentCycleStart && currentDate >= currentCycleStart) {
-    foundCycle = currentCycle;
-  } else {
-    // Priority 2: Check completed cycles (sorted by start date, check most recent first)
-    // Sort cycles by start date descending to check most recent first
-    const completedCycles = allCycles
-      .filter(cycle => cycle.cycle_end_date)
-      .sort((a, b) => {
-        const dateA = new Date(a.cycle_start_date || a.period_start_date);
-        const dateB = new Date(b.cycle_start_date || b.period_start_date);
-        return dateB - dateA; // Descending order
-      });
+  // If not found in completed cycles, check current cycles (no cycle_end_date)
+  if (!foundCycle) {
+    // Find the most recent current cycle
+    let currentCycle = null;
+    let latestCurrentCycleStart = null;
     
-    for (const cycle of completedCycles) {
-      const cycleStartStr = cycle.cycle_start_date || cycle.period_start_date;
-      if (!cycleStartStr) continue;
-      
-      const cycleStart = new Date(cycleStartStr);
-      cycleStart.setHours(0, 0, 0, 0);
-      const cycleEnd = new Date(cycle.cycle_end_date);
-      cycleEnd.setHours(0, 0, 0, 0);
-      
-      if (currentDate >= cycleStart && currentDate <= cycleEnd) {
-        foundCycle = cycle;
-        break;
+    for (const cycle of allCycles) {
+      if (!cycle.cycle_end_date) {
+        const cycleStartStr = cycle.cycle_start_date || cycle.period_start_date;
+        if (cycleStartStr) {
+          const cycleStart = new Date(cycleStartStr);
+          cycleStart.setHours(0, 0, 0, 0);
+          
+          // Use the most recent current cycle (in case there are multiple)
+          if (!latestCurrentCycleStart || cycleStart > latestCurrentCycleStart) {
+            currentCycle = cycle;
+            latestCurrentCycleStart = cycleStart;
+          }
+        }
       }
+    }
+    
+    // Use current cycle only if date is on or after its start
+    if (currentCycle && latestCurrentCycleStart && currentDate >= latestCurrentCycleStart) {
+      foundCycle = currentCycle;
     }
   }
   

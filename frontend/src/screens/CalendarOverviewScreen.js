@@ -329,8 +329,33 @@ export default function CalendarOverviewScreen() {
         }
         
         // Check for deselected period dates (toggled off)
+        // Only process dates that are in an ACTUAL logged period range, not predicted dates
         if (originalIsMenstrual && changes.isToggledPeriod === false) {
-          deselectedPeriodDates.push(dateString);
+          // Check if this date is in any cycle's actual period range (logged dates)
+          let isActualPeriodDate = false;
+          for (const cycle of allCycles) {
+            if (!cycle.period_start_date) continue;
+            
+            const periodStartStr = typeof cycle.period_start_date === 'string' 
+              ? cycle.period_start_date.split('T')[0] 
+              : cycle.period_start_date;
+            const periodEndStr = cycle.period_end_date 
+              ? (typeof cycle.period_end_date === 'string' ? cycle.period_end_date.split('T')[0] : cycle.period_end_date)
+              : null;
+            
+            // Check if date is within this cycle's actual period range
+            const inPeriodRange = dateString >= periodStartStr && (!periodEndStr || dateString <= periodEndStr);
+            if (inPeriodRange) {
+              isActualPeriodDate = true;
+              break;
+            }
+          }
+          
+          // Only add to deselectedPeriodDates if it's an actual logged period date
+          if (isActualPeriodDate) {
+            deselectedPeriodDates.push(dateString);
+          }
+          // If it's a predicted date, just ignore the toggle (will be cleared when pending changes reset)
         }
       }
       
@@ -348,54 +373,131 @@ export default function CalendarOverviewScreen() {
         return true;
       }
       
-      // Process new period dates first (log new periods)
+      // Process new period dates - check if they're adjacent to existing cycles
       if (newPeriodDates.length > 0) {
-        // Group new period dates by consecutive days (each group is a new period)
-        const newPeriodGroups = [];
-        const sortedNewDates = [...newPeriodDates].sort();
+        // First, check which new dates are adjacent to existing period dates
+        const datesToAddToExistingCycles = new Map(); // cycle_id -> [dates to add]
+        const standaloneNewDates = [];
         
-        let currentGroup = [sortedNewDates[0]];
-        for (let i = 1; i < sortedNewDates.length; i++) {
-          const prevDate = new Date(sortedNewDates[i - 1]);
-          const currentDate = new Date(sortedNewDates[i]);
-          const daysDiff = (currentDate - prevDate) / (1000 * 60 * 60 * 24);
+        for (const newDateStr of newPeriodDates) {
+          let foundAdjacentCycle = false;
           
-          if (daysDiff === 1) {
-            // Consecutive day, add to current group
-            currentGroup.push(sortedNewDates[i]);
-          } else {
-            // Not consecutive, start new group
-            newPeriodGroups.push(currentGroup);
-            currentGroup = [sortedNewDates[i]];
+          // Check if this date is adjacent (day before or after) to any existing period date
+          const newDate = new Date(newDateStr);
+          const dayBefore = new Date(newDate);
+          dayBefore.setDate(dayBefore.getDate() - 1);
+          const dayBeforeStr = dayBefore.toISOString().split('T')[0];
+          
+          const dayAfter = new Date(newDate);
+          dayAfter.setDate(dayAfter.getDate() + 1);
+          const dayAfterStr = dayAfter.toISOString().split('T')[0];
+          
+          // Check all cycles to see if day before or after is a period date
+          for (const cycle of allCycles) {
+            if (!cycle.period_start_date) continue;
+            
+            const periodStartStr = typeof cycle.period_start_date === 'string' 
+              ? cycle.period_start_date.split('T')[0] 
+              : cycle.period_start_date;
+            const periodEndStr = cycle.period_end_date 
+              ? (typeof cycle.period_end_date === 'string' ? cycle.period_end_date.split('T')[0] : cycle.period_end_date)
+              : null;
+            
+            // Check if day before or after is in this cycle's period range
+            const dayBeforeIsPeriod = dayBeforeStr >= periodStartStr && (!periodEndStr || dayBeforeStr <= periodEndStr);
+            const dayAfterIsPeriod = dayAfterStr >= periodStartStr && (!periodEndStr || dayAfterStr <= periodEndStr);
+            
+            if (dayBeforeIsPeriod || dayAfterIsPeriod) {
+              // This date is adjacent to this cycle, add it to the cycle
+              if (!datesToAddToExistingCycles.has(cycle.id)) {
+                datesToAddToExistingCycles.set(cycle.id, []);
+              }
+              datesToAddToExistingCycles.get(cycle.id).push(newDateStr);
+              foundAdjacentCycle = true;
+              break;
+            }
+          }
+          
+          if (!foundAdjacentCycle) {
+            standaloneNewDates.push(newDateStr);
           }
         }
-        if (currentGroup.length > 0) {
-          newPeriodGroups.push(currentGroup);
+        
+        // Add adjacent dates to existing cycles
+        for (const [cycleId, datesToAdd] of datesToAddToExistingCycles.entries()) {
+          const cycle = allCycles.find(c => c.id === cycleId);
+          if (!cycle) continue;
+          
+          const periodStartStr = typeof cycle.period_start_date === 'string' 
+            ? cycle.period_start_date.split('T')[0] 
+            : cycle.period_start_date;
+          const periodEndStr = cycle.period_end_date 
+            ? (typeof cycle.period_end_date === 'string' ? cycle.period_end_date.split('T')[0] : cycle.period_end_date)
+            : null;
+          
+          // Generate all current period dates
+          const allCurrentPeriodDates = [];
+          const periodStart = new Date(periodStartStr);
+          const periodEnd = periodEndStr ? new Date(periodEndStr) : new Date();
+          const currentDate = new Date(periodStart);
+          while (currentDate <= periodEnd) {
+            allCurrentPeriodDates.push(currentDate.toISOString().split('T')[0]);
+            currentDate.setDate(currentDate.getDate() + 1);
+          }
+          
+          // Combine existing period dates with new dates, sort, and update
+          const updatedPeriodDates = [...allCurrentPeriodDates, ...datesToAdd].sort();
+          
+          await trackerService.updateCycle(tracker.id, {
+            cycle_id: cycleId,
+            period_dates: updatedPeriodDates,
+          });
         }
         
-        // Log each new period group
-        for (const periodGroup of newPeriodGroups) {
-          const periodStartDate = periodGroup[0]; // First date in the group
+        // Process standalone new dates (not adjacent to existing cycles) - create new cycles
+        if (standaloneNewDates.length > 0) {
+          // Group standalone dates by consecutive days
+          const newPeriodGroups = [];
+          const sortedStandalone = [...standaloneNewDates].sort();
           
-          // Use log-period API to create a new cycle (this creates the cycle)
-          try {
-            await trackerService.logPeriod(tracker.id, periodStartDate);
+          let currentGroup = [sortedStandalone[0]];
+          for (let i = 1; i < sortedStandalone.length; i++) {
+            const prevDate = new Date(sortedStandalone[i - 1]);
+            const currentDate = new Date(sortedStandalone[i]);
+            const daysDiff = (currentDate - prevDate) / (1000 * 60 * 60 * 24);
             
-            // Then update the cycle with all period dates to set the full period range
-            if (periodGroup.length > 1) {
-              await trackerService.updateCycle(tracker.id, {
-                period_dates: periodGroup,
-              });
-            }
-          } catch (error) {
-            console.error(`Error logging period at ${periodStartDate}:`, error);
-            // If log-period fails (e.g., cycle already exists), try update-cycle instead
-            if (error.response?.status === 409) {
-              await trackerService.updateCycle(tracker.id, {
-                period_dates: periodGroup,
-              });
+            if (daysDiff === 1) {
+              currentGroup.push(sortedStandalone[i]);
             } else {
-              throw error; // Re-throw if it's a different error
+              newPeriodGroups.push(currentGroup);
+              currentGroup = [sortedStandalone[i]];
+            }
+          }
+          if (currentGroup.length > 0) {
+            newPeriodGroups.push(currentGroup);
+          }
+          
+          // Log each new period group
+          for (const periodGroup of newPeriodGroups) {
+            const periodStartDate = periodGroup[0];
+            
+            try {
+              await trackerService.logPeriod(tracker.id, periodStartDate);
+              
+              if (periodGroup.length > 1) {
+                await trackerService.updateCycle(tracker.id, {
+                  period_dates: periodGroup,
+                });
+              }
+            } catch (error) {
+              console.error(`Error logging period at ${periodStartDate}:`, error);
+              if (error.response?.status === 409) {
+                await trackerService.updateCycle(tracker.id, {
+                  period_dates: periodGroup,
+                });
+              } else {
+                throw error;
+              }
             }
           }
         }
@@ -453,9 +555,8 @@ export default function CalendarOverviewScreen() {
           }
         }
         
-        if (!foundCycle) {
-          console.warn(`Could not find cycle with actual period range for date ${dateStr} - it may be a predicted date or not in any cycle`);
-        }
+        // Note: foundCycle should always be true now since we pre-filter for actual period dates
+        // If not found, it's a data inconsistency issue, but we'll handle it gracefully
       }
       
       // Process each cycle (only if there are deselected dates)
@@ -493,12 +594,13 @@ export default function CalendarOverviewScreen() {
             // Partial deselection - update cycle with remaining period dates
             const remainingPeriodDates = allPeriodDates.filter(
               dateStr => !deselectedDates.includes(dateStr)
-            );
+            ).sort(); // Ensure dates are sorted (earliest first)
             
             if (remainingPeriodDates.length > 0) {
-              // Don't send cycle_id - let backend find cycle by period_dates
-              // This ensures period_dates are actually updated (backend logic uses elif for period_dates)
+              // Send both cycle_id and period_dates to ensure we update the correct cycle
+              // The backend needs to handle period_dates even when cycle_id is provided
               await trackerService.updateCycle(tracker.id, {
+                cycle_id: cycleId,
                 period_dates: remainingPeriodDates,
               });
             } else {
