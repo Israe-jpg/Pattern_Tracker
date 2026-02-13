@@ -1609,9 +1609,9 @@ def update_cycles(tracker_id: int):
                 cycle.period_end_date = latest
                 cycle.period_length = (latest - earliest).days + 1
                 
-                # Update cycle start if needed
-                if cycle.cycle_start_date > earliest:
-                    cycle.cycle_start_date = earliest
+                # ALWAYS update cycle start to match period start
+                # (cycle should always start on or before period start)
+                cycle.cycle_start_date = earliest
         
         elif period_dates_str:
             # Parse period dates
@@ -1667,34 +1667,38 @@ def update_cycles(tracker_id: int):
         cycle.predicted_ovulation_date = predictions['predicted_ovulation']
         cycle.predicted_next_period_date = predictions['predicted_next_period']
         
-        # Finalize cycle (handle relationships)
-        PeriodCycleService.finalize_cycle(cycle, tracker_id)
-        
         # Update settings if most recent
         PeriodCycleService.update_tracker_settings(tracker, cycle)
         
-        # After updating, ensure cycles are properly ordered and closed
+        # Commit the cycle changes first
+        db.session.flush()
+        
+        # Then recalculate all cycle relationships to ensure everything is consistent
         try:
-            # Get all cycles
+            # Get all cycles sorted by start date
             all_cycles = PeriodCycle.query.filter_by(
                 tracker_id=tracker_id
             ).order_by(PeriodCycle.cycle_start_date.asc()).all()
             
-            # Close cycles properly: each cycle ends the day before the next cycle starts
+            # Close each cycle based on when the next one starts
             for i in range(len(all_cycles) - 1):
                 current_cycle = all_cycles[i]
                 next_cycle = all_cycles[i + 1]
                 
-                # If current cycle has no end date or end date is after next cycle start
-                if not current_cycle.cycle_end_date or current_cycle.cycle_end_date >= next_cycle.cycle_start_date:
-                    current_cycle.cycle_end_date = next_cycle.cycle_start_date - timedelta(days=1)
-                    current_cycle.cycle_length = (current_cycle.cycle_end_date - current_cycle.cycle_start_date).days + 1
+                # Current cycle ends the day before next cycle starts
+                current_cycle.cycle_end_date = next_cycle.cycle_start_date - timedelta(days=1)
+                current_cycle.cycle_length = (current_cycle.cycle_end_date - current_cycle.cycle_start_date).days + 1
+                
+                # Ensure period_end_date doesn't exceed cycle_end_date
+                if current_cycle.period_end_date and current_cycle.period_end_date > current_cycle.cycle_end_date:
+                    current_cycle.period_end_date = current_cycle.cycle_end_date
+                    current_cycle.period_length = (current_cycle.period_end_date - current_cycle.period_start_date).days + 1
             
-            # The last cycle should have no end date (it's the current cycle)
+            # The last (most recent) cycle should remain open (no end date)
             if all_cycles:
                 last_cycle = all_cycles[-1]
                 last_cycle.cycle_end_date = None
-                last_cycle.cycle_length = None  # Current cycle length is calculated dynamically
+                last_cycle.cycle_length = None
         except Exception as recalc_error:
             # Log but don't fail the update
             print(f"Warning: Failed to recalculate cycles after update: {str(recalc_error)}")

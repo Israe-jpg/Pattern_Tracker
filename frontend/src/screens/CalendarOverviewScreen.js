@@ -562,15 +562,8 @@ export default function CalendarOverviewScreen() {
       
       // Process each cycle (only if there are deselected dates)
       if (deselectedPeriodDates.length > 0) {
-        console.log(`Processing ${cycleChanges.size} cycles with deselected dates`);
         for (const [cycleId, { cycle, deselectedDates }] of cycleChanges.entries()) {
           try {
-            console.log(`\nProcessing cycle ${cycleId}:`, {
-              period_start: cycle.period_start_date,
-              period_end: cycle.period_end_date,
-              deselectedDates
-            });
-            
             // Extract date strings (handle both date and datetime formats)
             const periodStartStr = typeof cycle.period_start_date === 'string' 
               ? cycle.period_start_date.split('T')[0] 
@@ -591,41 +584,32 @@ export default function CalendarOverviewScreen() {
               currentDate.setDate(currentDate.getDate() + 1);
             }
             
-            console.log(`All period dates in cycle ${cycleId}:`, allPeriodDates);
-            
             // Check if all period dates are deselected
             const allDeselected = deselectedDates.length === allPeriodDates.length &&
               deselectedDates.every(d => allPeriodDates.includes(d));
             
             if (allDeselected) {
               // Delete the entire cycle
-              console.log(`All dates deselected for cycle ${cycleId}, deleting cycle...`);
               await trackerService.deleteCycle(tracker.id, cycleId);
-              console.log(`Cycle ${cycleId} deleted successfully`);
             } else {
               // Partial deselection - update cycle with remaining period dates
               const remainingPeriodDates = allPeriodDates.filter(
                 dateStr => !deselectedDates.includes(dateStr)
               ).sort(); // Ensure dates are sorted (earliest first)
               
-              console.log(`Remaining period dates for cycle ${cycleId}:`, remainingPeriodDates);
-              
               if (remainingPeriodDates.length > 0) {
                 // Send both cycle_id and period_dates to ensure we update the correct cycle
-                const updateResponse = await trackerService.updateCycle(tracker.id, {
+                await trackerService.updateCycle(tracker.id, {
                   cycle_id: cycleId,
                   period_dates: remainingPeriodDates,
                 });
-                console.log(`Cycle ${cycleId} updated successfully:`, updateResponse);
               } else {
                 // All dates deselected but check failed - delete cycle as fallback
-                console.log(`No remaining dates for cycle ${cycleId}, deleting as fallback...`);
                 await trackerService.deleteCycle(tracker.id, cycleId);
               }
             }
           } catch (cycleError) {
             console.error(`Error processing cycle ${cycleId}:`, cycleError);
-            console.error('Error details:', cycleError.response?.data || cycleError.message);
             // Continue with other cycles
           }
         }
@@ -633,10 +617,8 @@ export default function CalendarOverviewScreen() {
       
       // Reload calendar data BEFORE clearing pending changes
       // This ensures the UI updates with fresh data before we reset state
-      console.log('Reloading calendar data...');
       try {
         await loadCalendarData(false);
-        console.log('Calendar data reloaded successfully');
       } catch (reloadError) {
         console.error('Error reloading calendar data after save:', reloadError);
         // Still continue to clear changes since save was successful
@@ -648,7 +630,6 @@ export default function CalendarOverviewScreen() {
       
       // Force component refresh to ensure UI updates with new data
       setRefreshKey(prev => prev + 1);
-      console.log('Pending changes cleared and UI refreshed');
       
       return true;
     } catch (error) {
