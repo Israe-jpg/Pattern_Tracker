@@ -15,6 +15,10 @@ export const CustomDay = (props) => {
   const isPredictedOvulation = marking?.isPredictedOvulation === true;
   const today = new Date().toISOString().split("T")[0];
   const isPastOrToday = date.dateString <= today;
+  const isFutureDate = date.dateString > today;
+  
+  // In edit mode, future dates are not editable (no dashed border, no selection)
+  const isEditableInEditMode = isEditMode && isPastOrToday;
   
   // Show cycle day whenever we have one (past, today, current period, gap to next period, or predicted period)
   const showCycleDay = cycleDay !== null && cycleDay !== undefined && cycleDay > 0 && !isEditMode;
@@ -31,10 +35,8 @@ export const CustomDay = (props) => {
     : originalIsMenstrual;
   
   // In edit mode, determine if this day should have a colored circle (menstrual or ovulation only)
-  // Show colored circle if:
-  // 1. It's a menstrual day (original or toggled on)
-  // 2. It's an ovulation day (ovulation days don't toggle)
-  const shouldShowColoredCircle = isEditMode && (isMenstrual || isExactOvulationDay);
+  // Show colored circle only for past/today (not future)
+  const shouldShowColoredCircle = isEditableInEditMode && (isMenstrual || isExactOvulationDay);
   const circleColor = isMenstrual ? colors.menstrual : (isExactOvulationDay ? colors.ovulation : null);
 
   // Determine cycle day text color based on phase
@@ -104,11 +106,11 @@ export const CustomDay = (props) => {
     showLogPeriodButton = !dayBeforeIsPeriod && !dayAfterIsPeriod;
   }
 
-  // Handle press - use onDayPress if provided (edit mode), otherwise use onPress
+  // Handle press - use onDayPress if provided (edit mode, only for past/today)
   const handlePress = () => {
-    if (isEditMode && onDayPress) {
+    if (isEditMode && onDayPress && isPastOrToday) {
       onDayPress(date);
-    } else if (onPress) {
+    } else if (!isEditMode && onPress) {
       onPress(date);
     }
   };
@@ -134,15 +136,15 @@ export const CustomDay = (props) => {
         isPredictedPeriod && !isEditMode && [styles.predictedPeriodContainer, { borderColor: colors.menstrual }],
         // Predicted ovulation styling (dashed border)
         isPredictedOvulation && !isEditMode && [styles.predictedOvulationContainer, { borderColor: colors.ovulation }],
-        // Edit mode styling
-        isEditMode && styles.editModeContainer,
+        // Edit mode styling (only for past/today - no dashed or selection for future)
+        isEditableInEditMode && styles.editModeContainer,
         // Show colored circle (period/ovulation) only when NOT selected
-        isEditMode && !isSelected && shouldShowColoredCircle && [styles.editModeColoredCircle, { borderColor: circleColor }],
+        isEditableInEditMode && !isSelected && shouldShowColoredCircle && [styles.editModeColoredCircle, { borderColor: circleColor }],
         // Selected state in edit mode - always use red (menstrual) color border for selected days (no background)
-        isEditMode && isSelected && [styles.editModeSelected, { borderColor: colors.menstrual }],
+        isEditableInEditMode && isSelected && [styles.editModeSelected, { borderColor: colors.menstrual }],
       ]}
       onPress={handlePress}
-      disabled={state === "disabled"}
+      disabled={state === "disabled" || (isEditMode && isFutureDate)}
       activeOpacity={0.7}
     >
       <View style={styles.dayContent}>
@@ -184,8 +186,8 @@ export const CustomDay = (props) => {
           ]}
         />
       )}
-      {/* Plus button in edit mode (only if not a menstrual day and not selected) */}
-      {isEditMode && !isMenstrual && !isSelected && (
+      {/* Plus button in edit mode (only if past/today, not a menstrual day, and not selected) */}
+      {isEditableInEditMode && !isMenstrual && !isSelected && (
         <View style={styles.plusButtonContainer}>
           <Ionicons name="add" size={11} color={colors.textLight} />
         </View>
