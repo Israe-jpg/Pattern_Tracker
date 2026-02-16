@@ -16,9 +16,11 @@ export const CustomDay = (props) => {
   const today = new Date().toISOString().split("T")[0];
   const isPastOrToday = date.dateString <= today;
   const isFutureDate = date.dateString > today;
+  const originalIsMenstrual = phase === "menstrual" || phase === "period";
   
-  // In edit mode, future dates are not editable (no dashed border, no selection)
-  const isEditableInEditMode = isEditMode && isPastOrToday;
+  // In edit mode: past/today are editable; future is editable only if it's a sure period day (current period extending into future), not predicted
+  const isFutureSurePeriodDay = isFutureDate && originalIsMenstrual && !isPredictedPeriod;
+  const isEditableInEditMode = isEditMode && (isPastOrToday || isFutureSurePeriodDay);
   
   // Show cycle day whenever we have one (past, today, current period, gap to next period, or predicted period)
   const showCycleDay = cycleDay !== null && cycleDay !== undefined && cycleDay > 0 && !isEditMode;
@@ -26,7 +28,6 @@ export const CustomDay = (props) => {
   
   // Check if this is the exact ovulation day (not just in ovulation phase)
   const isExactOvulationDay = marking?.isExactOvulationDay === true;
-  const originalIsMenstrual = phase === "menstrual" || phase === "period";
   
   // In edit mode, determine the actual state based on toggles
   // isToggledPeriod: undefined = use original, false = toggle off (hide period), true = toggle on (show period)
@@ -106,9 +107,9 @@ export const CustomDay = (props) => {
     showLogPeriodButton = !dayBeforeIsPeriod && !dayAfterIsPeriod;
   }
 
-  // Handle press - use onDayPress if provided (edit mode, only for past/today)
+  // Handle press - use onDayPress if provided (edit mode: past/today or future sure period days only)
   const handlePress = () => {
-    if (isEditMode && onDayPress && isPastOrToday) {
+    if (isEditMode && onDayPress && (isPastOrToday || isFutureSurePeriodDay)) {
       onDayPress(date);
     } else if (!isEditMode && onPress) {
       onPress(date);
@@ -144,7 +145,7 @@ export const CustomDay = (props) => {
         isEditableInEditMode && isSelected && [styles.editModeSelected, { borderColor: colors.menstrual }],
       ]}
       onPress={handlePress}
-      disabled={state === "disabled" || (isEditMode && isFutureDate)}
+      disabled={state === "disabled" || (isEditMode && isFutureDate && !isFutureSurePeriodDay)}
       activeOpacity={0.7}
     >
       <View style={styles.dayContent}>
