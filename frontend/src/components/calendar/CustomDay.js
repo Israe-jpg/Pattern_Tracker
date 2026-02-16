@@ -177,7 +177,7 @@ export const CustomDay = (props) => {
       {/* Plus button in edit mode (only if not a menstrual day and not selected) */}
       {isEditMode && !isMenstrual && !isSelected && (
         <View style={styles.plusButtonContainer}>
-          <Ionicons name="add" size={10} color={colors.textLight} />
+          <Ionicons name="add" size={11} color={colors.textLight} />
         </View>
       )}
       {/* Log period button on selected day (only if not period day and not adjacent to period days) */}
@@ -196,8 +196,8 @@ export const CustomDay = (props) => {
 
 const styles = StyleSheet.create({
   dayContainer: {
-    width: 32,
-    height: 32,
+    width: 36,
+    height: 36,
     alignItems: "center",
     justifyContent: "center",
     position: "relative",
@@ -212,11 +212,11 @@ const styles = StyleSheet.create({
   cycleDayText: {
     position: "absolute",
     top: 2,
-    right: 4,
-    fontSize: 10,
+    right: 3.5,
+    fontSize: 11,
     fontWeight: "700",
     color: colors.textLight,
-    lineHeight: 12,
+    lineHeight: 13,
     zIndex: 10,
   },
   cycleDayTextSelected: {
@@ -224,18 +224,18 @@ const styles = StyleSheet.create({
     opacity: 0.8,
   },
   dayText: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: "500",
   },
   todayContainer: {
-    borderRadius: 16,
+    borderRadius: 17,
   },
   ovulationContainer: {
-    borderRadius: 16,
+    borderRadius: 17,
     backgroundColor: colors.ovulation,
   },
   menstrualContainer: {
-    borderRadius: 16,
+    borderRadius: 17,
     backgroundColor: colors.menstrual,
   },
   todayText: {
@@ -243,7 +243,7 @@ const styles = StyleSheet.create({
     color: colors.textOnPrimary,
   },
   selectedContainer: {
-    borderRadius: 16,
+    borderRadius: 17,
     backgroundColor: colors.selected,
   },
   selectedText: {
@@ -257,50 +257,50 @@ const styles = StyleSheet.create({
   },
   dot: {
     position: "absolute",
-    bottom: 2,
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+    bottom: 1,
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
   },
   dotSelected: {
     backgroundColor: colors.textOnPrimary,
   },
   // Edit mode styles
   editModeContainer: {
-    borderRadius: 16,
+    borderRadius: 17,
     borderWidth: 1,
     borderStyle: "dashed",
     borderColor: colors.textLight,
     backgroundColor: "transparent",
   },
   editModeColoredCircle: {
-    borderRadius: 16,
+    borderRadius: 17,
     borderWidth: 2,
     borderStyle: "solid",
     backgroundColor: "transparent",
   },
   editModeSelected: {
-    borderRadius: 16,
+    borderRadius: 17,
     borderWidth: 2,
     borderStyle: "solid",
     backgroundColor: "transparent",
   },
   plusButtonContainer: {
     position: "absolute",
-    bottom: 1,
-    right: 1,
-    width: 10,
-    height: 10,
+    bottom: 0,
+    right: 0,
+    width: 11,
+    height: 11,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "pink",
-    borderRadius: 5,
+    borderRadius: 6,
     color: "red",
   },
   logPeriodButton: {
     position: "absolute",
-    right: -10,
-    top: "70%",
+    right: -8,
+    top: "55%",
     marginTop: -10,
     width: 20,
     height: 20,
