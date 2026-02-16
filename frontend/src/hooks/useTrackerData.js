@@ -254,93 +254,22 @@ export const useTrackerData = () => {
         allCalendarDates.forEach((date) => {
           const dayData = daysData[date] || null;
           
-          // Calculate cycle day - find which cycle this date belongs to
-          let cycleDay = null;
-          let foundCycle = null; // Declare outside blocks so it's available for phase calculation
-          
-          if (dayData && dayData.cycle && dayData.cycle.cycle_start_date) {
-            // Use cycle data from day if available
-            const cycleStart = new Date(dayData.cycle.cycle_start_date);
-            const currentDate = new Date(date);
-            const diffTime = currentDate - cycleStart;
-            const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24)) + 1;
-            cycleDay = diffDays > 0 ? diffDays : null;
-            // Try to find the matching cycle in allCycles to get cycle_end_date
-            if (allCycles.length > 0) {
-              const cycleStartStr = dayData.cycle.cycle_start_date;
-              foundCycle = allCycles.find(c => 
-                (c.cycle_start_date || c.period_start_date) === cycleStartStr
-              ) || null;
-            }
-          } else if (allCycles.length > 0 && date <= today) {
-            // Find which cycle this date belongs to from cycle history
-            const currentDate = new Date(date);
-            
-            // Find the current cycle first (the one without cycle_end_date)
-            let currentCycle = null;
-            let currentCycleStart = null;
-            
-            for (const cycle of allCycles) {
-              if (!cycle.cycle_end_date) {
-                const cycleStartStr = cycle.cycle_start_date || cycle.period_start_date;
-                if (cycleStartStr) {
-                  currentCycle = cycle;
-                  currentCycleStart = new Date(cycleStartStr);
-                  // Reset time to avoid timezone issues
-                  currentCycleStart.setHours(0, 0, 0, 0);
-                  break;
-                }
-              }
-            }
-            
-            // Reset time for date comparison to avoid timezone issues
-            const dateForComparison = new Date(currentDate);
-            dateForComparison.setHours(0, 0, 0, 0);
-            
-            // Priority 1: If date is on or after current cycle start, ALWAYS use current cycle
-            // This ensures days 1-66 of current cycle all show numbers
-            if (currentCycle && currentCycleStart && dateForComparison >= currentCycleStart) {
-              foundCycle = currentCycle;
-            } else {
-              // Priority 2: Check completed cycles for dates before current cycle
-              for (const cycle of allCycles) {
-                if (cycle.cycle_end_date) {
-                  const cycleStartStr = cycle.cycle_start_date || cycle.period_start_date;
-                  if (!cycleStartStr) continue;
-                  
-                  const cycleStart = new Date(cycleStartStr);
-                  cycleStart.setHours(0, 0, 0, 0);
-                  const cycleEnd = new Date(cycle.cycle_end_date);
-                  cycleEnd.setHours(0, 0, 0, 0);
-                  
-                  // Check if date is within this completed cycle's range
-                  if (dateForComparison >= cycleStart && dateForComparison <= cycleEnd) {
-                    foundCycle = cycle;
-                    break;
-                  }
-                }
-              }
-            }
-            
-            if (foundCycle) {
-              // Calculate day within this specific cycle
-              const cycleStartStr = foundCycle.cycle_start_date || foundCycle.period_start_date;
-              const cycleStart = new Date(cycleStartStr);
-              cycleStart.setHours(0, 0, 0, 0);
-              const diffTime = dateForComparison - cycleStart;
-              const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24)) + 1;
-              cycleDay = diffDays > 0 ? diffDays : null;
-            }
-          } else if (cycleStartDate && date <= today) {
-            // Fallback: Calculate from current cycle start date for past/today dates
-            const currentDate = new Date(date);
-            const diffTime = currentDate - cycleStartDate;
-            const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24)) + 1;
-            cycleDay = diffDays > 0 ? diffDays : null;
-          }
+          // Use shared calculation function for consistency
+          const calculated = calculateCycleDayForDate(date, allCycles);
           
           // Build the marking object
           const marking = {};
+          
+          // Add calculated cycle data
+          if (calculated.cycleDay) {
+            marking.cycleDay = calculated.cycleDay;
+          }
+          if (calculated.phase) {
+            marking.phase = calculated.phase;
+          }
+          if (calculated.isExactOvulationDay) {
+            marking.isExactOvulationDay = true;
+          }
           
           // Check if user logged data for this date (use cache first, then dayData)
           // Dots now indicate logged data, not phase
@@ -358,123 +287,6 @@ export const useTrackerData = () => {
           if (hasEntry) {
             marking.marked = true;
             marking.dotColor = colors.primary; // Use primary color for logged data dots
-          }
-          
-          // Always include cycle day for past/today dates if we calculated it
-          if (cycleDay && date <= today) {
-            marking.cycleDay = cycleDay;
-            
-            // ALWAYS check for exact ovulation day, even if phase was already set
-            let isExactOvulationDay = false;
-            let ovulationDate = null;
-            
-            // Priority 1: For ended cycles, calculate ovulation date from cycle_end (cycle_end - 14 days)
-            if (foundCycle && foundCycle.cycle_end_date) {
-              const cycleEnd = new Date(foundCycle.cycle_end_date);
-              cycleEnd.setHours(0, 0, 0, 0);
-              // Calculate ovulation date: 14 days before cycle end
-              ovulationDate = new Date(cycleEnd);
-              ovulationDate.setDate(ovulationDate.getDate() - 14);
-              ovulationDate.setHours(0, 0, 0, 0);
-            }
-            // Priority 2: For current cycles, use predicted_ovulation_date
-            else if (foundCycle && foundCycle.predicted_ovulation_date) {
-              ovulationDate = new Date(foundCycle.predicted_ovulation_date);
-              ovulationDate.setHours(0, 0, 0, 0);
-            }
-            
-            // Check if this date matches the ovulation date
-            if (ovulationDate) {
-              const currentDate = new Date(date);
-              currentDate.setHours(0, 0, 0, 0);
-              if (currentDate.getTime() === ovulationDate.getTime()) {
-                isExactOvulationDay = true;
-                marking.isExactOvulationDay = true; // Set it here, outside the phase calculation
-              }
-            }
-            
-            // Determine phase based on cycle day
-            // For ended cycles, always recalculate phase using calculated ovulation date (overrides dayData phase)
-            // For current cycles, use pre-set phase from dayData if available, otherwise calculate
-            const isEndedCycle = foundCycle && foundCycle.cycle_end_date;
-            const shouldRecalculatePhase = isEndedCycle || !marking.phase;
-            
-            if (shouldRecalculatePhase) {
-              let periodLength = 5; // default
-              let cycleLength = 28; // default
-              
-              if (foundCycle) {
-                // Use the cycle's actual values
-                periodLength = foundCycle.period_length || 5;
-                cycleLength = foundCycle.cycle_length || 28;
-              } else {
-                // Fallback to settings or defaults
-                const settings = response.settings || {};
-                cycleLength = settings.average_cycle_length || currentCycleInfo.average_cycle_length || 28;
-                periodLength = settings.average_period_length || currentCycleInfo.average_period_length || 5;
-              }
-              
-              // CRITICAL FIX: Use ACTUAL period dates from DB, not cycleDay calculation
-              const currentDate = new Date(date);
-              currentDate.setHours(0, 0, 0, 0);
-              
-              let isInActualPeriod = false;
-              if (foundCycle && foundCycle.period_start_date) {
-                const periodStart = new Date(foundCycle.period_start_date);
-                periodStart.setHours(0, 0, 0, 0);
-                const periodEnd = foundCycle.period_end_date 
-                  ? new Date(foundCycle.period_end_date) 
-                  : new Date(periodStart);
-                periodEnd.setHours(0, 0, 0, 0);
-                
-                isInActualPeriod = currentDate >= periodStart && currentDate <= periodEnd;
-              }
-              
-              if (isInActualPeriod) {
-                marking.phase = "menstrual";
-              } else {
-                // Calculate ovulation day (fallback if ovulation date not available)
-                const ovulationDay = cycleLength - 14;
-                
-                // Use ovulation date (calculated for ended cycles or predicted for current cycles)
-                if (ovulationDate) {
-                  const cycleStart = new Date(foundCycle.cycle_start_date || foundCycle.period_start_date);
-                  cycleStart.setHours(0, 0, 0, 0);
-                  const diffTime = ovulationDate - cycleStart;
-                  const calculatedOvulationDay = Math.floor(diffTime / (1000 * 60 * 60 * 24)) + 1;
-                  
-                  // Ovulation phase is 5 days around the ovulation day
-                  if (cycleDay >= calculatedOvulationDay - 2 && cycleDay <= calculatedOvulationDay + 2) {
-                    marking.phase = "ovulation";
-                    // Mark the exact ovulation day (already set above if it matches ovulation date)
-                    if (cycleDay === calculatedOvulationDay && !isExactOvulationDay) {
-                      marking.isExactOvulationDay = true;
-                    }
-                  } else if (cycleDay < calculatedOvulationDay - 2) {
-                    marking.phase = "follicular";
-                  } else {
-                    marking.phase = "luteal";
-                  }
-                } else {
-                  // Fallback to calculated ovulation day
-                  const fallbackOvulationDay = cycleLength - 14;
-                  if (cycleDay >= fallbackOvulationDay - 2 && cycleDay <= fallbackOvulationDay + 2) {
-                    marking.phase = "ovulation";
-                    // Mark the exact ovulation day (calculated)
-                    if (cycleDay === fallbackOvulationDay) {
-                      marking.isExactOvulationDay = true;
-                    }
-                  } else if (cycleDay < fallbackOvulationDay - 2) {
-                    marking.phase = "follicular";
-                  } else {
-                    marking.phase = "luteal";
-                  }
-                }
-              }
-              
-              // Phase is stored for background colors, but dots are now for logged data only
-              // So we don't set marking.marked or dotColor here based on phase
-            }
           }
           
           // Check if user logged data for this date (if not already checked above)
@@ -502,6 +314,131 @@ export const useTrackerData = () => {
             markedDates[date] = marking;
           }
         });
+        
+        // Current cycle: full period span + annotations from today to next predicted period
+        const currentCycle = allCycles.find(cycle => !cycle.cycle_end_date);
+        const todayStr = new Date().toISOString().split("T")[0];
+        
+        if (currentCycle) {
+          const periodStart = new Date(currentCycle.period_start_date);
+          periodStart.setHours(0, 0, 0, 0);
+          const cycleStart = new Date(currentCycle.cycle_start_date || currentCycle.period_start_date);
+          cycleStart.setHours(0, 0, 0, 0);
+          const periodLength = currentCycle.period_length || 5;
+          const cycleLength = currentCycle.cycle_length || 28;
+          const ovulationDayNum = cycleLength - 14;
+          
+          // 1) Full current period: period_start through period_start + (period_length - 1)
+          for (let i = 0; i < periodLength; i++) {
+            const d = new Date(periodStart);
+            d.setDate(d.getDate() + i);
+            const dateStr = d.toISOString().split("T")[0];
+            const diffDays = Math.floor((d - cycleStart) / (1000 * 60 * 60 * 24)) + 1;
+            const cycleDay = diffDays > 0 ? diffDays : i + 1;
+            const existingMarking = markedDates[dateStr] || {};
+            markedDates[dateStr] = {
+              ...existingMarking,
+              cycleDay,
+              phase: "menstrual",
+            };
+          }
+          
+          // 2) Annotations from today until day before predicted next period
+          const predNext = currentCycle.predicted_next_period_date
+            ? new Date(currentCycle.predicted_next_period_date)
+            : null;
+          const predOvulationDate = currentCycle.predicted_ovulation_date
+            ? new Date(currentCycle.predicted_ovulation_date)
+            : null;
+          if (predOvulationDate) predOvulationDate.setHours(0, 0, 0, 0);
+          if (predNext) {
+            predNext.setHours(0, 0, 0, 0);
+            const endAnnot = new Date(predNext);
+            endAnnot.setDate(endAnnot.getDate() - 1);
+            const endAnnotStr = endAnnot.toISOString().split("T")[0];
+            
+            let d = new Date(todayStr);
+            d.setHours(0, 0, 0, 0);
+            const endD = new Date(endAnnotStr);
+            endD.setHours(0, 0, 0, 0);
+            
+            while (d <= endD) {
+              const dateStr = d.toISOString().split("T")[0];
+              const diffDays = Math.floor((d - cycleStart) / (1000 * 60 * 60 * 24)) + 1;
+              const cycleDay = diffDays > 0 ? diffDays : null;
+              if (!cycleDay) {
+                d.setDate(d.getDate() + 1);
+                continue;
+              }
+              
+              const periodEnd = new Date(periodStart);
+              periodEnd.setDate(periodEnd.getDate() + periodLength - 1);
+              const inPeriod = d >= periodStart && d <= periodEnd;
+              let phase = "menstrual";
+              let isExactOvulationDay = false;
+              if (!inPeriod) {
+                // Only the single predicted ovulation date gets ovulation styling (step 3). Here we use follicular/luteal only.
+                if (predOvulationDate && d.getTime() === predOvulationDate.getTime()) {
+                  phase = "ovulation";
+                  isExactOvulationDay = true;
+                } else if (cycleDay < ovulationDayNum - 2) {
+                  phase = "follicular";
+                } else if (cycleDay > ovulationDayNum + 2) {
+                  phase = "luteal";
+                } else {
+                  phase = cycleDay <= ovulationDayNum ? "follicular" : "luteal";
+                }
+              }
+              
+              const existingMarking = markedDates[dateStr] || {};
+              markedDates[dateStr] = {
+                ...existingMarking,
+                cycleDay,
+                phase,
+                ...(isExactOvulationDay && { isExactOvulationDay: true }),
+              };
+              d.setDate(d.getDate() + 1);
+            }
+          }
+          
+          // 3) Predicted ovulation (only if not inside current period range)
+          if (currentCycle.predicted_ovulation_date) {
+            const ovulationDate = new Date(currentCycle.predicted_ovulation_date);
+            ovulationDate.setHours(0, 0, 0, 0);
+            const periodEndForOvul = new Date(periodStart);
+            periodEndForOvul.setDate(periodEndForOvul.getDate() + periodLength - 1);
+            const ovulationInPeriod = ovulationDate >= periodStart && ovulationDate <= periodEndForOvul;
+            if (!ovulationInPeriod) {
+              const ovulationDateStr = ovulationDate.toISOString().split("T")[0];
+              const existingMarking = markedDates[ovulationDateStr] || {};
+              markedDates[ovulationDateStr] = {
+                ...existingMarking,
+                phase: "ovulation",
+                isExactOvulationDay: true,
+                isPredictedOvulation: true,
+              };
+            }
+          }
+          
+          // 4) Predicted next period
+          if (currentCycle.predicted_next_period_date) {
+            const predictedStartDate = new Date(currentCycle.predicted_next_period_date);
+            
+            for (let i = 0; i < periodLength; i++) {
+              const predictedDate = new Date(predictedStartDate);
+              predictedDate.setDate(predictedDate.getDate() + i);
+              const dateStr = predictedDate.toISOString().split("T")[0];
+              
+              const existingMarking = markedDates[dateStr] || {};
+              markedDates[dateStr] = {
+                ...existingMarking,
+                cycleDay: i + 1,
+                phase: "menstrual",
+                isPredictedPeriod: true,
+              };
+            }
+          }
+        }
         
         // Mark all visible dates that have entries (final pass to ensure all dates are marked)
         allCalendarDates.forEach(date => {

@@ -196,7 +196,7 @@ export default function CalendarOverviewScreen() {
       const dates = {};
       const today = new Date();
       const startDate = new Date(today.getFullYear(), today.getMonth() - 11, 1);
-      const endDate = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+      const endDate = new Date(today.getFullYear(), today.getMonth() + 2, 0); // +1 month future
       
       // Fetch all entries for the 12-month range
       try {
@@ -301,6 +301,127 @@ export default function CalendarOverviewScreen() {
             }
             
             currentDate.setDate(currentDate.getDate() + 1);
+          }
+          
+          const currentCycle = sortedCycles.find(cycle => !cycle.cycle_end_date);
+          const todayStr = new Date().toISOString().split('T')[0];
+          
+          if (currentCycle) {
+            const periodStart = new Date(currentCycle.period_start_date);
+            periodStart.setHours(0, 0, 0, 0);
+            const cycleStart = new Date(currentCycle.cycle_start_date || currentCycle.period_start_date);
+            cycleStart.setHours(0, 0, 0, 0);
+            const periodLength = currentCycle.period_length || 5;
+            const cycleLength = currentCycle.cycle_length || 28;
+            const ovulationDayNum = cycleLength - 14;
+            
+            // 1) Show full current period: period_start through period_start + (period_length - 1)
+            for (let i = 0; i < periodLength; i++) {
+              const d = new Date(periodStart);
+              d.setDate(d.getDate() + i);
+              const dateStr = d.toISOString().split('T')[0];
+              const diffDays = Math.floor((d - cycleStart) / (1000 * 60 * 60 * 24)) + 1;
+              const cycleDay = diffDays > 0 ? diffDays : i + 1;
+              const existingMarking = dates[dateStr] || {};
+              dates[dateStr] = {
+                ...existingMarking,
+                cycleDay,
+                phase: "menstrual",
+              };
+            }
+            
+            // 2) Annotations from today until day before predicted next period
+            const predNext = currentCycle.predicted_next_period_date
+              ? new Date(currentCycle.predicted_next_period_date)
+              : null;
+            const predOvulationDate = currentCycle.predicted_ovulation_date
+              ? new Date(currentCycle.predicted_ovulation_date)
+              : null;
+            if (predOvulationDate) predOvulationDate.setHours(0, 0, 0, 0);
+            if (predNext) {
+              predNext.setHours(0, 0, 0, 0);
+              const endAnnot = new Date(predNext);
+              endAnnot.setDate(endAnnot.getDate() - 1);
+              const endAnnotStr = endAnnot.toISOString().split('T')[0];
+              
+              let d = new Date(todayStr);
+              d.setHours(0, 0, 0, 0);
+              const endD = new Date(endAnnotStr);
+              endD.setHours(0, 0, 0, 0);
+              
+              while (d <= endD) {
+                const dateStr = d.toISOString().split('T')[0];
+                const diffDays = Math.floor((d - cycleStart) / (1000 * 60 * 60 * 24)) + 1;
+                const cycleDay = diffDays > 0 ? diffDays : null;
+                if (!cycleDay) { d.setDate(d.getDate() + 1); continue; }
+                
+                const periodEnd = new Date(periodStart);
+                periodEnd.setDate(periodEnd.getDate() + periodLength - 1);
+                const inPeriod = d >= periodStart && d <= periodEnd;
+                let phase = "menstrual";
+                let isExactOvulationDay = false;
+                if (!inPeriod) {
+                  // Only the single predicted ovulation date gets ovulation styling (step 3). Here we use follicular/luteal only.
+                  if (predOvulationDate && d.getTime() === predOvulationDate.getTime()) {
+                    phase = "ovulation";
+                    isExactOvulationDay = true;
+                  } else if (cycleDay < ovulationDayNum - 2) {
+                    phase = "follicular";
+                  } else if (cycleDay > ovulationDayNum + 2) {
+                    phase = "luteal";
+                  } else {
+                    phase = cycleDay <= ovulationDayNum ? "follicular" : "luteal";
+                  }
+                }
+                
+                const existingMarking = dates[dateStr] || {};
+                dates[dateStr] = {
+                  ...existingMarking,
+                  cycleDay,
+                  phase,
+                  ...(isExactOvulationDay && { isExactOvulationDay: true }),
+                };
+                d.setDate(d.getDate() + 1);
+              }
+            }
+            
+            // 3) Predicted ovulation (only if not inside current period range)
+            if (currentCycle.predicted_ovulation_date) {
+              const ovulationDate = new Date(currentCycle.predicted_ovulation_date);
+              ovulationDate.setHours(0, 0, 0, 0);
+              const periodEnd = new Date(periodStart);
+              periodEnd.setDate(periodEnd.getDate() + periodLength - 1);
+              const ovulationInPeriod = ovulationDate >= periodStart && ovulationDate <= periodEnd;
+              if (!ovulationInPeriod) {
+                const ovulationDateStr = ovulationDate.toISOString().split('T')[0];
+                const existingMarking = dates[ovulationDateStr] || {};
+                dates[ovulationDateStr] = {
+                  ...existingMarking,
+                  phase: "ovulation",
+                  isExactOvulationDay: true,
+                  isPredictedOvulation: true,
+                };
+              }
+            }
+            
+            // 4) Predicted next period
+            if (currentCycle.predicted_next_period_date) {
+              const predictedStartDate = new Date(currentCycle.predicted_next_period_date);
+              
+              for (let i = 0; i < periodLength; i++) {
+                const predictedDate = new Date(predictedStartDate);
+                predictedDate.setDate(predictedDate.getDate() + i);
+                const dateStr = predictedDate.toISOString().split('T')[0];
+                
+                const existingMarking = dates[dateStr] || {};
+                dates[dateStr] = {
+                  ...existingMarking,
+                  cycleDay: i + 1,
+                  phase: "menstrual",
+                  isPredictedPeriod: true,
+                };
+              }
+            }
           }
         } catch (error) {
           console.error('Error loading cycle history:', error);
@@ -599,11 +720,11 @@ export default function CalendarOverviewScreen() {
           <Text style={styles.refreshingText}>Updating calendar...</Text>
         </View>
       ) : (
-        <CalendarList
-          key={`calendar-${refreshKey}`}
-          current={new Date().toISOString().split('T')[0]}
-          pastScrollRange={11}
-          futureScrollRange={0}
+      <CalendarList
+        key={`calendar-${refreshKey}`}
+        current={new Date().toISOString().split('T')[0]}
+        pastScrollRange={11}
+        futureScrollRange={1}
           markedDates={markedDates}
           hideExtraDays={false}
           scrollEnabled={true}

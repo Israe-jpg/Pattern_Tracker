@@ -11,9 +11,13 @@ export const CustomDay = (props) => {
   const { date, state, marking, onPress, isEditMode, isSelected, isToggledPeriod, onDayPress, onLogPeriod, markedDates } = props;
   const cycleDay = marking?.cycleDay;
   const phase = marking?.phase;
+  const isPredictedPeriod = marking?.isPredictedPeriod === true;
+  const isPredictedOvulation = marking?.isPredictedOvulation === true;
   const today = new Date().toISOString().split("T")[0];
   const isPastOrToday = date.dateString <= today;
-  const showCycleDay = cycleDay !== null && cycleDay !== undefined && isPastOrToday && cycleDay > 0;
+  
+  // Show cycle day whenever we have one (past, today, current period, gap to next period, or predicted period)
+  const showCycleDay = cycleDay !== null && cycleDay !== undefined && cycleDay > 0 && !isEditMode;
   const isToday = date.dateString === today || state === "today";
   
   // Check if this is the exact ovulation day (not just in ovulation phase)
@@ -68,8 +72,10 @@ export const CustomDay = (props) => {
     textColor = colors.textOnPrimary;
   } else if (state === "disabled") {
     textColor = colors.textLight;
-  } else if (isExactOvulationDay || isMenstrual) {
+  } else if ((isExactOvulationDay || isMenstrual) && !isPredictedPeriod && !isPredictedOvulation) {
     textColor = colors.textOnPrimary;
+  } else if (isPredictedPeriod || isPredictedOvulation) {
+    textColor = colors.text; // Regular text for predicted dates (dashed border, no background)
   }
 
   // Check if selected day can show log period button
@@ -119,11 +125,15 @@ export const CustomDay = (props) => {
     <TouchableOpacity
       style={[
         styles.dayContainer,
-        isToday && !isEditMode && [styles.todayContainer, { backgroundColor: todayBackgroundColor }],
-        isExactOvulationDay && !isToday && !isEditMode && [styles.ovulationContainer, { backgroundColor: colors.ovulation }],
-        isMenstrual && !isToday && !isExactOvulationDay && !isEditMode && [styles.menstrualContainer, { backgroundColor: colors.menstrual }],
+        isToday && !isEditMode && !isPredictedPeriod && !isPredictedOvulation && [styles.todayContainer, { backgroundColor: todayBackgroundColor }],
+        isExactOvulationDay && !isToday && !isEditMode && !isPredictedPeriod && !isPredictedOvulation && [styles.ovulationContainer, { backgroundColor: colors.ovulation }],
+        isMenstrual && !isToday && !isExactOvulationDay && !isEditMode && !isPredictedPeriod && !isPredictedOvulation && [styles.menstrualContainer, { backgroundColor: colors.menstrual }],
         state === "selected" && !isToday && !isMenstrual && !isExactOvulationDay && !isEditMode && styles.selectedContainer,
         state === "disabled" && styles.disabledContainer,
+        // Predicted period styling (dashed border)
+        isPredictedPeriod && !isEditMode && [styles.predictedPeriodContainer, { borderColor: colors.menstrual }],
+        // Predicted ovulation styling (dashed border)
+        isPredictedOvulation && !isEditMode && [styles.predictedOvulationContainer, { borderColor: colors.ovulation }],
         // Edit mode styling
         isEditMode && styles.editModeContainer,
         // Show colored circle (period/ovulation) only when NOT selected
@@ -141,7 +151,7 @@ export const CustomDay = (props) => {
             style={[
               styles.cycleDayText,
               { color: cycleDayColor },
-              (state === "selected" || isToday || isExactOvulationDay || isMenstrual) && styles.cycleDayTextSelected,
+              (state === "selected" || isToday || isExactOvulationDay || isMenstrual) && !isPredictedPeriod && !isPredictedOvulation && styles.cycleDayTextSelected,
             ]}
             numberOfLines={1}
           >
@@ -156,7 +166,7 @@ export const CustomDay = (props) => {
                 ? colors.text // Always use regular text color in edit mode (no background)
                 : textColor 
             },
-            (isToday || isExactOvulationDay || isMenstrual) && !isEditMode && styles.todayText,
+            (isToday || isExactOvulationDay || isMenstrual) && !isEditMode && !isPredictedPeriod && !isPredictedOvulation && styles.todayText,
             state === "selected" && !isEditMode && styles.selectedText,
             state === "disabled" && styles.disabledText,
           ]}
@@ -237,6 +247,18 @@ const styles = StyleSheet.create({
   menstrualContainer: {
     borderRadius: 17,
     backgroundColor: colors.menstrual,
+  },
+  predictedPeriodContainer: {
+    borderRadius: 17,
+    borderWidth: 2,
+    borderStyle: "dashed",
+    backgroundColor: "transparent",
+  },
+  predictedOvulationContainer: {
+    borderRadius: 17,
+    borderWidth: 2,
+    borderStyle: "dashed",
+    backgroundColor: "transparent",
   },
   todayText: {
     fontWeight: "600",
