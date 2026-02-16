@@ -460,12 +460,8 @@ export default function CalendarOverviewScreen() {
       // Convert Set to sorted array
       const periodDatesArray = Array.from(selectedPeriodDates).sort();
       
-      console.log('=== SAVE START ===');
-      console.log('Saving period dates:', periodDatesArray);
-      
       // Call the smart bulk update API
-      const result = await trackerService.bulkUpdatePeriods(tracker.id, periodDatesArray);
-      console.log('Save result:', result);
+      await trackerService.bulkUpdatePeriods(tracker.id, periodDatesArray);
       
       // Exit edit mode FIRST to prevent any stale UI
       setIsEditMode(false);
@@ -475,24 +471,18 @@ export default function CalendarOverviewScreen() {
       // Small delay to ensure backend commits
       await new Promise(resolve => setTimeout(resolve, 500));
       
-      // NEW APPROACH: Reload data FIRST, then force refresh
-      console.log('Step 1: Loading fresh calendar data');
-      await loadCalendarData(true); // Show loading
-      console.log('Calendar data loaded');
+      // Reload data first, then force refresh
+      await loadCalendarData(true);
       
       // Wait for state to settle
       await new Promise(resolve => setTimeout(resolve, 300));
       
-      // THEN force remount with new key
-      console.log('Step 2: Forcing calendar remount');
-      const newKey = Date.now(); // Use timestamp for unique key
-      setRefreshKey(newKey);
-      console.log(`RefreshKey set to: ${newKey}`);
+      // Force remount with new key
+      setRefreshKey(Date.now());
       
       // Final delay for render
       await new Promise(resolve => setTimeout(resolve, 200));
       
-      console.log('=== SAVE COMPLETE ===');
       return true;
     } catch (error) {
       console.error('Error saving period changes:', error);
