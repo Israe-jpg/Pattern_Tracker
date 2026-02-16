@@ -1980,3 +1980,59 @@ def delete_cycle(tracker_id: int, cycle_id: int):
     except Exception as e:
         db.session.rollback()
         return error_response(f"Failed to delete cycle: {str(e)}", 500)
+
+
+@trackers_bp.route('/<int:tracker_id>/periods/bulk-update', methods=['PUT'])
+@jwt_required()
+def bulk_update_periods(tracker_id: int):
+    """
+    Smart bulk update for period dates.
+    
+    Send a list of all dates that SHOULD be period dates.
+    Backend automatically figures out what to create/update/delete/split/merge.
+    
+    Request body:
+    {
+        "period_dates": ["2025-01-01", "2025-01-02", "2025-01-10", "2025-01-11"]
+    }
+    
+    Backend handles:
+    - Creating new cycles for non-adjacent dates
+    - Updating existing cycles
+    - Splitting cycles when middle days are removed
+    - Merging cycles when bridging days are added
+    - Deleting cycles when all days are removed
+    """
+    try:
+        _, user_id = get_current_user()
+        tracker = verify_tracker_ownership(tracker_id, user_id)
+    except ValueError as e:
+        return error_response(str(e), 404)
+    
+    try:
+        # Verify this is a Period Tracker
+        category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
+        if not category or category.name != 'Period Tracker':
+            return error_response("This endpoint is only available for Period Tracker", 400)
+        
+        # Get period dates from request
+        data = request.json or {}
+        period_dates = data.get('period_dates', [])
+        
+        if not isinstance(period_dates, list):
+            return error_response("'period_dates' must be an array of date strings", 400)
+        
+        # Call the smart bulk update service
+        result = PeriodCycleService.bulk_update_periods(tracker_id, period_dates)
+        
+        return success_response(
+            "Periods updated successfully",
+            result
+        )
+    
+    except ValueError as e:
+        return error_response(str(e), 400)
+    except Exception as e:
+        db.session.rollback()
+        logging.error(f"Failed to bulk update periods: {str(e)}")
+        return error_response(f"Failed to bulk update periods: {str(e)}", 500)
