@@ -123,7 +123,17 @@ export const calculateCycleDayForDate = (dateString, allCycles) => {
   const cycleLength = foundCycle.cycle_length || 28;
   let phase = null;
   
-  if (cycleDay <= periodLength) {
+  // CRITICAL FIX: Check if date is in ACTUAL period range (not predicted)
+  // Use period_start_date and period_end_date from DB, not cycleDay calculation
+  const periodStart = new Date(foundCycle.period_start_date);
+  periodStart.setHours(0, 0, 0, 0);
+  const periodEnd = foundCycle.period_end_date 
+    ? new Date(foundCycle.period_end_date) 
+    : new Date(periodStart);
+  periodEnd.setHours(0, 0, 0, 0);
+  
+  // Compare actual dates (FIXES DISPLAY MISMATCH)
+  if (currentDate >= periodStart && currentDate <= periodEnd) {
     phase = "menstrual";
   } else if (ovulationDate) {
     const cycleStart = new Date(foundCycle.cycle_start_date || foundCycle.period_start_date);

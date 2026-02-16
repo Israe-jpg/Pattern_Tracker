@@ -82,6 +82,7 @@ export const API_ENDPOINTS = {
   UPDATE_CYCLE: (id) => `/trackers/${id}/update-cycle`,
   DELETE_CYCLE: (id, cycleId) => `/trackers/${id}/cycles/${cycleId}`,
   LOG_PERIOD: (id) => `/trackers/${id}/log-period`,
+  BULK_UPDATE_PERIODS: (id) => `/trackers/${id}/periods/bulk-update`,
 
   // Data Tracking
   SAVE_DATA: (id) => `/data-tracking/${id}/save-tracking-data`,

@@ -173,4 +173,12 @@ export const trackerService = {
     });
     return response.data;
   },
+
+  // Bulk update periods - smart backend handles all logic
+  bulkUpdatePeriods: async (trackerId, periodDates) => {
+    const response = await api.put(API_ENDPOINTS.BULK_UPDATE_PERIODS(trackerId), {
+      period_dates: periodDates,
+    });
+    return response.data;
+  },
 };

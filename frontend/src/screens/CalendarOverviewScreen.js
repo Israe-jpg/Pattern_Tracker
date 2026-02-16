@@ -29,9 +29,10 @@ export default function CalendarOverviewScreen() {
   const [loading, setLoading] = useState(true);
   const [markedDates, setMarkedDates] = useState({});
   const [isEditMode, setIsEditMode] = useState(false);
-  const [hasEditModeChanges, setHasEditModeChanges] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [pendingChanges, setPendingChanges] = useState(new Map()); // Track changes: dateString -> changes object
+  const [refreshing, setRefreshing] = useState(false); // Track calendar refresh
+  const [selectedPeriodDates, setSelectedPeriodDates] = useState(new Set()); // Simple set of date strings
+  const [initialPeriodDates, setInitialPeriodDates] = useState(new Set()); // For detecting changes
   const [trackerSettings, setTrackerSettings] = useState(null);
   const [refreshKey, setRefreshKey] = useState(0); // Force refresh trigger
   const isHandlingNavigation = useRef(false);
@@ -57,22 +58,35 @@ export default function CalendarOverviewScreen() {
         ...dateMarking,
       };
       
-      // Get pending changes for this date
-      const dateChanges = pendingChanges.get(dateString);
+      // In edit mode, determine if this date is selected as a period date
+      const isSelectedPeriodDate = selectedPeriodDates.has(dateString);
+      const originalIsMenstrual = dateMarking.phase === "menstrual" || dateMarking.phase === "period";
+      
+      // isToggledPeriod logic:
+      // - If selected and not originally menstrual: true (adding new period)
+      // - If not selected and originally menstrual: false (removing period)
+      // - Otherwise: undefined (no change)
+      let isToggledPeriod = undefined;
+      if (isEditMode) {
+        if (isSelectedPeriodDate && !originalIsMenstrual) {
+          isToggledPeriod = true; // New period date
+        } else if (!isSelectedPeriodDate && originalIsMenstrual) {
+          isToggledPeriod = false; // Removing period date
+        }
+      }
       
       return (
         <CustomDay 
           {...props} 
           marking={fullMarking} 
           isEditMode={isEditMode}
-          isSelected={dateChanges?.isSelected || false}
-          // IMPORTANT: pass through undefined so original menstrual styling still shows
-          isToggledPeriod={dateChanges?.isToggledPeriod}
+          isSelected={isEditMode && isSelectedPeriodDate}
+          isToggledPeriod={isToggledPeriod}
           onDayPress={isEditMode ? handleDayPress : undefined}
         />
       );
     };
-  }, [isPeriodTracker, markedDates, isEditMode, pendingChanges, handleDayPress, refreshKey]);
+  }, [isPeriodTracker, markedDates, isEditMode, selectedPeriodDates, handleDayPress, refreshKey]);
 
   useEffect(() => {
     if (tracker) {
@@ -96,10 +110,18 @@ export default function CalendarOverviewScreen() {
   };
 
   // Automatically detect if there are pending changes
-  useEffect(() => {
-    const hasChanges = pendingChanges.size > 0;
-    setHasEditModeChanges(hasChanges);
-  }, [pendingChanges]);
+  const hasEditModeChanges = useMemo(() => {
+    if (!isEditMode) return false;
+    
+    // Compare current selection with initial state
+    if (selectedPeriodDates.size !== initialPeriodDates.size) return true;
+    
+    for (const date of selectedPeriodDates) {
+      if (!initialPeriodDates.has(date)) return true;
+    }
+    
+    return false;
+  }, [isEditMode, selectedPeriodDates, initialPeriodDates]);
 
   // Handle navigation with unsaved changes
   useEffect(() => {
@@ -135,8 +157,8 @@ export default function CalendarOverviewScreen() {
             style: "destructive",
             onPress: () => {
               // Clear changes and navigate back
-              setHasEditModeChanges(false);
-              setPendingChanges(new Map());
+              setSelectedPeriodDates(new Set());
+              setInitialPeriodDates(new Set());
               setIsEditMode(false);
               // Use navigation.goBack() instead of dispatch to avoid state issues
               navigation.goBack();
@@ -298,342 +320,61 @@ export default function CalendarOverviewScreen() {
   /**
    * Save pending changes
    */
+  /**
+   * Save pending changes using the new smart bulk update API
+   * Simply send all selected period dates; backend handles all logic
+   */
   const savePendingChanges = async () => {
     if (!tracker || !isPeriodTracker) {
       // Not a period tracker, nothing to save
-      setPendingChanges(new Map());
-      setHasEditModeChanges(false);
+      setSelectedPeriodDates(new Set());
+      setInitialPeriodDates(new Set());
       return true;
     }
 
     try {
       setSubmitting(true);
+      setRefreshing(true);
       
-      // Get all cycles for this tracker
-      const cyclesResponse = await trackerService.getCyclesHistory(tracker.id, {
-        params: { months: 12, include_current: true },
-      });
+      // Convert Set to sorted array
+      const periodDatesArray = Array.from(selectedPeriodDates).sort();
       
-      const allCycles = cyclesResponse.data?.cycles || cyclesResponse.cycles || [];
+      console.log('=== SAVE START ===');
+      console.log('Saving period dates:', periodDatesArray);
       
-      // Separate new period dates and deselected period dates
-      const newPeriodDates = []; // Dates that are new period days (isToggledPeriod === true)
-      const deselectedPeriodDates = []; // Dates that were originally period but are now toggled off
+      // Call the smart bulk update API
+      const result = await trackerService.bulkUpdatePeriods(tracker.id, periodDatesArray);
+      console.log('Save result:', result);
       
-      for (const [dateString, changes] of pendingChanges.entries()) {
-        const dateMarking = markedDates[dateString] || {};
-        const originalIsMenstrual = dateMarking.phase === "menstrual" || dateMarking.phase === "period";
-        
-        // Check for new period dates (toggled on)
-        if (!originalIsMenstrual && changes.isToggledPeriod === true) {
-          newPeriodDates.push(dateString);
-        }
-        
-        // Check for deselected period dates (toggled off)
-        // Only process dates that are in an ACTUAL logged period range, not predicted dates
-        if (originalIsMenstrual && changes.isToggledPeriod === false) {
-          // Check if this date is in any cycle's actual period range (logged dates)
-          let isActualPeriodDate = false;
-          for (const cycle of allCycles) {
-            if (!cycle.period_start_date) continue;
-            
-            const periodStartStr = typeof cycle.period_start_date === 'string' 
-              ? cycle.period_start_date.split('T')[0] 
-              : cycle.period_start_date;
-            const periodEndStr = cycle.period_end_date 
-              ? (typeof cycle.period_end_date === 'string' ? cycle.period_end_date.split('T')[0] : cycle.period_end_date)
-              : null;
-            
-            // Check if date is within this cycle's actual period range
-            const inPeriodRange = dateString >= periodStartStr && (!periodEndStr || dateString <= periodEndStr);
-            if (inPeriodRange) {
-              isActualPeriodDate = true;
-              break;
-            }
-          }
-          
-          // Only add to deselectedPeriodDates if it's an actual logged period date
-          if (isActualPeriodDate) {
-            deselectedPeriodDates.push(dateString);
-          }
-          // If it's a predicted date, just ignore the toggle (will be cleared when pending changes reset)
-        }
-      }
+      // Exit edit mode FIRST to prevent any stale UI
+      setIsEditMode(false);
+      setSelectedPeriodDates(new Set());
+      setInitialPeriodDates(new Set());
       
-      // Check if there's anything to process
-      if (newPeriodDates.length === 0 && deselectedPeriodDates.length === 0) {
-        // No period dates to process, just clear changes
-        setPendingChanges(new Map());
-        setHasEditModeChanges(false);
-        // Still reload to ensure calendar is up to date
-        try {
-          await loadCalendarData(false);
-        } catch (reloadError) {
-          console.error('Error reloading calendar data:', reloadError);
-        }
-        return true;
-      }
+      // Small delay to ensure backend commits
+      await new Promise(resolve => setTimeout(resolve, 500));
       
-      // Process new period dates - check if they're adjacent to existing cycles
-      if (newPeriodDates.length > 0) {
-        // First, check which new dates are adjacent to existing period dates
-        const datesToAddToExistingCycles = new Map(); // cycle_id -> [dates to add]
-        const standaloneNewDates = [];
-        
-        for (const newDateStr of newPeriodDates) {
-          let foundAdjacentCycle = false;
-          
-          // Check if this date is adjacent (day before or after) to any existing period date
-          const newDate = new Date(newDateStr);
-          const dayBefore = new Date(newDate);
-          dayBefore.setDate(dayBefore.getDate() - 1);
-          const dayBeforeStr = dayBefore.toISOString().split('T')[0];
-          
-          const dayAfter = new Date(newDate);
-          dayAfter.setDate(dayAfter.getDate() + 1);
-          const dayAfterStr = dayAfter.toISOString().split('T')[0];
-          
-          // Check all cycles to see if day before or after is a period date
-          for (const cycle of allCycles) {
-            if (!cycle.period_start_date) continue;
-            
-            const periodStartStr = typeof cycle.period_start_date === 'string' 
-              ? cycle.period_start_date.split('T')[0] 
-              : cycle.period_start_date;
-            const periodEndStr = cycle.period_end_date 
-              ? (typeof cycle.period_end_date === 'string' ? cycle.period_end_date.split('T')[0] : cycle.period_end_date)
-              : null;
-            
-            // Check if day before or after is in this cycle's period range
-            const dayBeforeIsPeriod = dayBeforeStr >= periodStartStr && (!periodEndStr || dayBeforeStr <= periodEndStr);
-            const dayAfterIsPeriod = dayAfterStr >= periodStartStr && (!periodEndStr || dayAfterStr <= periodEndStr);
-            
-            if (dayBeforeIsPeriod || dayAfterIsPeriod) {
-              // This date is adjacent to this cycle, add it to the cycle
-              if (!datesToAddToExistingCycles.has(cycle.id)) {
-                datesToAddToExistingCycles.set(cycle.id, []);
-              }
-              datesToAddToExistingCycles.get(cycle.id).push(newDateStr);
-              foundAdjacentCycle = true;
-              break;
-            }
-          }
-          
-          if (!foundAdjacentCycle) {
-            standaloneNewDates.push(newDateStr);
-          }
-        }
-        
-        // Add adjacent dates to existing cycles
-        for (const [cycleId, datesToAdd] of datesToAddToExistingCycles.entries()) {
-          const cycle = allCycles.find(c => c.id === cycleId);
-          if (!cycle) continue;
-          
-          const periodStartStr = typeof cycle.period_start_date === 'string' 
-            ? cycle.period_start_date.split('T')[0] 
-            : cycle.period_start_date;
-          const periodEndStr = cycle.period_end_date 
-            ? (typeof cycle.period_end_date === 'string' ? cycle.period_end_date.split('T')[0] : cycle.period_end_date)
-            : null;
-          
-          // Generate all current period dates
-          const allCurrentPeriodDates = [];
-          const periodStart = new Date(periodStartStr);
-          const periodEnd = periodEndStr ? new Date(periodEndStr) : new Date();
-          const currentDate = new Date(periodStart);
-          while (currentDate <= periodEnd) {
-            allCurrentPeriodDates.push(currentDate.toISOString().split('T')[0]);
-            currentDate.setDate(currentDate.getDate() + 1);
-          }
-          
-          // Combine existing period dates with new dates, sort, and update
-          const updatedPeriodDates = [...allCurrentPeriodDates, ...datesToAdd].sort();
-          
-          await trackerService.updateCycle(tracker.id, {
-            cycle_id: cycleId,
-            period_dates: updatedPeriodDates,
-          });
-        }
-        
-        // Process standalone new dates (not adjacent to existing cycles) - create new cycles
-        if (standaloneNewDates.length > 0) {
-          // Group standalone dates by consecutive days
-          const newPeriodGroups = [];
-          const sortedStandalone = [...standaloneNewDates].sort();
-          
-          let currentGroup = [sortedStandalone[0]];
-          for (let i = 1; i < sortedStandalone.length; i++) {
-            const prevDate = new Date(sortedStandalone[i - 1]);
-            const currentDate = new Date(sortedStandalone[i]);
-            const daysDiff = (currentDate - prevDate) / (1000 * 60 * 60 * 24);
-            
-            if (daysDiff === 1) {
-              currentGroup.push(sortedStandalone[i]);
-            } else {
-              newPeriodGroups.push(currentGroup);
-              currentGroup = [sortedStandalone[i]];
-            }
-          }
-          if (currentGroup.length > 0) {
-            newPeriodGroups.push(currentGroup);
-          }
-          
-          // Log each new period group
-          for (const periodGroup of newPeriodGroups) {
-            const periodStartDate = periodGroup[0];
-            
-            try {
-              await trackerService.logPeriod(tracker.id, periodStartDate);
-              
-              if (periodGroup.length > 1) {
-                await trackerService.updateCycle(tracker.id, {
-                  period_dates: periodGroup,
-                });
-              }
-            } catch (error) {
-              console.error(`Error logging period at ${periodStartDate}:`, error);
-              if (error.response?.status === 409) {
-                await trackerService.updateCycle(tracker.id, {
-                  period_dates: periodGroup,
-                });
-              } else {
-                throw error;
-              }
-            }
-          }
-        }
-      }
+      // NEW APPROACH: Reload data FIRST, then force refresh
+      console.log('Step 1: Loading fresh calendar data');
+      await loadCalendarData(true); // Show loading
+      console.log('Calendar data loaded');
       
-      // Group deselected dates by cycle (only if there are deselected dates)
-      const cycleChanges = new Map(); // cycle_id -> { cycle, deselectedDates: [] }
+      // Wait for state to settle
+      await new Promise(resolve => setTimeout(resolve, 300));
       
-      for (const dateStr of deselectedPeriodDates) {
-        // Find which cycle this date belongs to
-        // First check if it's in a cycle's actual period range (logged period dates)
-        // If not, check if it's in a cycle's full cycle range (predicted period dates)
-        let foundCycle = false;
-        
-        for (const cycle of allCycles) {
-          if (!cycle.period_start_date) {
-            console.warn(`Cycle ${cycle.id} has no period_start_date`);
-            continue;
-          }
-          
-          // Extract date strings (handle both date and datetime formats)
-          const periodStartStr = typeof cycle.period_start_date === 'string' 
-            ? cycle.period_start_date.split('T')[0] 
-            : cycle.period_start_date;
-          const periodEndStr = cycle.period_end_date 
-            ? (typeof cycle.period_end_date === 'string' ? cycle.period_end_date.split('T')[0] : cycle.period_end_date)
-            : null;
-          
-          // Also get cycle start/end for checking predicted dates
-          const cycleStartStr = cycle.cycle_start_date 
-            ? (typeof cycle.cycle_start_date === 'string' ? cycle.cycle_start_date.split('T')[0] : cycle.cycle_start_date)
-            : periodStartStr;
-          const cycleEndStr = cycle.cycle_end_date 
-            ? (typeof cycle.cycle_end_date === 'string' ? cycle.cycle_end_date.split('T')[0] : cycle.cycle_end_date)
-            : null;
-          
-          // Check if date is within this cycle's ACTUAL period range (logged period dates)
-          const inPeriodRange = dateStr >= periodStartStr && (!periodEndStr || dateStr <= periodEndStr);
-          
-          // Check if date is within this cycle's full cycle range (for predicted dates)
-          const inCycleRange = dateStr >= cycleStartStr && (!cycleEndStr || dateStr <= cycleEndStr);
-          
-          // Only process dates that are in the actual period range (logged period dates)
-          // Predicted period dates are calculated and not stored, so we can't update/delete them
-          if (inPeriodRange) {
-            if (!cycleChanges.has(cycle.id)) {
-              cycleChanges.set(cycle.id, {
-                cycle,
-                deselectedDates: [],
-              });
-            }
-            cycleChanges.get(cycle.id).deselectedDates.push(dateStr);
-            foundCycle = true;
-            break;
-          }
-        }
-        
-        // Note: foundCycle should always be true now since we pre-filter for actual period dates
-        // If not found, it's a data inconsistency issue, but we'll handle it gracefully
-      }
+      // THEN force remount with new key
+      console.log('Step 2: Forcing calendar remount');
+      const newKey = Date.now(); // Use timestamp for unique key
+      setRefreshKey(newKey);
+      console.log(`RefreshKey set to: ${newKey}`);
       
-      // Process each cycle (only if there are deselected dates)
-      if (deselectedPeriodDates.length > 0) {
-        for (const [cycleId, { cycle, deselectedDates }] of cycleChanges.entries()) {
-          try {
-            // Extract date strings (handle both date and datetime formats)
-            const periodStartStr = typeof cycle.period_start_date === 'string' 
-              ? cycle.period_start_date.split('T')[0] 
-              : cycle.period_start_date;
-            const periodEndStr = cycle.period_end_date 
-              ? (typeof cycle.period_end_date === 'string' ? cycle.period_end_date.split('T')[0] : cycle.period_end_date)
-              : null;
-            
-            // Generate all period dates in this cycle
-            const allPeriodDates = [];
-            const periodStart = new Date(periodStartStr);
-            const periodEnd = periodEndStr ? new Date(periodEndStr) : new Date(); // If no end date, use today as max
-            
-            const currentDate = new Date(periodStart);
-            while (currentDate <= periodEnd) {
-              const dateStr = currentDate.toISOString().split('T')[0];
-              allPeriodDates.push(dateStr);
-              currentDate.setDate(currentDate.getDate() + 1);
-            }
-            
-            // Check if all period dates are deselected
-            const allDeselected = deselectedDates.length === allPeriodDates.length &&
-              deselectedDates.every(d => allPeriodDates.includes(d));
-            
-            if (allDeselected) {
-              // Delete the entire cycle
-              await trackerService.deleteCycle(tracker.id, cycleId);
-            } else {
-              // Partial deselection - update cycle with remaining period dates
-              const remainingPeriodDates = allPeriodDates.filter(
-                dateStr => !deselectedDates.includes(dateStr)
-              ).sort(); // Ensure dates are sorted (earliest first)
-              
-              if (remainingPeriodDates.length > 0) {
-                // Send both cycle_id and period_dates to ensure we update the correct cycle
-                await trackerService.updateCycle(tracker.id, {
-                  cycle_id: cycleId,
-                  period_dates: remainingPeriodDates,
-                });
-              } else {
-                // All dates deselected but check failed - delete cycle as fallback
-                await trackerService.deleteCycle(tracker.id, cycleId);
-              }
-            }
-          } catch (cycleError) {
-            console.error(`Error processing cycle ${cycleId}:`, cycleError);
-            // Continue with other cycles
-          }
-        }
-      }
+      // Final delay for render
+      await new Promise(resolve => setTimeout(resolve, 200));
       
-      // Reload calendar data BEFORE clearing pending changes
-      // This ensures the UI updates with fresh data before we reset state
-      try {
-        await loadCalendarData(false);
-      } catch (reloadError) {
-        console.error('Error reloading calendar data after save:', reloadError);
-        // Still continue to clear changes since save was successful
-      }
-      
-      // Clear pending changes AFTER reload completes
-      setPendingChanges(new Map());
-      setHasEditModeChanges(false);
-      
-      // Force component refresh to ensure UI updates with new data
-      setRefreshKey(prev => prev + 1);
-      
+      console.log('=== SAVE COMPLETE ===');
       return true;
     } catch (error) {
-      console.error('Error saving pending changes:', error);
+      console.error('Error saving period changes:', error);
       Alert.alert(
         "Error",
         error.response?.data?.error || error.message || "Failed to save changes. Please try again."
@@ -641,120 +382,33 @@ export default function CalendarOverviewScreen() {
       return false;
     } finally {
       setSubmitting(false);
+      setRefreshing(false);
     }
   };
 
   /**
-   * Handle day press in edit mode - toggle selection or log new period
+   * Handle day press in edit mode - simply toggle date in/out of period set
+   * Backend handles all complex logic (create/update/delete/split/merge cycles)
    */
   const handleDayPress = useCallback((day) => {
     if (!isEditMode) return;
     
     const dateString = day.dateString;
-    setPendingChanges(prev => {
-      const currentChanges = prev.get(dateString);
-      const dateMarking = markedDates[dateString] || {};
-      const originalIsMenstrual = dateMarking.phase === "menstrual" || dateMarking.phase === "period";
+    
+    setSelectedPeriodDates(prev => {
+      const next = new Set(prev);
       
-      const wasSelected = currentChanges?.isSelected || false;
-      
-      // If clicking a non-period day that's not selected, check if it's adjacent to existing period days
-      if (!originalIsMenstrual && !wasSelected) {
-        // Check if day before and after are period dates
-        const date = new Date(dateString);
-        const dayBefore = new Date(date);
-        dayBefore.setDate(dayBefore.getDate() - 1);
-        const dayBeforeStr = dayBefore.toISOString().split('T')[0];
-        
-        const dayAfter = new Date(date);
-        dayAfter.setDate(dayAfter.getDate() + 1);
-        const dayAfterStr = dayAfter.toISOString().split('T')[0];
-        
-        const dayBeforeMarking = markedDates[dayBeforeStr] || {};
-        const dayAfterMarking = markedDates[dayAfterStr] || {};
-        const dayBeforeIsPeriod = dayBeforeMarking.phase === "menstrual" || dayBeforeMarking.phase === "period";
-        const dayAfterIsPeriod = dayAfterMarking.phase === "menstrual" || dayAfterMarking.phase === "period";
-        
-        // Check pending changes for day before/after
-        const dayBeforeChanges = prev.get(dayBeforeStr);
-        const dayAfterChanges = prev.get(dayAfterStr);
-        const dayBeforeToggledPeriod = dayBeforeChanges?.isToggledPeriod;
-        const dayAfterToggledPeriod = dayAfterChanges?.isToggledPeriod;
-        
-        // Day before is period if originally period OR toggled on (true), but not if toggled off (false)
-        const dayBeforeIsActuallyPeriod = (dayBeforeIsPeriod && dayBeforeToggledPeriod !== false) || dayBeforeToggledPeriod === true;
-        const dayAfterIsActuallyPeriod = (dayAfterIsPeriod && dayAfterToggledPeriod !== false) || dayAfterToggledPeriod === true;
-        
-        const newPendingChanges = new Map(prev);
-        
-        // If adjacent to existing period days, add this day to the period
-        if (dayBeforeIsActuallyPeriod || dayAfterIsActuallyPeriod) {
-          // Mark as a period day to be added to the adjacent cycle
-          newPendingChanges.set(dateString, {
-            isSelected: true,
-            isToggledPeriod: true, // Add to adjacent period
-          });
-          return newPendingChanges;
-        }
-        
-        // If NOT adjacent to any period days, this is a new period start
-        // Get period length from settings (default to 5 days)
-        const periodLength = trackerSettings?.average_period_length || 5;
-        
-        // Generate period dates starting from clicked day
-        const periodDates = [];
-        const currentDate = new Date(date);
-        for (let i = 0; i < periodLength; i++) {
-          const periodDateStr = currentDate.toISOString().split('T')[0];
-          periodDates.push(periodDateStr);
-          currentDate.setDate(currentDate.getDate() + 1);
-        }
-        
-        // Add all period dates to pending changes as new period days
-        periodDates.forEach(periodDateStr => {
-          newPendingChanges.set(periodDateStr, {
-            isSelected: true,
-            isToggledPeriod: true, // Mark as new period day
-          });
-        });
-        
-        return newPendingChanges;
-      }
-      
-      // Default behavior: toggle selection
-      const newPendingChanges = new Map(prev);
-      
-      // For existing period days, toggle period state directly (not selection state)
-      if (originalIsMenstrual) {
-        const currentToggledPeriod = currentChanges?.isToggledPeriod;
-        if (currentToggledPeriod === false) {
-          // Period was toggled off, now toggle it back on (remove the change to restore original)
-          newPendingChanges.delete(dateString);
-        } else {
-          // Period is currently on (original or toggled on), toggle it off
-          newPendingChanges.set(dateString, {
-            isSelected: false,
-            isToggledPeriod: false, // Hide period styling, show as normal day
-          });
-        }
+      if (next.has(dateString)) {
+        // Already selected as period date - deselect it
+        next.delete(dateString);
       } else {
-        // For non-period days, toggle selection state
-        const newIsSelected = !wasSelected;
-        if (newIsSelected) {
-          // Selected: show red border
-          newPendingChanges.set(dateString, {
-            isSelected: true,
-            isToggledPeriod: undefined,
-          });
-        } else {
-          // Unselected: remove the change
-          newPendingChanges.delete(dateString);
-        }
+        // Not selected - add it as period date
+        next.add(dateString);
       }
       
-      return newPendingChanges;
+      return next;
     });
-  }, [isEditMode, markedDates, trackerSettings]);
+  }, [isEditMode]);
 
   /**
    * Toggle edit mode
@@ -772,8 +426,8 @@ export default function CalendarOverviewScreen() {
               style: "destructive",
               onPress: () => {
                 // Discard changes
-                setPendingChanges(new Map());
-                setHasEditModeChanges(false);
+                setSelectedPeriodDates(new Set());
+                setInitialPeriodDates(new Set());
                 setIsEditMode(false);
               },
             },
@@ -796,14 +450,52 @@ export default function CalendarOverviewScreen() {
       } else {
         // No changes, just exit
         setIsEditMode(false);
+        setSelectedPeriodDates(new Set());
+        setInitialPeriodDates(new Set());
       }
       return;
     }
 
-    // Entering edit mode
-    setIsEditMode(true);
-    setHasEditModeChanges(false);
-    setPendingChanges(new Map());
+    // Entering edit mode - initialize with ACTUAL logged period dates from cycles
+    const currentPeriodDates = new Set();
+    
+    // Fetch actual period dates from cycles (not predicted)
+    try {
+      const cyclesResponse = await trackerService.getCyclesHistory(tracker.id, {
+        params: { months: 12, include_current: true },
+      });
+      
+      const allCycles = cyclesResponse.data?.cycles || cyclesResponse.cycles || [];
+      
+      // Extract all ACTUAL period dates from cycles
+      for (const cycle of allCycles) {
+        if (!cycle.period_start_date) continue;
+        
+        const periodStartStr = typeof cycle.period_start_date === 'string' 
+          ? cycle.period_start_date.split('T')[0] 
+          : cycle.period_start_date;
+        const periodEndStr = cycle.period_end_date 
+          ? (typeof cycle.period_end_date === 'string' ? cycle.period_end_date.split('T')[0] : cycle.period_end_date)
+          : periodStartStr;
+        
+        // Add all dates from period_start to period_end
+        const periodStart = new Date(periodStartStr);
+        const periodEnd = new Date(periodEndStr);
+        const currentDate = new Date(periodStart);
+        
+        while (currentDate <= periodEnd) {
+          currentPeriodDates.add(currentDate.toISOString().split('T')[0]);
+          currentDate.setDate(currentDate.getDate() + 1);
+        }
+      }
+      
+      setSelectedPeriodDates(new Set(currentPeriodDates));
+      setInitialPeriodDates(new Set(currentPeriodDates));
+      setIsEditMode(true);
+    } catch (error) {
+      console.error('Error loading cycles for edit mode:', error);
+      Alert.alert('Error', 'Failed to load period data for editing.');
+    }
   };
 
   if (loading) {
@@ -847,8 +539,8 @@ export default function CalendarOverviewScreen() {
                     style: "destructive",
                     onPress: () => {
                       isHandlingNavigation.current = true;
-                      setHasEditModeChanges(false);
-                      setPendingChanges(new Map());
+                      setSelectedPeriodDates(new Set());
+                      setInitialPeriodDates(new Set());
                       setIsEditMode(false);
                       navigation.goBack();
                     },
@@ -901,32 +593,39 @@ export default function CalendarOverviewScreen() {
         </TouchableOpacity>
       </View>
 
-      <CalendarList
-        current={new Date().toISOString().split('T')[0]}
-        pastScrollRange={11}
-        futureScrollRange={0}
-        markedDates={markedDates}
-        hideExtraDays={false}
-        scrollEnabled={true}
-        showScrollIndicator={true}
-        pagingEnabled={false}
-        horizontal={false}
-        calendarWidth={SCREEN_WIDTH - 40}
-        calendarHeight={350}
-        dayComponent={dayComponent}
-        onDayPress={(day) => {
-          if (isEditMode) {
-            handleDayPress(day);
-          } else {
-          }
-        }}
-        contentContainerStyle={{
-          paddingBottom: 100,
-        }}
-        removeClippedSubviews={false}
-        scrollEventThrottle={16}
-        nestedScrollEnabled={true}
-        theme={{
+      {refreshing ? (
+        <View style={styles.refreshingContainer}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={styles.refreshingText}>Updating calendar...</Text>
+        </View>
+      ) : (
+        <CalendarList
+          key={`calendar-${refreshKey}`}
+          current={new Date().toISOString().split('T')[0]}
+          pastScrollRange={11}
+          futureScrollRange={0}
+          markedDates={markedDates}
+          hideExtraDays={false}
+          scrollEnabled={true}
+          showScrollIndicator={true}
+          pagingEnabled={false}
+          horizontal={false}
+          calendarWidth={SCREEN_WIDTH - 40}
+          calendarHeight={350}
+          dayComponent={dayComponent}
+          onDayPress={(day) => {
+            if (isEditMode) {
+              handleDayPress(day);
+            } else {
+            }
+          }}
+          contentContainerStyle={{
+            paddingBottom: 100,
+          }}
+          removeClippedSubviews={false}
+          scrollEventThrottle={16}
+          nestedScrollEnabled={true}
+          theme={{
           backgroundColor: colors.calendar,
           calendarBackground: colors.calendar,
           dayBackgroundColor: colors.calendar,
@@ -951,6 +650,7 @@ export default function CalendarOverviewScreen() {
         style={styles.calendarList}
         calendarStyle={styles.calendarCard}
       />
+      )}
     </View>
   );
 }
@@ -993,6 +693,17 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  refreshingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 100,
+  },
+  refreshingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: colors.textLight,
   },
   calendarList: {
     paddingHorizontal: 20,

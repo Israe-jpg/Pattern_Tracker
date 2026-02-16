@@ -414,7 +414,23 @@ export const useTrackerData = () => {
                 periodLength = settings.average_period_length || currentCycleInfo.average_period_length || 5;
               }
               
-              if (cycleDay <= periodLength) {
+              // CRITICAL FIX: Use ACTUAL period dates from DB, not cycleDay calculation
+              const currentDate = new Date(date);
+              currentDate.setHours(0, 0, 0, 0);
+              
+              let isInActualPeriod = false;
+              if (foundCycle && foundCycle.period_start_date) {
+                const periodStart = new Date(foundCycle.period_start_date);
+                periodStart.setHours(0, 0, 0, 0);
+                const periodEnd = foundCycle.period_end_date 
+                  ? new Date(foundCycle.period_end_date) 
+                  : new Date(periodStart);
+                periodEnd.setHours(0, 0, 0, 0);
+                
+                isInActualPeriod = currentDate >= periodStart && currentDate <= periodEnd;
+              }
+              
+              if (isInActualPeriod) {
                 marking.phase = "menstrual";
               } else {
                 // Calculate ovulation day (fallback if ovulation date not available)
@@ -642,7 +658,16 @@ export const useTrackerData = () => {
       }
       
       let phase = null;
-      if (cycleDay <= periodLength) {
+      
+      // CRITICAL FIX: Use ACTUAL period dates from DB, not cycleDay calculation
+      const periodStart = new Date(foundCycle.period_start_date);
+      periodStart.setHours(0, 0, 0, 0);
+      const periodEnd = foundCycle.period_end_date 
+        ? new Date(foundCycle.period_end_date) 
+        : new Date(periodStart);
+      periodEnd.setHours(0, 0, 0, 0);
+      
+      if (currentDate >= periodStart && currentDate <= periodEnd) {
         phase = "menstrual";
       } else {
         // Calculate ovulation day (fallback if predicted_ovulation_date not available)
