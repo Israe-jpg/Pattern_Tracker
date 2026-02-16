@@ -404,22 +404,28 @@ export default function CalendarOverviewScreen() {
               }
             }
             
-            // 4) Predicted next period
+            // 4) Predicted next period (only show if in the future)
             if (currentCycle.predicted_next_period_date) {
               const predictedStartDate = new Date(currentCycle.predicted_next_period_date);
+              const today = new Date(todayStr);
+              today.setHours(0, 0, 0, 0);
               
               for (let i = 0; i < periodLength; i++) {
                 const predictedDate = new Date(predictedStartDate);
                 predictedDate.setDate(predictedDate.getDate() + i);
-                const dateStr = predictedDate.toISOString().split('T')[0];
                 
-                const existingMarking = dates[dateStr] || {};
-                dates[dateStr] = {
-                  ...existingMarking,
-                  cycleDay: i + 1,
-                  phase: "menstrual",
-                  isPredictedPeriod: true,
-                };
+                // Only add predicted period dates that are in the future
+                if (predictedDate > today) {
+                  const dateStr = predictedDate.toISOString().split('T')[0];
+                  
+                  const existingMarking = dates[dateStr] || {};
+                  dates[dateStr] = {
+                    ...existingMarking,
+                    cycleDay: i + 1,
+                    phase: "menstrual",
+                    isPredictedPeriod: true,
+                  };
+                }
               }
             }
           }
@@ -486,9 +492,10 @@ export default function CalendarOverviewScreen() {
       return true;
     } catch (error) {
       console.error('Error saving period changes:', error);
+      console.error('Error details:', error.response?.data);
       Alert.alert(
         "Error",
-        error.response?.data?.error || error.message || "Failed to save changes. Please try again."
+        error.response?.data?.error || error.response?.data?.message || error.message || "Failed to save changes. Please try again."
       );
       return false;
     } finally {
@@ -498,28 +505,46 @@ export default function CalendarOverviewScreen() {
   };
 
   /**
-   * Handle day press in edit mode - simply toggle date in/out of period set
-   * Backend handles all complex logic (create/update/delete/split/merge cycles)
+   * Handle day press in edit mode - toggle period selection
+   * Auto-selects period_length days when adding new period (or predicted period)
    */
   const handleDayPress = useCallback((day) => {
     if (!isEditMode) return;
     
     const dateString = day.dateString;
+    const isCurrentlySelected = selectedPeriodDates.has(dateString);
+    const marking = markedDates[dateString];
+    const isPredicted = marking?.isPredictedPeriod === true;
+    const isActualPeriod = (marking?.phase === "menstrual" || marking?.phase === "period") && !isPredicted;
     
     setSelectedPeriodDates(prev => {
       const next = new Set(prev);
       
-      if (next.has(dateString)) {
-        // Already selected as period date - deselect it
+      if (isCurrentlySelected) {
+        // Already selected - deselect just this day
         next.delete(dateString);
       } else {
-        // Not selected - add it as period date
-        next.add(dateString);
+        // Not selected - add it
+        // Auto-select period_length days for: empty days OR predicted period days
+        // Only single-toggle for actual logged period days
+        if (!isActualPeriod) {
+          const periodLength = trackerSettings?.average_period_length || 5;
+          const startDate = new Date(dateString);
+          for (let i = 0; i < periodLength; i++) {
+            const d = new Date(startDate);
+            d.setDate(d.getDate() + i);
+            const dStr = d.toISOString().split('T')[0];
+            next.add(dStr);
+          }
+        } else {
+          // Just add the single day (actual period day)
+          next.add(dateString);
+        }
       }
       
       return next;
     });
-  }, [isEditMode]);
+  }, [isEditMode, selectedPeriodDates, markedDates, trackerSettings]);
 
   /**
    * Toggle edit mode

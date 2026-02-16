@@ -420,22 +420,28 @@ export const useTrackerData = () => {
             }
           }
           
-          // 4) Predicted next period
+          // 4) Predicted next period (only show if in the future)
           if (currentCycle.predicted_next_period_date) {
             const predictedStartDate = new Date(currentCycle.predicted_next_period_date);
+            const today = new Date(todayStr);
+            today.setHours(0, 0, 0, 0);
             
             for (let i = 0; i < periodLength; i++) {
               const predictedDate = new Date(predictedStartDate);
               predictedDate.setDate(predictedDate.getDate() + i);
-              const dateStr = predictedDate.toISOString().split("T")[0];
               
-              const existingMarking = markedDates[dateStr] || {};
-              markedDates[dateStr] = {
-                ...existingMarking,
-                cycleDay: i + 1,
-                phase: "menstrual",
-                isPredictedPeriod: true,
-              };
+              // Only add predicted period dates that are in the future
+              if (predictedDate > today) {
+                const dateStr = predictedDate.toISOString().split("T")[0];
+                
+                const existingMarking = markedDates[dateStr] || {};
+                markedDates[dateStr] = {
+                  ...existingMarking,
+                  cycleDay: i + 1,
+                  phase: "menstrual",
+                  isPredictedPeriod: true,
+                };
+              }
             }
           }
         }

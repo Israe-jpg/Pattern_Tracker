@@ -680,6 +680,7 @@ class PeriodCycleService:
             
             processed_cycles = set()
             processed_ranges = set()
+            processed_cycle_ids = set()
             
             # 6a. Handle cycles that need to be split (one cycle → multiple ranges)
             for cycle in existing_cycles:
