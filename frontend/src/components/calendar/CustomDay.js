@@ -82,13 +82,14 @@ export const CustomDay = (props) => {
   }
 
   // Check if selected day can show log period button
-  // Only show if: selected (check state, isSelected prop, or marking.selected), not a period day, not day before/after a period day, not in edit mode
+  // Only show if: selected, not edit mode, not a *real* period day (predicted period/ovulation can show), and not adjacent to real period days
   const isDaySelected = state === "selected" || isSelected || marking?.selected === true;
-  const canShowLogPeriodButton = isDaySelected && !isEditMode && !isMenstrual && onLogPeriod;
+  const isRealPeriodDay = isMenstrual && !isPredictedPeriod;
+  const canShowLogPeriodButton = isDaySelected && !isEditMode && !isRealPeriodDay && onLogPeriod;
   let showLogPeriodButton = false;
   
   if (canShowLogPeriodButton) {
-    // Check if day before or after is a period day
+    // Check if day before or after is a *real* period day (not predicted) - only those block the button
     const dateObj = new Date(date.dateString);
     const dayBefore = new Date(dateObj);
     dayBefore.setDate(dayBefore.getDate() - 1);
@@ -100,11 +101,11 @@ export const CustomDay = (props) => {
     
     const dayBeforeMarking = markedDates?.[dayBeforeStr] || {};
     const dayAfterMarking = markedDates?.[dayAfterStr] || {};
-    const dayBeforeIsPeriod = dayBeforeMarking.phase === "menstrual" || dayBeforeMarking.phase === "period";
-    const dayAfterIsPeriod = dayAfterMarking.phase === "menstrual" || dayAfterMarking.phase === "period";
+    const dayBeforeIsRealPeriod = (dayBeforeMarking.phase === "menstrual" || dayBeforeMarking.phase === "period") && !dayBeforeMarking.isPredictedPeriod;
+    const dayAfterIsRealPeriod = (dayAfterMarking.phase === "menstrual" || dayAfterMarking.phase === "period") && !dayAfterMarking.isPredictedPeriod;
     
-    // Show button only if neither day before nor day after is a period day
-    showLogPeriodButton = !dayBeforeIsPeriod && !dayAfterIsPeriod;
+    // Show button only if neither day before nor day after is a real period day
+    showLogPeriodButton = !dayBeforeIsRealPeriod && !dayAfterIsRealPeriod;
   }
 
   // Handle press - use onDayPress if provided (edit mode: past/today or future sure period days only)
@@ -131,12 +132,13 @@ export const CustomDay = (props) => {
         isToday && !isEditMode && !isPredictedPeriod && !isPredictedOvulation && [styles.todayContainer, { backgroundColor: todayBackgroundColor }],
         isExactOvulationDay && !isToday && !isEditMode && !isPredictedPeriod && !isPredictedOvulation && [styles.ovulationContainer, { backgroundColor: colors.ovulation }],
         isMenstrual && !isToday && !isExactOvulationDay && !isEditMode && !isPredictedPeriod && !isPredictedOvulation && [styles.menstrualContainer, { backgroundColor: colors.menstrual }],
-        state === "selected" && !isToday && !isMenstrual && !isExactOvulationDay && !isEditMode && styles.selectedContainer,
+        // Selected: use brown background for normal days and for predicted period/ovulation (so text is visible)
+        state === "selected" && !isToday && !isEditMode && ((!isMenstrual && !isExactOvulationDay) || isPredictedPeriod || isPredictedOvulation) && styles.selectedContainer,
         state === "disabled" && styles.disabledContainer,
-        // Predicted period styling (dashed border)
-        isPredictedPeriod && !isEditMode && [styles.predictedPeriodContainer, { borderColor: colors.menstrual }],
+        // Predicted period styling (dashed border) - when not selected; when selected, selectedContainer gives background
+        isPredictedPeriod && !isEditMode && !(state === "selected") && [styles.predictedPeriodContainer, { borderColor: colors.menstrual }],
         // Predicted ovulation styling (dashed border)
-        isPredictedOvulation && !isEditMode && [styles.predictedOvulationContainer, { borderColor: colors.ovulation }],
+        isPredictedOvulation && !isEditMode && !(state === "selected") && [styles.predictedOvulationContainer, { borderColor: colors.ovulation }],
         // Edit mode styling (only for past/today - no dashed or selection for future)
         isEditableInEditMode && styles.editModeContainer,
         // Show colored circle (period/ovulation) only when NOT selected
@@ -154,7 +156,8 @@ export const CustomDay = (props) => {
             style={[
               styles.cycleDayText,
               { color: cycleDayColor },
-              (state === "selected" || isToday || isExactOvulationDay || isMenstrual) && !isPredictedPeriod && !isPredictedOvulation && styles.cycleDayTextSelected,
+              // Light text on filled background: selected (including predicted), or today/ovulation/menstrual when not predicted
+              (state === "selected" || ((isToday || isExactOvulationDay || isMenstrual) && !isPredictedPeriod && !isPredictedOvulation)) && styles.cycleDayTextSelected,
             ]}
             numberOfLines={1}
           >
@@ -170,6 +173,7 @@ export const CustomDay = (props) => {
                 : textColor 
             },
             (isToday || isExactOvulationDay || isMenstrual) && !isEditMode && !isPredictedPeriod && !isPredictedOvulation && styles.todayText,
+            // Selected: bold and visible (textColor already set to textOnPrimary for selected above)
             state === "selected" && !isEditMode && styles.selectedText,
             state === "disabled" && styles.disabledText,
           ]}
