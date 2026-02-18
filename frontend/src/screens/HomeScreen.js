@@ -42,6 +42,7 @@ export default function HomeScreen({ navigation }) {
     loadCalendarData,
     loadInsights,
     checkPeriodTrackerSetup,
+    calculateCycleDayForDate,
   } = useTrackerData();
 
   // Track the previous tracker ID to ensure we reload when it changes
@@ -74,10 +75,13 @@ export default function HomeScreen({ navigation }) {
   }, [activeTracker?.id, activeTracker]);
 
   const onDayPress = (day) => {
-    setSelectedDate(day.dateString);
-    if (activeTracker) {
-      navigation.navigate("TrackerDetail", { trackerId: activeTracker.id });
+    // Toggle selection: if clicking the same day, deselect it
+    if (selectedDate === day.dateString) {
+      setSelectedDate(null);
+    } else {
+      setSelectedDate(day.dateString);
     }
+    // Removed navigation to TrackerDetail - just select the date
   };
 
   const handleLogPress = () => {
@@ -87,6 +91,55 @@ export default function HomeScreen({ navigation }) {
       });
     }
   };
+
+  const handleLogPeriod = useCallback((dateString) => {
+    if (!activeTracker) return;
+    
+    Alert.alert(
+      "Log Period",
+      "Do you want to log your period for today?",
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Yes",
+          onPress: async () => {
+            try {
+              await trackerService.logPeriod(activeTracker.id, dateString);
+              
+              // Extract month from the logged date to reload that specific month
+              const loggedMonth = dateString.slice(0, 7); // YYYY-MM format
+              
+              // Reload calendar data for the month where period was logged
+              // This will fetch updated cycles and recalculate all dates with period days and ovulation
+              if (loadCalendarData) {
+                await loadCalendarData(activeTracker, loggedMonth);
+              }
+              
+              // Also reload insights to update cycle predictions
+              if (loadInsights) {
+                await loadInsights(activeTracker);
+              }
+              
+              // Reload current month as well to ensure UI updates
+              const currentMonth = new Date().toISOString().slice(0, 7);
+              if (currentMonth !== loggedMonth && loadCalendarData) {
+                await loadCalendarData(activeTracker, currentMonth);
+              }
+            } catch (error) {
+              console.error('Error logging period:', error);
+              Alert.alert(
+                "Error",
+                error.response?.data?.error || error.message || "Failed to log period. Please try again."
+              );
+            }
+          },
+        },
+      ]
+    );
+  }, [activeTracker, loadCalendarData, loadInsights]);
 
   const handleConfigurePress = () => {
     if (activeTracker) {
@@ -160,6 +213,13 @@ export default function HomeScreen({ navigation }) {
                   loading={false}
                   onDayPress={onDayPress}
                   onLogPress={handleLogPress}
+                  onLogPeriod={handleLogPeriod}
+                  calculateCycleDayForDate={calculateCycleDayForDate}
+                  onMonthChange={(month) => {
+                    loadCalendarData(activeTracker, month);
+                  }}
+                  navigation={navigation}
+                  tracker={activeTracker}
                 />
               ) : (
                 <CalendarSection
@@ -168,8 +228,17 @@ export default function HomeScreen({ navigation }) {
                   calendarData={calendarData}
                   isPeriodTracker={isPeriodTracker}
                   loading={true}
+                  navigation={navigation}
+                  tracker={activeTracker}
                   onDayPress={onDayPress}
+                  onLogPeriod={handleLogPeriod}
                   onLogPress={handleLogPress}
+                  calculateCycleDayForDate={calculateCycleDayForDate}
+                  onMonthChange={(month) => {
+                    if (activeTracker) {
+                      loadCalendarData(activeTracker, month);
+                    }
+                  }}
                 />
               )}
               {/* Insights Section - Show for all configured trackers */}

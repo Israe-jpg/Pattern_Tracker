@@ -1595,6 +1595,23 @@ def update_cycles(tracker_id: int):
             
             if not cycle:
                 return error_response("Period cycle not found", 404)
+            
+            # If period_dates are also provided, update the period dates
+            if period_dates_str:
+                period_dates = [date.fromisoformat(d) for d in period_dates_str]
+                period_dates.sort()
+                
+                earliest = min(period_dates)
+                latest = max(period_dates)
+                
+                # Update period dates
+                cycle.period_start_date = earliest
+                cycle.period_end_date = latest
+                cycle.period_length = (latest - earliest).days + 1
+                
+                # ALWAYS update cycle start to match period start
+                # (cycle should always start on or before period start)
+                cycle.cycle_start_date = earliest
         
         elif period_dates_str:
             # Parse period dates
@@ -1650,11 +1667,41 @@ def update_cycles(tracker_id: int):
         cycle.predicted_ovulation_date = predictions['predicted_ovulation']
         cycle.predicted_next_period_date = predictions['predicted_next_period']
         
-        # Finalize cycle (handle relationships)
-        PeriodCycleService.finalize_cycle(cycle, tracker_id)
-        
         # Update settings if most recent
         PeriodCycleService.update_tracker_settings(tracker, cycle)
+        
+        # Commit the cycle changes first
+        db.session.flush()
+        
+        # Then recalculate all cycle relationships to ensure everything is consistent
+        try:
+            # Get all cycles sorted by start date
+            all_cycles = PeriodCycle.query.filter_by(
+                tracker_id=tracker_id
+            ).order_by(PeriodCycle.cycle_start_date.asc()).all()
+            
+            # Close each cycle based on when the next one starts
+            for i in range(len(all_cycles) - 1):
+                current_cycle = all_cycles[i]
+                next_cycle = all_cycles[i + 1]
+                
+                # Current cycle ends the day before next cycle starts
+                current_cycle.cycle_end_date = next_cycle.cycle_start_date - timedelta(days=1)
+                current_cycle.cycle_length = (current_cycle.cycle_end_date - current_cycle.cycle_start_date).days + 1
+                
+                # Ensure period_end_date doesn't exceed cycle_end_date
+                if current_cycle.period_end_date and current_cycle.period_end_date > current_cycle.cycle_end_date:
+                    current_cycle.period_end_date = current_cycle.cycle_end_date
+                    current_cycle.period_length = (current_cycle.period_end_date - current_cycle.period_start_date).days + 1
+            
+            # The last (most recent) cycle should remain open (no end date)
+            if all_cycles:
+                last_cycle = all_cycles[-1]
+                last_cycle.cycle_end_date = None
+                last_cycle.cycle_length = None
+        except Exception as recalc_error:
+            # Log but don't fail the update
+            print(f"Warning: Failed to recalculate cycles after update: {str(recalc_error)}")
         
         db.session.commit()
         
@@ -1851,3 +1898,141 @@ def get_cycle_history(tracker_id: int):
         return error_response(str(e), 400)
     except Exception as e:
         return error_response(f"Failed to retrieve cycle history: {str(e)}", 500)
+
+
+@trackers_bp.route('/<int:tracker_id>/cycles/<int:cycle_id>', methods=['DELETE'])
+@jwt_required()
+def delete_cycle(tracker_id: int, cycle_id: int):
+    """
+    Delete a period cycle from the database.
+    
+    Args:
+        tracker_id: The ID of the tracker
+        cycle_id: The ID of the cycle to delete
+    
+    Returns:
+        Success message if cycle is deleted successfully
+    """
+    try:
+        _, user_id = get_current_user()
+        tracker = verify_tracker_ownership(tracker_id, user_id)
+    except ValueError as e:
+        return error_response(str(e), 404)
+    
+    try:
+        # Verify this is a Period Tracker
+        category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
+        if not category or category.name != 'Period Tracker':
+            return error_response("This endpoint is only available for Period Tracker", 400)
+        
+        # Find the cycle and verify it belongs to this tracker
+        cycle = PeriodCycle.query.filter_by(
+            id=cycle_id,
+            tracker_id=tracker_id
+        ).first()
+        
+        if not cycle:
+            return error_response("Cycle not found or does not belong to this tracker", 404)
+        
+        # Delete the cycle
+        db.session.delete(cycle)
+        db.session.flush()  # Flush to ensure deletion is processed
+        
+        # After deleting, recalculate cycles to ensure proper ordering and closure
+        # This ensures that remaining cycles have correct cycle_end_date values
+        try:
+            # Get all remaining cycles
+            remaining_cycles = PeriodCycle.query.filter_by(
+                tracker_id=tracker_id
+            ).order_by(PeriodCycle.cycle_start_date.asc()).all()
+            
+            # Close cycles properly: each cycle ends the day before the next cycle starts
+            for i in range(len(remaining_cycles) - 1):
+                current_cycle = remaining_cycles[i]
+                next_cycle = remaining_cycles[i + 1]
+                
+                # If current cycle has no end date or end date is after next cycle start
+                if not current_cycle.cycle_end_date or current_cycle.cycle_end_date >= next_cycle.cycle_start_date:
+                    current_cycle.cycle_end_date = next_cycle.cycle_start_date - timedelta(days=1)
+                    current_cycle.cycle_length = (current_cycle.cycle_end_date - current_cycle.cycle_start_date).days + 1
+            
+            # The last cycle should have no end date (it's the current cycle)
+            if remaining_cycles:
+                last_cycle = remaining_cycles[-1]
+                last_cycle.cycle_end_date = None
+                last_cycle.cycle_length = None  # Current cycle length is calculated dynamically
+        except Exception as recalc_error:
+            # Log but don't fail the deletion
+            print(f"Warning: Failed to recalculate cycles after deletion: {str(recalc_error)}")
+        
+        db.session.commit()
+        
+        return success_response(
+            "Cycle deleted successfully",
+            {
+                'deleted_cycle_id': cycle_id,
+                'tracker_id': tracker_id
+            }
+        )
+    
+    except ValueError as e:
+        return error_response(str(e), 400)
+    except Exception as e:
+        db.session.rollback()
+        return error_response(f"Failed to delete cycle: {str(e)}", 500)
+
+
+@trackers_bp.route('/<int:tracker_id>/periods/bulk-update', methods=['PUT'])
+@jwt_required()
+def bulk_update_periods(tracker_id: int):
+    """
+    Smart bulk update for period dates.
+    
+    Send a list of all dates that SHOULD be period dates.
+    Backend automatically figures out what to create/update/delete/split/merge.
+    
+    Request body:
+    {
+        "period_dates": ["2025-01-01", "2025-01-02", "2025-01-10", "2025-01-11"]
+    }
+    
+    Backend handles:
+    - Creating new cycles for non-adjacent dates
+    - Updating existing cycles
+    - Splitting cycles when middle days are removed
+    - Merging cycles when bridging days are added
+    - Deleting cycles when all days are removed
+    """
+    try:
+        _, user_id = get_current_user()
+        tracker = verify_tracker_ownership(tracker_id, user_id)
+    except ValueError as e:
+        return error_response(str(e), 404)
+    
+    try:
+        # Verify this is a Period Tracker
+        category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
+        if not category or category.name != 'Period Tracker':
+            return error_response("This endpoint is only available for Period Tracker", 400)
+        
+        # Get period dates from request
+        data = request.json or {}
+        period_dates = data.get('period_dates', [])
+        
+        if not isinstance(period_dates, list):
+            return error_response("'period_dates' must be an array of date strings", 400)
+        
+        # Call the smart bulk update service
+        result = PeriodCycleService.bulk_update_periods(tracker_id, period_dates)
+        
+        return success_response(
+            "Periods updated successfully",
+            result
+        )
+    
+    except ValueError as e:
+        return error_response(str(e), 400)
+    except Exception as e:
+        db.session.rollback()
+        logging.error(f"Failed to bulk update periods: {str(e)}")
+        return error_response(f"Failed to bulk update periods: {str(e)}", 500)

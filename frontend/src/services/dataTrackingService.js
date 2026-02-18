@@ -21,9 +21,14 @@ export const dataTrackingService = {
   },
 
   // Get data for a date range
-  getDataRange: async (trackerId, startDate, endDate) => {
+  getDataRange: async (trackerId, startDate, endDate, options = {}) => {
+    const params = { 
+      start_date: startDate, 
+      end_date: endDate,
+      ...options.params
+    };
     const response = await api.get(API_ENDPOINTS.GET_DATA_RANGE(trackerId), {
-      params: { start_date: startDate, end_date: endDate },
+      params,
     });
     return response.data;
   },
@@ -47,6 +52,14 @@ export const dataTrackingService = {
   // Get tracker calendar (for regular trackers)
   getTrackerCalendar: async (trackerId, options = {}) => {
     const response = await api.get(API_ENDPOINTS.TRACKER_CALENDAR(trackerId), {
+      params: options.params || {},
+    });
+    return response.data;
+  },
+
+  // Get tracker calendar overview (for regular trackers)
+  getTrackerCalendarOverview: async (trackerId, options = {}) => {
+    const response = await api.get(API_ENDPOINTS.TRACKER_CALENDAR_OVERVIEW(trackerId), {
       params: options.params || {},
     });
     return response.data;

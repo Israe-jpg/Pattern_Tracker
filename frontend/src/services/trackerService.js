@@ -146,4 +146,39 @@ export const trackerService = {
     const response = await api.get(API_ENDPOINTS.EXPORT_SCHEMA(trackerId));
     return response.data;
   },
+  // Get cycle history for period tracker
+  getCyclesHistory: async (trackerId, options = {}) => {
+    const response = await api.get(API_ENDPOINTS.CYCLES_HISTORY(trackerId), {
+      params: options.params || {},
+    });
+    return response.data;
+  },
+
+  // Update cycle for period tracker
+  updateCycle: async (trackerId, cycleData) => {
+    const response = await api.put(API_ENDPOINTS.UPDATE_CYCLE(trackerId), cycleData);
+    return response.data;
+  },
+
+  // Delete cycle for period tracker
+  deleteCycle: async (trackerId, cycleId) => {
+    const response = await api.delete(API_ENDPOINTS.DELETE_CYCLE(trackerId, cycleId));
+    return response.data;
+  },
+
+  // Log period start for period tracker
+  logPeriod: async (trackerId, periodDate) => {
+    const response = await api.post(API_ENDPOINTS.LOG_PERIOD(trackerId), {
+      period_date: periodDate,
+    });
+    return response.data;
+  },
+
+  // Bulk update periods - smart backend handles all logic
+  bulkUpdatePeriods: async (trackerId, periodDates) => {
+    const response = await api.put(API_ENDPOINTS.BULK_UPDATE_PERIODS(trackerId), {
+      period_dates: periodDates,
+    });
+    return response.data;
+  },
 };

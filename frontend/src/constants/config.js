@@ -77,6 +77,12 @@ export const API_ENDPOINTS = {
   COMPLETE_SCHEMA: (id) => `/trackers/${id}/complete-schema`,
   // User-facing config export (PDF) – matches backend route /export-config
   EXPORT_SCHEMA: (id) => `/trackers/${id}/export-config`,
+  // Period Tracker cycles history
+  CYCLES_HISTORY: (id) => `/trackers/${id}/cycles-history`,
+  UPDATE_CYCLE: (id) => `/trackers/${id}/update-cycle`,
+  DELETE_CYCLE: (id, cycleId) => `/trackers/${id}/cycles/${cycleId}`,
+  LOG_PERIOD: (id) => `/trackers/${id}/log-period`,
+  BULK_UPDATE_PERIODS: (id) => `/trackers/${id}/periods/bulk-update`,
 
   // Data Tracking
   SAVE_DATA: (id) => `/data-tracking/${id}/save-tracking-data`,
@@ -87,6 +93,7 @@ export const API_ENDPOINTS = {
   CALENDAR: (id) => `/data-tracking/${id}/calendar`,
   CALENDAR_OVERVIEW: (id) => `/data-tracking/${id}/calendar/overview`,
   TRACKER_CALENDAR: (id) => `/data-tracking/${id}/tracker-calendar`,
+  TRACKER_CALENDAR_OVERVIEW: (id) => `/data-tracking/${id}/tracker-calendar/overview`,
 
   // Analytics
   GET_INSIGHTS: (id) => `/data-tracking/${id}/get-all-insights`,

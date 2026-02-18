@@ -47,7 +47,8 @@ export const colors = {
 
   // Health Tracker Specific - Cycle Phases
   menstrual: "#8B1538", // Red burgundy for period
-  ovulation: "#79A3C3", // Blue-gray for ovulation (using primary)
+  ovulation: "#79A3C3", // Blue-gray for ovulation phase window (using primary)
+  exactOvulation: "#10B981", // Green for exact ovulation day (using success green)
   follicular: "#B8E6B8", // Green pastel for follicular phase
   luteal: "#D4B3E8", // Purple pastel for luteal phase
   // Legacy support

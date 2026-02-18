@@ -371,25 +371,25 @@ class PeriodCycleService:
                 raise ValueError("This endpoint is only available for Period Tracker")
             
             if limit:
-                cycles = PeriodCycle.query.filter_by(tracker_id=tracker_id).order_by(PeriodCycle.cycle_start_date.desc()).limit(limit).all()
+                cycles = PeriodCycle.query.filter_by(tracker_id=tracker_id).order_by(PeriodCycle.cycle_start_date.asc()).limit(limit).all()
             elif start_date and end_date:
                 cycles = PeriodCycle.query.filter(
                     PeriodCycle.tracker_id == tracker_id,
                     PeriodCycle.cycle_start_date >= start_date,
                     PeriodCycle.cycle_start_date <= end_date
-                ).order_by(PeriodCycle.cycle_start_date.desc()).all()
+                ).order_by(PeriodCycle.cycle_start_date.asc()).all()
             elif start_date and not end_date:
                 cycles = PeriodCycle.query.filter(
                     PeriodCycle.tracker_id == tracker_id,
                     PeriodCycle.cycle_start_date >= start_date
-                ).order_by(PeriodCycle.cycle_start_date.desc()).all()
+                ).order_by(PeriodCycle.cycle_start_date.asc()).all()
             elif end_date and not start_date:
                 cycles = PeriodCycle.query.filter(
                     PeriodCycle.tracker_id == tracker_id,
                     PeriodCycle.cycle_start_date <= end_date
-                ).order_by(PeriodCycle.cycle_start_date.desc()).all()
+                ).order_by(PeriodCycle.cycle_start_date.asc()).all()
             else:
-                cycles = PeriodCycle.query.filter_by(tracker_id=tracker_id).order_by(PeriodCycle.cycle_start_date.desc()).all()
+                cycles = PeriodCycle.query.filter_by(tracker_id=tracker_id).order_by(PeriodCycle.cycle_start_date.asc()).all()
             
             return cycles
         except Exception as e:
@@ -508,3 +508,453 @@ class PeriodCycleService:
             }
         except Exception as e:
             raise ValueError(f"Failed to get cycle phases dates: {str(e)}")
+    
+    @staticmethod
+    def group_dates_into_continuous_ranges(dates: List[date]) -> List[List[date]]:
+        """
+        Group dates into continuous ranges (no gaps).
+        
+        Example: [2025-01-01, 2025-01-02, 2025-01-05, 2025-01-06]
+              -> [[2025-01-01, 2025-01-02], [2025-01-05, 2025-01-06]]
+        
+        Args:
+            dates: List of date objects (will be sorted)
+        
+        Returns:
+            List of date ranges (each range is a list of consecutive dates)
+        """
+        if not dates:
+            return []
+        
+        sorted_dates = sorted(dates)
+        ranges = []
+        current_range = [sorted_dates[0]]
+        
+        for i in range(1, len(sorted_dates)):
+            prev_date = sorted_dates[i - 1]
+            curr_date = sorted_dates[i]
+            days_diff = (curr_date - prev_date).days
+            
+            if days_diff == 1:
+                # Consecutive day - add to current range
+                current_range.append(curr_date)
+            else:
+                # Gap detected - start new range
+                ranges.append(current_range)
+                current_range = [curr_date]
+        
+        # Add the last range
+        if current_range:
+            ranges.append(current_range)
+        
+        return ranges
+    
+    @staticmethod
+    def find_cycles_overlapping_date_range(
+        period_range: List[date],
+        all_cycles: List[PeriodCycle]
+    ) -> List[PeriodCycle]:
+        """
+        Find all cycles whose period overlaps with the given date range.
+        
+        Args:
+            period_range: List of dates forming a continuous range
+            all_cycles: All cycles for the tracker
+        
+        Returns:
+            List of cycles that overlap with this range
+        """
+        if not period_range:
+            return []
+        
+        range_start = min(period_range)
+        range_end = max(period_range)
+        overlapping = []
+        
+        for cycle in all_cycles:
+            if not cycle.period_start_date:
+                continue
+            
+            # Get cycle's period range
+            cycle_period_start = cycle.period_start_date
+            cycle_period_end = cycle.period_end_date or cycle_period_start
+            
+            # Check for overlap: ranges overlap if they don't NOT overlap
+            # NOT overlap means: range_end < cycle_start OR range_start > cycle_end
+            # So overlap means: NOT (range_end < cycle_start OR range_start > cycle_end)
+            overlaps = not (range_end < cycle_period_start or range_start > cycle_period_end)
+            
+            if overlaps:
+                overlapping.append(cycle)
+        
+        return overlapping
+    
+    @staticmethod
+    def bulk_update_periods(
+        tracker_id: int,
+        desired_period_dates: List[str]
+    ) -> Dict[str, Any]:
+        """
+        Smart bulk update: Given a list of dates that should be period dates,
+        figure out what cycles to create/update/delete/split/merge.
+        
+        ALGORITHM (Cycle-Centric Approach):
+        1. For each EXISTING cycle, find which desired ranges it overlaps with
+        2. If ONE range → UPDATE cycle
+        3. If MULTIPLE ranges → SPLIT: delete original, create new cycles
+        4. If ZERO ranges → DELETE cycle
+        5. For ranges with no existing cycle → CREATE new cycle
+        6. For ranges overlapping multiple cycles → MERGE cycles
+        
+        Args:
+            tracker_id: The tracker ID
+            desired_period_dates: List of date strings (YYYY-MM-DD) that should be period dates
+        
+        Returns:
+            Dict with operation summary and updated cycles
+        """
+        try:
+            # 1. Validate tracker
+            tracker = Tracker.query.get(tracker_id)
+            if not tracker:
+                raise ValueError("Tracker not found")
+            
+            settings = PeriodCycleService.get_tracker_settings(tracker_id)
+            
+            # 2. Parse and sort desired dates
+            desired_dates = []
+            for date_str in desired_period_dates:
+                try:
+                    desired_dates.append(date.fromisoformat(date_str))
+                except ValueError:
+                    raise ValueError(f"Invalid date format: {date_str}")
+            
+            desired_dates = sorted(set(desired_dates))  # Remove duplicates and sort
+            desired_dates_set = set(desired_dates)
+            
+            # 3. Get all existing cycles
+            existing_cycles = PeriodCycle.query.filter_by(
+                tracker_id=tracker_id
+            ).order_by(PeriodCycle.cycle_start_date.asc()).all()
+            
+            # 4. Group desired dates into continuous ranges
+            period_ranges = PeriodCycleService.group_dates_into_continuous_ranges(desired_dates)
+            
+            # 5. Create mapping: which ranges have been claimed by existing cycles?
+            range_to_cycles = {}  # range_index -> [cycle_ids that overlap with it]
+            cycle_to_ranges = {}  # cycle_id -> [range_indices that overlap with it]
+            
+            for range_idx, period_range in enumerate(period_ranges):
+                range_to_cycles[range_idx] = []
+                range_dates_set = set(period_range)
+                
+                for cycle in existing_cycles:
+                    if not cycle.period_start_date:
+                        continue
+                    
+                    # Get all dates in this cycle's period
+                    cycle_period_dates = []
+                    current = cycle.period_start_date
+                    end = cycle.period_end_date or cycle.period_start_date
+                    while current <= end:
+                        cycle_period_dates.append(current)
+                        current += timedelta(days=1)
+                    
+                    cycle_dates_set = set(cycle_period_dates)
+                    
+                    # Check if there's any overlap between cycle dates and range dates
+                    if cycle_dates_set & range_dates_set:  # Intersection
+                        range_to_cycles[range_idx].append(cycle.id)
+                        if cycle.id not in cycle_to_ranges:
+                            cycle_to_ranges[cycle.id] = []
+                        cycle_to_ranges[cycle.id].append(range_idx)
+            
+            # 6. Plan operations based on cycle analysis
+            operations = {
+                'create': [],
+                'update': [],
+                'delete': [],
+                'split': [],   # One cycle → multiple cycles
+                'merge': []    # Multiple cycles → one cycle
+            }
+            
+            processed_cycles = set()
+            processed_ranges = set()
+            processed_cycle_ids = set()
+            
+            # 6a. Handle cycles that need to be split (one cycle → multiple ranges)
+            for cycle in existing_cycles:
+                if cycle.id not in cycle_to_ranges:
+                    # Cycle has no overlap with any desired range → DELETE
+                    operations['delete'].append({'cycle_id': cycle.id})
+                    processed_cycles.add(cycle.id)
+                elif len(cycle_to_ranges[cycle.id]) == 1:
+                    # Cycle overlaps with exactly one range
+                    range_idx = cycle_to_ranges[cycle.id][0]
+                    
+                    # Check if this range overlaps with multiple cycles (merge case)
+                    if len(range_to_cycles[range_idx]) > 1:
+                        # Will be handled in merge section
+                        continue
+                    
+                    # Simple update
+                    period_range = period_ranges[range_idx]
+                    operations['update'].append({
+                        'cycle_id': cycle.id,
+                        'period_start': period_range[0],
+                        'period_end': period_range[-1]
+                    })
+                    processed_cycles.add(cycle.id)
+                    processed_ranges.add(range_idx)
+                else:
+                    # Cycle overlaps with MULTIPLE ranges → SPLIT
+                    # Delete original cycle, create new cycles for each range
+                    operations['split'].append({
+                        'original_cycle_id': cycle.id,
+                        'new_cycles': [
+                            {
+                                'period_start': period_ranges[idx][0],
+                                'period_end': period_ranges[idx][-1]
+                            }
+                            for idx in cycle_to_ranges[cycle.id]
+                        ]
+                    })
+                    processed_cycles.add(cycle.id)
+                    for idx in cycle_to_ranges[cycle.id]:
+                        processed_ranges.add(idx)
+            
+            # 6b. Handle ranges that overlap with multiple cycles (merge)
+            for range_idx, cycle_ids in range_to_cycles.items():
+                if range_idx in processed_ranges:
+                    continue
+                    
+                if len(cycle_ids) > 1:
+                    # Multiple cycles for one range → MERGE
+                    operations['merge'].append({
+                        'cycle_ids': cycle_ids,
+                        'period_start': period_ranges[range_idx][0],
+                        'period_end': period_ranges[range_idx][-1]
+                    })
+                    for cid in cycle_ids:
+                        processed_cycles.add(cid)
+                    processed_ranges.add(range_idx)
+            
+            # 6c. Handle ranges with no existing cycle
+            for range_idx in range(len(period_ranges)):
+                if range_idx not in processed_ranges:
+                    period_range = period_ranges[range_idx]
+                    
+                    # Check if this range is adjacent to any existing cycle's period
+                    # If so, extend that cycle instead of creating new one
+                    should_create_new = True
+                    
+                    for cycle in existing_cycles:
+                        if cycle.id in processed_cycle_ids:
+                            continue  # Skip cycles already being modified
+                        
+                        if not cycle.period_start_date:
+                            continue
+                        
+                        # Check if range is adjacent (right before or right after) cycle's period
+                        range_start = period_range[0]
+                        range_end = period_range[-1]
+                        
+                        cycle_period_start = cycle.period_start_date
+                        cycle_period_end = cycle.period_end_date or cycle_period_start
+                        
+                        # Adjacent before: range_end is one day before cycle_period_start
+                        adjacent_before = (range_end + timedelta(days=1)) == cycle_period_start
+                        
+                        # Adjacent after: range_start is one day after cycle_period_end
+                        adjacent_after = (range_start - timedelta(days=1)) == cycle_period_end
+                        
+                        if adjacent_before or adjacent_after:
+                            # Extend this cycle
+                            new_start = min(range_start, cycle_period_start)
+                            new_end = max(range_end, cycle_period_end)
+                            
+                            operations['update'].append({
+                                'cycle_id': cycle.id,
+                                'period_start': new_start,
+                                'period_end': new_end
+                            })
+                            processed_cycle_ids.add(cycle.id)
+                            processed_ranges.add(range_idx)
+                            should_create_new = False
+                            break
+                    
+                    if should_create_new:
+                        operations['create'].append({
+                            'period_start': period_range[0],
+                            'period_end': period_range[-1]
+                        })
+                        processed_ranges.add(range_idx)
+            
+            # 7. Execute operations
+            created_count = 0
+            updated_count = 0
+            merged_count = 0
+            deleted_count = 0
+            split_count = 0
+            
+            # 7a. Delete cycles
+            for delete_op in operations['delete']:
+                cycle = PeriodCycle.query.get(delete_op['cycle_id'])
+                if cycle:
+                    db.session.delete(cycle)
+                    deleted_count += 1
+            
+            # 7b. Handle splits (delete original, create multiple new cycles)
+            for split_op in operations['split']:
+                # Delete original cycle
+                original_cycle = PeriodCycle.query.get(split_op['original_cycle_id'])
+                if original_cycle:
+                    db.session.delete(original_cycle)
+                    split_count += 1
+                    
+                    # Create new cycles for each piece
+                    for new_cycle_data in split_op['new_cycles']:
+                        new_cycle = PeriodCycle(
+                            tracker_id=tracker_id,
+                            cycle_start_date=new_cycle_data['period_start'],
+                            period_start_date=new_cycle_data['period_start'],
+                            period_end_date=new_cycle_data['period_end'],
+                            period_length=(new_cycle_data['period_end'] - new_cycle_data['period_start']).days + 1
+                        )
+                        
+                        # Calculate predictions
+                        predictions = PeriodCycleService.calculate_cycle_predictions(
+                            new_cycle_data['period_start'],
+                            settings['average_cycle_length']
+                        )
+                        new_cycle.predicted_ovulation_date = predictions['predicted_ovulation']
+                        new_cycle.predicted_next_period_date = predictions['predicted_next_period']
+                        
+                        db.session.add(new_cycle)
+                        created_count += 1
+            
+            # 7c. Create new cycles
+            for create_op in operations['create']:
+                new_cycle = PeriodCycle(
+                    tracker_id=tracker_id,
+                    cycle_start_date=create_op['period_start'],
+                    period_start_date=create_op['period_start'],
+                    period_end_date=create_op['period_end'],
+                    period_length=(create_op['period_end'] - create_op['period_start']).days + 1
+                )
+                
+                # Calculate predictions
+                predictions = PeriodCycleService.calculate_cycle_predictions(
+                    create_op['period_start'],
+                    settings['average_cycle_length']
+                )
+                new_cycle.predicted_ovulation_date = predictions['predicted_ovulation']
+                new_cycle.predicted_next_period_date = predictions['predicted_next_period']
+                
+                db.session.add(new_cycle)
+                created_count += 1
+            
+            # 7d. Update existing cycles
+            for update_op in operations['update']:
+                cycle = PeriodCycle.query.get(update_op['cycle_id'])
+                if cycle:
+                    cycle.period_start_date = update_op['period_start']
+                    cycle.period_end_date = update_op['period_end']
+                    cycle.period_length = (update_op['period_end'] - update_op['period_start']).days + 1
+                    
+                    # ALWAYS update cycle_start_date to match period_start_date
+                    # Cycle starts when period starts (no gap between cycle start and period start)
+                    cycle.cycle_start_date = update_op['period_start']
+                    
+                    # Recalculate predictions
+                    predictions = PeriodCycleService.calculate_cycle_predictions(
+                        cycle.cycle_start_date,
+                        settings['average_cycle_length']
+                    )
+                    cycle.predicted_ovulation_date = predictions['predicted_ovulation']
+                    cycle.predicted_next_period_date = predictions['predicted_next_period']
+                    
+                    updated_count += 1
+            
+            # 7e. Merge cycles
+            for merge_op in operations['merge']:
+                # Keep the earliest cycle, update it, delete the rest
+                cycles_to_merge = [PeriodCycle.query.get(cid) for cid in merge_op['cycle_ids']]
+                cycles_to_merge = [c for c in cycles_to_merge if c is not None]
+                cycles_to_merge.sort(key=lambda c: c.cycle_start_date)
+                
+                if cycles_to_merge:
+                    # Keep first cycle, update it
+                    primary_cycle = cycles_to_merge[0]
+                    primary_cycle.period_start_date = merge_op['period_start']
+                    primary_cycle.period_end_date = merge_op['period_end']
+                    primary_cycle.period_length = (merge_op['period_end'] - merge_op['period_start']).days + 1
+                    
+                    # ALWAYS update cycle_start_date to match period_start_date
+                    primary_cycle.cycle_start_date = merge_op['period_start']
+                    
+                    # Recalculate predictions
+                    predictions = PeriodCycleService.calculate_cycle_predictions(
+                        primary_cycle.cycle_start_date,
+                        settings['average_cycle_length']
+                    )
+                    primary_cycle.predicted_ovulation_date = predictions['predicted_ovulation']
+                    primary_cycle.predicted_next_period_date = predictions['predicted_next_period']
+                    
+                    # Delete other cycles
+                    for cycle in cycles_to_merge[1:]:
+                        db.session.delete(cycle)
+                    
+                    merged_count += len(cycles_to_merge) - 1
+                    updated_count += 1
+            
+            # 8. Flush to get IDs for new cycles
+            db.session.flush()
+            
+            # 9. Recalculate cycle boundaries (end dates, lengths)
+            all_cycles_after = PeriodCycle.query.filter_by(
+                tracker_id=tracker_id
+            ).order_by(PeriodCycle.cycle_start_date.asc()).all()
+            
+            for i in range(len(all_cycles_after) - 1):
+                current_cycle = all_cycles_after[i]
+                next_cycle = all_cycles_after[i + 1]
+                
+                # Current cycle ends the day before next cycle starts
+                current_cycle.cycle_end_date = next_cycle.cycle_start_date - timedelta(days=1)
+                current_cycle.cycle_length = (current_cycle.cycle_end_date - current_cycle.cycle_start_date).days + 1
+                
+                # Ensure period_end doesn't exceed cycle_end
+                if current_cycle.period_end_date and current_cycle.period_end_date > current_cycle.cycle_end_date:
+                    current_cycle.period_end_date = current_cycle.cycle_end_date
+                    current_cycle.period_length = (current_cycle.period_end_date - current_cycle.period_start_date).days + 1
+            
+            # Last cycle should be open (no end date)
+            if all_cycles_after:
+                last_cycle = all_cycles_after[-1]
+                last_cycle.cycle_end_date = None
+                last_cycle.cycle_length = None
+            
+            # 10. Update tracker settings with most recent cycle
+            if all_cycles_after:
+                PeriodCycleService.update_tracker_settings(tracker, all_cycles_after[-1])
+            
+            # 11. Commit all changes
+            db.session.commit()
+            
+            # 12. Return summary
+            return {
+                'success': True,
+                'operations_summary': {
+                    'created': created_count,
+                    'updated': updated_count,
+                    'merged': merged_count,
+                    'deleted': deleted_count,
+                    'split': split_count
+                },
+                'cycles': [c.to_dict() for c in all_cycles_after]
+            }
+            
+        except Exception as e:
+            db.session.rollback()
+            raise ValueError(f"Failed to bulk update periods: {str(e)}")
