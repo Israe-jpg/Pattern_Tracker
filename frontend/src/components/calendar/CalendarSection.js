@@ -2,8 +2,8 @@ import React, { useMemo } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from "react-native";
 import { Calendar } from "react-native-calendars";
 import { Ionicons } from "@expo/vector-icons";
-import { colors } from "../constants/colors";
-import { CustomDay } from "./calendar/CustomDay";
+import { colors } from "../../constants/colors";
+import { CustomDay } from "./CustomDay";
 
 export default function CalendarSection({
   trackerName,

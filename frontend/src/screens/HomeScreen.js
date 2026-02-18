@@ -16,7 +16,7 @@ import { colors } from "../constants/colors";
 import MenuDrawer from "../components/MenuDrawer";
 import HomeHeader from "../components/HomeHeader";
 import SetupPrompt from "../components/SetupPrompt";
-import CalendarSection from "../components/CalendarSection";
+import CalendarSection from "../components/calendar/CalendarSection";
 import InsightsSection from "../components/InsightsSection";
 import { useTrackerData } from "../hooks/useTrackerData";
 import { trackerService } from "../services/trackerService";
