@@ -1436,10 +1436,111 @@ class CategoryService:
     # ========================================================================
     
     @staticmethod
+    def build_validation_schema_for_tracker(tracker: 'Tracker') -> Dict[str, Any]:
+        """
+        Build validation schema from DB for a specific tracker. Does NOT modify category.data_schema.
+        Use when you need per-tracker schema (user custom fields, validation).
+        For Period Tracker, use get_contextual_period_schema() instead.
+        """
+        category = TrackerCategory.query.filter_by(id=tracker.category_id).first()
+        if not category:
+            raise ValueError("Tracker category not found")
+        if category.name == CategoryService.PERIOD_TRACKER_NAME:
+            raise ValueError("Use get_contextual_period_schema() for Period Tracker")
+        
+        db.session.expire_all()
+        data_schema = {}
+        
+        def build_field_schema_from_options(options):
+            field_options = {}
+            for option in options:
+                option_schema = SchemaManager.build_option_schema({
+                    'option_type': option.option_type,
+                    'is_required': option.is_required,
+                    'min_value': option.min_value,
+                    'max_value': option.max_value,
+                    'max_length': option.max_length,
+                    'step': option.step,
+                    'choices': option.choices,
+                    'choice_labels': option.choice_labels
+                })
+                field_options[option.option_name] = option_schema
+            return field_options
+        
+        # 1. Baseline from TrackerField
+        baseline_fields = TrackerField.query.filter_by(
+            category_id=category.id,
+            field_group='baseline',
+            is_active=True
+        ).order_by(TrackerField.field_order.asc()).all()
+        baseline_schema = {}
+        for field in baseline_fields:
+            options = FieldOption.query.filter_by(
+                tracker_field_id=field.id,
+                is_active=True
+            ).order_by(FieldOption.option_order.asc()).all()
+            fo = build_field_schema_from_options(options)
+            if fo:
+                baseline_schema[field.field_name] = fo
+        data_schema['baseline'] = baseline_schema if baseline_schema else CategoryService.get_baseline_schema()
+        
+        # 2. Category-specific (symptom_tracker, workout_tracker) from TrackerField
+        section_key = CategoryService.PREBUILT_CATEGORIES.get(category.name)
+        if section_key:
+            cat_fields = TrackerField.query.filter_by(
+                category_id=category.id,
+                field_group=section_key,
+                is_active=True
+            ).order_by(TrackerField.field_order.asc()).all()
+            cat_schema = {}
+            for field in cat_fields:
+                options = FieldOption.query.filter_by(
+                    tracker_field_id=field.id,
+                    is_active=True
+                ).order_by(FieldOption.option_order.asc()).all()
+                fo = build_field_schema_from_options(options)
+                if fo:
+                    cat_schema[field.field_name] = fo
+            data_schema[section_key] = cat_schema
+        
+        # 3. Custom: TrackerUserField for prebuilt, TrackerField for custom category
+        custom_schema = {}
+        if CategoryService.is_prebuilt_category(category.name):
+            user_fields = TrackerUserField.query.filter_by(
+                tracker_id=tracker.id,
+                is_active=True
+            ).order_by(TrackerUserField.field_order.asc()).all()
+            for field in user_fields:
+                options = FieldOption.query.filter_by(
+                    tracker_user_field_id=field.id,
+                    is_active=True
+                ).order_by(FieldOption.option_order.asc()).all()
+                fo = build_field_schema_from_options(options)
+                if fo:
+                    custom_schema[field.field_name] = fo
+        else:
+            custom_fields = TrackerField.query.filter_by(
+                category_id=category.id,
+                field_group='custom',
+                is_active=True
+            ).order_by(TrackerField.field_order.asc()).all()
+            for field in custom_fields:
+                options = FieldOption.query.filter_by(
+                    tracker_field_id=field.id,
+                    is_active=True
+                ).order_by(FieldOption.option_order.asc()).all()
+                fo = build_field_schema_from_options(options)
+                if fo:
+                    custom_schema[field.field_name] = fo
+        data_schema['custom'] = custom_schema
+        
+        return data_schema
+    
+    @staticmethod
     def rebuild_category_schema(category: TrackerCategory, tracker: 'Tracker' = None) -> None:
         """
-        Rebuild the data schema from active database fields and options.
-        If tracker is provided, also includes user-specific fields for prebuilt trackers.
+        Rebuild category.data_schema from shared TrackerField records only.
+        Does NOT include user-specific fields (TrackerUserField).
         """
         try:
             # Expire all cached objects to ensure we get fresh data from database
@@ -1513,43 +1614,9 @@ class CategoryService:
             
             data_schema['custom'] = custom_schema
             
-            # Add user-specific fields for prebuilt trackers
-            if tracker and CategoryService.is_prebuilt_category(category.name):
-                user_fields = TrackerUserField.query.filter_by(
-                    tracker_id=tracker.id,
-                    is_active=True
-                ).order_by(TrackerUserField.field_order.asc()).all()
-                
-                user_custom_schema = {}
-                for field in user_fields:
-                    options = FieldOption.query.filter_by(
-                        tracker_user_field_id=field.id,
-                        is_active=True
-                    ).order_by(FieldOption.option_order.asc()).all()
-                    
-                    field_options = {}
-                    for option in options:
-                        option_schema = SchemaManager.build_option_schema({
-                            'option_type': option.option_type,
-                            'is_required': option.is_required,
-                            'min_value': option.min_value,
-                            'max_value': option.max_value,
-                            'max_length': option.max_length,
-                            'choices': option.choices,
-                            'choice_labels': option.choice_labels
-                        })
-                        field_options[option.option_name] = option_schema
-                    
-                    if field_options:
-                        user_custom_schema[field.field_name] = field_options
-                
-                # Merge user fields into custom schema (preserves insertion order in Python 3.7+)
-                # User fields come AFTER category custom fields
-                if user_custom_schema:
-                    if 'custom' not in data_schema:
-                        data_schema['custom'] = {}
-                    # Update preserves order - user fields are added after existing custom fields
-                    data_schema['custom'].update(user_custom_schema)
+            # Do NOT add TrackerUserField (user-specific) to category.data_schema.
+            # category.data_schema is shared. User custom fields are built per-tracker
+            # via build_validation_schema_for_tracker().
             
             # Preserve static config-based sections (e.g., period_tracker)
             existing_schema = category.data_schema or {}
@@ -1700,16 +1767,21 @@ class CategoryService:
     # ========================================================================
     
     @staticmethod
-    def export_tracker_config(category: TrackerCategory) -> Dict[str, Any]:
+    def export_tracker_config(category: TrackerCategory, tracker: 'Tracker' = None) -> Dict[str, Any]:
         
         try:
-            # Rebuild schema to ensure it's up-to-date
             CategoryService.rebuild_category_schema(category)
             db.session.refresh(category)
             
+            # Use per-tracker schema for prebuilt (includes user custom fields)
+            if tracker and CategoryService.is_prebuilt_category(category.name) and category.name != CategoryService.PERIOD_TRACKER_NAME:
+                data_schema = CategoryService.build_validation_schema_for_tracker(tracker)
+            else:
+                data_schema = category.data_schema or {}
+            
             return {
                 'category_name': category.name,
-                'data_schema': category.data_schema
+                'data_schema': data_schema
             }
         except Exception as e:
             raise

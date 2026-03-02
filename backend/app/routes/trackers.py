@@ -542,15 +542,19 @@ def get_tracker_details(tracker_id: int):
         return error_response(str(e), 404)
     
     try:
-        # Rebuild schema to ensure it's up-to-date with active/inactive statuses
-        CategoryService.rebuild_category_schema(category, tracker if CategoryService.is_prebuilt_category(category.name) else None)
+        CategoryService.rebuild_category_schema(category)
         db.session.refresh(category)
+        
+        category_dict = category.to_dict()
+        # Return per-tracker schema for prebuilt (includes user custom fields)
+        if CategoryService.is_prebuilt_category(category.name) and category.name != CategoryService.PERIOD_TRACKER_NAME:
+            category_dict['data_schema'] = CategoryService.build_validation_schema_for_tracker(tracker)
         
         return success_response(
             "Tracker details retrieved successfully",
             {
                 'tracker': tracker.to_dict(),
-                'category': category.to_dict()
+                'category': category_dict
             }
         )
     except Exception as e:
@@ -1403,12 +1407,18 @@ def rebuild_tracker_schema(tracker_id: int):
         if not category:
             return error_response("Tracker category not found", 404)
         
-        CategoryService.rebuild_category_schema(category, tracker if CategoryService.is_prebuilt_category(category.name) else None)
+        CategoryService.rebuild_category_schema(category)
         db.session.refresh(category)
+        
+        # Return per-tracker schema for prebuilt (includes user custom fields)
+        if CategoryService.is_prebuilt_category(category.name) and category.name != CategoryService.PERIOD_TRACKER_NAME:
+            data_schema = CategoryService.build_validation_schema_for_tracker(tracker)
+        else:
+            data_schema = category.data_schema or {}
         
         return success_response(
             "Schema rebuilt successfully",
-            {'data_schema': category.data_schema}
+            {'data_schema': data_schema}
         )
     except Exception as e:
         return error_response(f"Failed to rebuild schema: {str(e)}", 500)
@@ -1429,11 +1439,10 @@ def export_tracker_config(tracker_id: int):
         if not category:
             return error_response("Tracker category not found", 404)
         
-        # Rebuild schema to ensure it's up-to-date
-        CategoryService.rebuild_category_schema(category, tracker if CategoryService.is_prebuilt_category(category.name) else None)
+        CategoryService.rebuild_category_schema(category)
         db.session.refresh(category)
         
-        tracker_config = CategoryService.export_tracker_config(category)
+        tracker_config = CategoryService.export_tracker_config(category, tracker)
         
         return success_response(
             "Tracker config exported successfully",

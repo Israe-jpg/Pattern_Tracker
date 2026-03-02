@@ -45,10 +45,8 @@ class TrackingService:
                 schema = contextual_result.get('data_schema', {})
                 cycle_info = contextual_result.get('cycle_info', {})
             else:
-                # Rebuild schema to ensure it's up-to-date for other trackers
-                CategoryService.rebuild_category_schema(category, tracker if CategoryService.is_prebuilt_category(category.name) else None)
-                db.session.refresh(category)
-                schema = category.data_schema or {}
+                # Use per-tracker schema (includes user custom fields) - not shared category.data_schema
+                schema = CategoryService.build_validation_schema_for_tracker(tracker)
             
             # Validate data against tracker schema (only if data is provided)
             if data:
@@ -110,10 +108,8 @@ class TrackingService:
                 schema = contextual_result.get('data_schema', {})
                 cycle_info = contextual_result.get('cycle_info', {})
             else:
-                # Rebuild schema to ensure it's up-to-date for other trackers
-                CategoryService.rebuild_category_schema(category, tracker if CategoryService.is_prebuilt_category(category.name) else None)
-                db.session.refresh(category)
-                schema = category.data_schema or {}
+                # Use per-tracker schema (includes user custom fields) - not shared category.data_schema
+                schema = CategoryService.build_validation_schema_for_tracker(tracker)
             
             # Update data if provided
             if data is not None:
