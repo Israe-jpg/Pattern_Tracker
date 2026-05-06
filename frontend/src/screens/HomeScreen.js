@@ -153,6 +153,30 @@ export default function HomeScreen({ navigation }) {
     setActiveTracker(tracker);
   };
 
+  const saveDefaultTrackerChange = async (trackerId) => {
+    try {
+      await trackerService.setDefaultTracker(trackerId);
+
+      const selectedTracker =
+        contextTrackers.find((tracker) => tracker.id === trackerId) || {
+          id: trackerId,
+        };
+
+      // Keep Home populated by directly switching the active tracker.
+      await setActiveTracker(selectedTracker);
+      await loadContextTrackers();
+      return true;
+    } catch (error) {
+      console.error("Error updating default tracker:", error);
+      Alert.alert(
+        "Error",
+        error.response?.data?.message ||
+          "Failed to update default tracker. Please try again."
+      );
+      return false;
+    }
+  };
+
   // Handle swipe-to-open gesture from left edge
   const swipeStartX = useRef(0);
 
@@ -273,6 +297,7 @@ export default function HomeScreen({ navigation }) {
           }}
           editMode={editMode}
           setEditMode={setEditMode}
+          onSaveDefaultChange={saveDefaultTrackerChange}
           onDeleteTracker={async (tracker) => {
             Alert.alert(
               "Delete Tracker",
@@ -295,36 +320,6 @@ export default function HomeScreen({ navigation }) {
                       Alert.alert(
                         "Error",
                         "Failed to delete tracker. Please try again."
-                      );
-                    }
-                  },
-                },
-              ]
-            );
-          }}
-          onToggleDefault={async (trackerId) => {
-            Alert.alert(
-              "Set Default Tracker",
-              "Are you sure you want to set this tracker as your default?",
-              [
-                {
-                  text: "Cancel",
-                  style: "cancel",
-                },
-                {
-                  text: "Confirm",
-                  onPress: async () => {
-                    try {
-                      await trackerService.setDefaultTracker(trackerId);
-                      // Clear active tracker so it uses the new default
-                      await setActiveTracker(null);
-                      loadContextTrackers(); // Reload trackers after update
-                    } catch (error) {
-                      console.error("Error updating default tracker:", error);
-                      Alert.alert(
-                        "Error",
-                        error.response?.data?.message ||
-                          "Failed to update default tracker. Please try again."
                       );
                     }
                   },

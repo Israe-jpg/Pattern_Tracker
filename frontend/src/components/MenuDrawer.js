@@ -41,7 +41,8 @@ export default function MenuDrawer({
   editMode,
   setEditMode,
   onDeleteTracker,
-  onToggleDefault,
+  onStageDefaultChange,
+  onSaveDefaultChange,
   defaultTrackerId,
   onProfilePress,
   onLogout,
@@ -49,6 +50,7 @@ export default function MenuDrawer({
   const slideAnim = useRef(new Animated.Value(-DRAWER_WIDTH)).current;
   const [showDropdown, setShowDropdown] = useState(false);
   const [hidePrebuilt, setHidePrebuilt] = useState(false);
+  const [stagedDefaultTrackerId, setStagedDefaultTrackerId] = useState(null);
   const dragX = useRef(new Animated.Value(0)).current;
   const [editButtonLayout, setEditButtonLayout] = useState({ y: 0, height: 0 });
   const { user } = useAuth();
@@ -76,6 +78,14 @@ export default function MenuDrawer({
       setShowDropdown(false);
     }
   }, [visible, slideAnim, dragX]);
+
+  useEffect(() => {
+    if (editMode) {
+      setStagedDefaultTrackerId(defaultTrackerId || null);
+    } else {
+      setStagedDefaultTrackerId(null);
+    }
+  }, [editMode, defaultTrackerId]);
 
   if (!visible) return null;
 
@@ -107,16 +117,19 @@ export default function MenuDrawer({
   };
 
   const handleToggleDefault = (tracker) => {
-    const isCurrentlyDefault = defaultTrackerId === tracker.id;
+    const currentDefaultId =
+      stagedDefaultTrackerId !== null ? stagedDefaultTrackerId : defaultTrackerId;
+    const isCurrentlyDefault = currentDefaultId === tracker.id;
 
     // If it's already the default, do nothing
     if (isCurrentlyDefault) {
       return;
     }
 
-    // Call the parent handler which will show the alert
-    if (onToggleDefault) {
-      onToggleDefault(tracker.id);
+    // Stage default change; save is handled when user presses Done
+    setStagedDefaultTrackerId(tracker.id);
+    if (onStageDefaultChange) {
+      onStageDefaultChange(tracker.id);
     }
   };
 
@@ -184,10 +197,20 @@ export default function MenuDrawer({
             onPress={() => handleToggleDefault(item)}
           >
             <Ionicons
-              name={defaultTrackerId === item.id ? "star" : "star-outline"}
+              name={
+                (stagedDefaultTrackerId !== null
+                  ? stagedDefaultTrackerId
+                  : defaultTrackerId) === item.id
+                  ? "star"
+                  : "star-outline"
+              }
               size={24}
               color={
-                defaultTrackerId === item.id ? "#FFD700" : colors.textOnPrimary
+                (stagedDefaultTrackerId !== null
+                  ? stagedDefaultTrackerId
+                  : defaultTrackerId) === item.id
+                  ? "#FFD700"
+                  : colors.textOnPrimary
               }
             />
           </TouchableOpacity>
@@ -372,7 +395,19 @@ export default function MenuDrawer({
             {editMode && (
               <TouchableOpacity
                 style={styles.editButton}
-                onPress={() => setEditMode(false)}
+                onPress={async () => {
+                  if (
+                    stagedDefaultTrackerId &&
+                    stagedDefaultTrackerId !== defaultTrackerId &&
+                    onSaveDefaultChange
+                  ) {
+                    const didSave = await onSaveDefaultChange(stagedDefaultTrackerId);
+                    if (!didSave) {
+                      return;
+                    }
+                  }
+                  setEditMode(false);
+                }}
               >
                 <Text style={styles.doneButtonText}>Done</Text>
               </TouchableOpacity>
