@@ -19,6 +19,11 @@ export const TrackerProvider = ({ children }) => {
   const [trackers, setTrackers] = useState([]);
   const [loading, setLoading] = useState(true);
   const isInitialMount = useRef(true);
+  const activeTrackerIdRef = useRef(null);
+
+  useEffect(() => {
+    activeTrackerIdRef.current = activeTrackerId;
+  }, [activeTrackerId]);
 
   // On app start, clear persisted tracker and load trackers
   // This ensures tracker resets on app restart but persists during navigation
@@ -68,7 +73,7 @@ export const TrackerProvider = ({ children }) => {
       // 3. Otherwise, use the default tracker
       // 4. Otherwise, use the first tracker
       let activeTracker = null;
-      const currentActiveId = activeTrackerId;
+      const currentActiveId = activeTrackerIdRef.current;
 
       if (currentActiveId) {
         // Check if the current active tracker still exists in the list
@@ -112,7 +117,7 @@ export const TrackerProvider = ({ children }) => {
     } finally {
       setLoading(false);
     }
-  }, [activeTrackerId]);
+  }, []);
 
   // Set active tracker (persists to AsyncStorage for navigation, but resets on app restart)
   // If tracker is null, it will reset to default on next loadTrackers call
