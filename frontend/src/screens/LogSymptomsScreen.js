@@ -2226,8 +2226,8 @@ export default function LogSymptomsScreen({ route, navigation }) {
         font-size: 10px;
         font-weight: 600;
         margin-left: 4px;
-        background-color: #eef2ff;
-        color: #4338ca;
+        background-color: #eef5e6;
+        color: #354a2f;
       }
       .badge-inactive {
         background-color: #fef2f2;

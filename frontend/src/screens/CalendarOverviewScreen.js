@@ -93,6 +93,7 @@ export default function CalendarOverviewScreen() {
           isSelected={isEditMode && isSelectedPeriodDate}
           isToggledPeriod={isToggledPeriod}
           onDayPress={isEditMode ? handleDayPress : undefined}
+          dayBackgroundColor={colors.background}
         />
       );
     };
@@ -711,7 +712,7 @@ export default function CalendarOverviewScreen() {
             style={styles.backButton}
             onPress={() => navigation.goBack()}
           >
-            <Ionicons name="arrow-back" size={24} color={colors.text} />
+            <Ionicons name="arrow-back" size={24} color={colors.textOnPrimary} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Calendar Overview</Text>
           <View style={styles.placeholder} />
@@ -783,7 +784,7 @@ export default function CalendarOverviewScreen() {
           disabled={(isEditMode && !hasEditModeChanges) || submitting}
         >
           {submitting ? (
-            <ActivityIndicator size="small" color={colors.text} />
+          <ActivityIndicator size="small" color={colors.textOnPrimary} />
           ) : (
             <Ionicons
               name={isEditMode ? "checkmark" : "create-outline"}
@@ -791,7 +792,7 @@ export default function CalendarOverviewScreen() {
               color={
                 isEditMode && !hasEditModeChanges
                   ? colors.textLight
-                  : colors.text
+                  : colors.textOnPrimary
               }
             />
           )}
@@ -872,7 +873,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 50,
     paddingBottom: 16,
-    backgroundColor: colors.background,
+    backgroundColor: colors.navigation,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.navigationDark,
   },
   backButton: {
     padding: 8,
@@ -880,7 +883,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 20,
     fontWeight: "bold",
-    color: colors.text,
+    color: colors.textOnPrimary,
   },
   placeholder: {
     width: 40,
@@ -917,17 +920,18 @@ const styles = StyleSheet.create({
   },
   calendarCard: {
     backgroundColor: colors.calendar,
+    borderWidth: 1,
+    borderColor: colors.calendarShadow,
     borderRadius: 16,
     marginBottom: 20,
-    // Shadow for iOS
-    shadowColor: "#000",
+    // Match Home page calendar shadow border styling
+    shadowColor: colors.calendarShadow,
     shadowOffset: {
       width: 0,
-      height: 2,
+      height: 4,
     },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    // Shadow for Android
-    elevation: 3,
+    shadowOpacity: 0.55,
+    shadowRadius: 10,
+    elevation: 5,
   },
 });

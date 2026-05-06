@@ -112,6 +112,7 @@ export default function CalendarSection({
           onPress={onDayPress}
           onLogPeriod={isPeriodTracker ? onLogPeriod : undefined}
           markedDates={calendarData}
+          dayBackgroundColor={colors.background}
         />
       );
     };
@@ -133,6 +134,7 @@ export default function CalendarSection({
     <>
       {/* Calendar Section - Separate */}
       <View style={styles.calendarSection}>
+        <View style={styles.calendarClip}>
         <Calendar
           current={selectedDate || today}
           onDayPress={onDayPress}
@@ -144,9 +146,9 @@ export default function CalendarSection({
           markedDates={markedDates}
           dayComponent={dayComponent}
           theme={{
-            backgroundColor: colors.calendar,
-            calendarBackground: colors.calendar,
-            dayBackgroundColor: colors.calendar,
+            backgroundColor: "transparent",
+            calendarBackground: "transparent",
+            dayBackgroundColor: "transparent",
             todayBackgroundColor: "transparent", // Let our CustomDay component handle today's background color
             textSectionTitleColor: colors.text,
             selectedDayBackgroundColor: colors.selected,
@@ -164,9 +166,96 @@ export default function CalendarSection({
             textDayFontSize: 14,
             textMonthFontSize: 16,
             textDayHeaderFontSize: 13,
+            // Make every internal layer transparent so the cream parent shows through.
+            "stylesheet.calendar.main": {
+              container: {
+                backgroundColor: "transparent",
+              },
+              week: {
+                marginTop: 7,
+                marginBottom: 7,
+                flexDirection: "row",
+                justifyContent: "space-around",
+                backgroundColor: "transparent",
+              },
+              monthView: {
+                backgroundColor: "transparent",
+              },
+              dayContainer: {
+                backgroundColor: "transparent",
+                flex: 1,
+                alignItems: "center",
+              },
+              emptyDayContainer: {
+                backgroundColor: "transparent",
+                flex: 1,
+              },
+            },
+            "stylesheet.calendar.header": {
+              header: {
+                flexDirection: "row",
+                justifyContent: "space-between",
+                paddingLeft: 10,
+                paddingRight: 10,
+                marginTop: 6,
+                alignItems: "center",
+                backgroundColor: "transparent",
+              },
+              monthText: {
+                fontSize: 16,
+                fontWeight: "bold",
+                color: colors.text,
+              },
+              dayHeader: {
+                marginTop: 2,
+                marginBottom: 7,
+                width: 32,
+                textAlign: "center",
+                fontSize: 13,
+                fontWeight: "600",
+                color: colors.text,
+                backgroundColor: "transparent",
+              },
+              week: {
+                marginTop: 7,
+                flexDirection: "row",
+                justifyContent: "space-around",
+                backgroundColor: "transparent",
+              },
+            },
+            "stylesheet.day.basic": {
+              base: {
+                width: 32,
+                height: 32,
+                alignItems: "center",
+                justifyContent: "center",
+                backgroundColor: "transparent",
+              },
+              today: {
+                borderRadius: 16,
+                backgroundColor: "transparent",
+              },
+              todayText: {
+                color: colors.primary,
+                fontWeight: "600",
+              },
+            },
+            "stylesheet.day.single": {
+              base: {
+                width: 32,
+                height: 32,
+                alignItems: "center",
+                justifyContent: "center",
+                backgroundColor: "transparent",
+              },
+              text: {
+                color: colors.text,
+              },
+            },
           }}
           style={styles.calendar}
         />
+        </View>
       </View>
 
       {/* Cycle Phase Legend - Compact, Right-Aligned (Only for Period Tracker) */}
@@ -235,18 +324,32 @@ export default function CalendarSection({
 
 const styles = StyleSheet.create({
   calendarSection: {
-    backgroundColor: colors.calendar,
+    backgroundColor: colors.background,
     padding: 20,
     marginTop: 20,
     marginHorizontal: 20,
     borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.calendarShadow,
+    shadowColor: colors.calendarShadow,
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.55,
+    shadowRadius: 10,
+    elevation: 5,
   },
   calendarLoader: {
     padding: 20,
   },
-  calendar: {
+  calendarClip: {
+    backgroundColor: colors.background,
     borderRadius: 12,
     overflow: "hidden",
+  },
+  calendar: {
+    backgroundColor: "transparent",
   },
   legendContainer: {
     padding: 8,

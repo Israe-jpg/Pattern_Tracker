@@ -59,19 +59,21 @@ FormField.displayName = "FormField";
 
 const styles = StyleSheet.create({
   fieldContainer: {
-    backgroundColor: colors.formFieldBackground,
+    backgroundColor: colors.background,
     borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.calendarShadow,
     padding: 16,
     marginBottom: 16,
-    marginHorizontal: 20,
-    shadowColor: "#000",
+    marginHorizontal: 12,
+    shadowColor: colors.primaryLight,
     shadowOffset: {
       width: 0,
-      height: 1,
+      height: 4,
     },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
+    shadowOpacity: 0.65,
+    shadowRadius: 12,
+    elevation: 6,
   },
   fieldLabel: {
     fontSize: 18,

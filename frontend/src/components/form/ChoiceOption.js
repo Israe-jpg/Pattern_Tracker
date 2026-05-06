@@ -130,9 +130,17 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 14,
     borderRadius: 20,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.insightsCard,
     borderWidth: 1,
     borderColor: colors.border,
+    shadowColor: colors.primary,
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 2,
     marginRight: 8,
     marginBottom: 8,
     flexShrink: 0,
@@ -140,6 +148,14 @@ const styles = StyleSheet.create({
   choiceButtonSelected: {
     backgroundColor: colors.selected,
     borderColor: colors.selected,
+    shadowColor: colors.primary,
+    shadowOffset: {
+      width: 0,
+      height: 3,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 4,
   },
   choiceButtonText: {
     fontSize: 13,

@@ -8,7 +8,19 @@ import { colors } from "../../constants/colors";
  * Shows cycle day numbers, phase colors, and entry dots
  */
 export const CustomDay = (props) => {
-  const { date, state, marking, onPress, isEditMode, isSelected, isToggledPeriod, onDayPress, onLogPeriod, markedDates } = props;
+  const {
+    date,
+    state,
+    marking,
+    onPress,
+    isEditMode,
+    isSelected,
+    isToggledPeriod,
+    onDayPress,
+    onLogPeriod,
+    markedDates,
+    dayBackgroundColor = colors.background,
+  } = props;
   const cycleDay = marking?.cycleDay;
   const phase = marking?.phase;
   const isPredictedPeriod = marking?.isPredictedPeriod === true;
@@ -129,6 +141,7 @@ export const CustomDay = (props) => {
     <TouchableOpacity
       style={[
         styles.dayContainer,
+        { backgroundColor: dayBackgroundColor },
         isToday && !isEditMode && !isPredictedPeriod && !isPredictedOvulation && [styles.todayContainer, { backgroundColor: todayBackgroundColor }],
         isExactOvulationDay && !isToday && !isEditMode && !isPredictedPeriod && !isPredictedOvulation && [styles.ovulationContainer, { backgroundColor: colors.ovulation }],
         isMenstrual && !isToday && !isExactOvulationDay && !isEditMode && !isPredictedPeriod && !isPredictedOvulation && [styles.menstrualContainer, { backgroundColor: colors.menstrual }],
@@ -218,6 +231,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     position: "relative",
+    // Base day cell background; can be overridden per screen.
+    backgroundColor: "transparent",
   },
   dayContent: {
     width: "100%",
@@ -257,13 +272,13 @@ const styles = StyleSheet.create({
   },
   predictedPeriodContainer: {
     borderRadius: 17,
-    borderWidth: 2,
+    borderWidth: 0.8,
     borderStyle: "dashed",
     backgroundColor: "transparent",
   },
   predictedOvulationContainer: {
     borderRadius: 17,
-    borderWidth: 2,
+    borderWidth: 0.8,
     borderStyle: "dashed",
     backgroundColor: "transparent",
   },
@@ -297,7 +312,7 @@ const styles = StyleSheet.create({
   // Edit mode styles
   editModeContainer: {
     borderRadius: 17,
-    borderWidth: 1,
+    borderWidth: 0.8,
     borderStyle: "dashed",
     borderColor: colors.textLight,
     backgroundColor: "transparent",

@@ -131,7 +131,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#D2E2EC", // Blueish background
+    backgroundColor: "#EEF5E6", // Light green background
     borderRadius: 8,
     borderWidth: 1,
     borderColor: colors.border,

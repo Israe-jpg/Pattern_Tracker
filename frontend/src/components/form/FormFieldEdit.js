@@ -403,31 +403,31 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "flex-start",
     marginBottom: 16,
-    marginLeft: -20, // Negative margin to position toggle button outside, aligned with scrollContent padding
+    marginLeft: -12, // Negative margin to position toggle button outside, aligned with wider field layout
     marginRight: 0, // Align with header elements (scrollContent padding handles spacing)
   },
   toggleButtonOutside: {
     marginRight: 6, // Reduced to minimize width impact
     marginTop: 8,
     padding: 4, // Slightly increased for better touch target
-    marginLeft: 20, // Offset the negative margin to position icon outside field
+    marginLeft: 12, // Offset the negative margin to position icon outside field
     alignItems: "center",
     justifyContent: "center",
     minWidth: 28, // Ensure consistent size without affecting field width much
   },
   fieldContainer: {
     flex: 1,
-    backgroundColor: colors.formFieldBackground,
+    backgroundColor: colors.background,
     borderRadius: 12,
     padding: 16,
-    shadowColor: "#000",
+    shadowColor: colors.primaryLight,
     shadowOffset: {
       width: 0,
-      height: 1,
+      height: 4,
     },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
+    shadowOpacity: 0.65,
+    shadowRadius: 12,
+    elevation: 6,
   },
   fieldContainerWithBorder: {
     borderWidth: 1, // Very thin border
@@ -445,7 +445,7 @@ const styles = StyleSheet.create({
   },
   fieldContainerNonCustom: {
     // Non-custom fields (baseline/tracker-specific): very light grey solid border
-    borderColor: "#E5E7EB", // Much lighter grey
+    borderColor: colors.calendarShadow,
     borderStyle: "solid",
   },
   fieldContainerNonReorderable: {
@@ -515,8 +515,18 @@ const styles = StyleSheet.create({
   optionRow: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#E6F2FF", // Light light blue background
+    backgroundColor: "#EEF5E6", // Lighter soft green
     borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.primaryLight,
+    shadowColor: colors.primary,
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 5,
     padding: 12,
     gap: 8,
     marginBottom: 8,
@@ -525,7 +535,7 @@ const styles = StyleSheet.create({
   },
   optionRowMasked: {
     opacity: 0.9, // High opacity for visibility
-    backgroundColor: "#F3F4F6", // Universal grey background for masked options
+    backgroundColor: colors.background,
   },
   optionRowActive: {
     opacity: 0.6,

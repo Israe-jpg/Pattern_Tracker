@@ -57,7 +57,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   insightCard: {
-    backgroundColor: colors.secondary,
+    backgroundColor: colors.insightsCard,
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
@@ -85,7 +85,7 @@ const styles = StyleSheet.create({
     color: colors.textLight,
   },
   noInsightsCard: {
-    backgroundColor: colors.secondary,
+    backgroundColor: colors.insightsCard,
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,

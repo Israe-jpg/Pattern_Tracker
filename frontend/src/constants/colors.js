@@ -1,64 +1,67 @@
 // App Color Palette
-// Main Colors: #79A3C3, #3A2119, #D2E2EC, #EBCDB7, #957662
+// Main Colors (from provided palette, excluding black):
+// #F5F5D5, #C7B793, #A3B68A, #5C724A, #354A2F
 
 // App Name
 export const APP_NAME = "Trackt.";
 
 export const colors = {
   // Primary Colors (for buttons, headers, main actions)
-  primary: "#79A3C3", // Blue-gray - main color for buttons, headers
-  primaryDark: "#5F8AA8", // Darker blue-gray
-  primaryLight: "#9BB8D4", // Lighter blue-gray
+  primary: "#5C724A", // Earthy olive green
+  primaryDark: "#354A2F", // Deep green
+  primaryLight: "#A3B68A", // Soft sage
 
   // Secondary/Accent Colors
-  secondary: "#957662", // Medium brown - accent color
-  secondaryDark: "#7A5F4F", // Darker brown
-  secondaryLight: "#B08E7A", // Lighter brown
+  secondary: "#C7B793", // Warm sand
+  secondaryDark: "#A89A79", // Deeper sand
+  secondaryLight: "#E0D5BC", // Light sand
 
   // Background & Surface Colors
-  background: "#D2E2EC", // Light blue-gray background
-  surface: "#EBCDB7", // Light beige/peach for surfaces and cards
-  border: "#C4B5A8", // Subtle border color (mix of beige and brown)
+  background: "#FFFCF7", // Blanc casse (off-white) background
+  surface: "#C7B793", // Warm surface tone
+  border: "#A3B68A", // Muted green border
   
   // Specific UI Element Colors
-  navigation: "#1A0F0A", // Very dark brown, almost black for navigation bars, headers
-  navigationDark: "#0F0806", // Darker version for borders (almost black)
-  navigationLight: "#2A1812", // Lighter version for hover states
-  trackerItem: "#3A2119", // Original brown for tracker items and buttons in menu
-  trackerItemLight: "#4A2F25", // Lighter version for borders and dividers
-  calendar: "#FFFFFF", // White for calendar background
-  formSchemaBackground: "#F0F5F8", // Very light version of D2E2EC for form schema
+  navigation: "#354A2F", // Deep green for nav/header
+  navigationDark: "#2A3B26", // Darker green for separators
+  navigationLight: "#5C724A", // Lighter navigation state
+  trackerItem: "#5C724A", // Tracker chips/buttons
+  trackerItemLight: "#7E946A", // Lighter tracker borders/dividers
+  calendar: "#FFFCF7", // Match off-white app background
+  calendarShadow: "#DDE8CC", // Soft light green shadow for calendar edges
+  formSchemaBackground: "#FFFCF7", // Off-white for Log Symptoms background
   formFieldBackground: "#FFFFFF", // White for form fields
-  selected: "#957662", // Medium brown for selected items
-  slider: "#79A3C3", // Blue-gray for sliders
+  insightsCard: "#FFF3DD", // Bright beige cream for insights cards
+  selected: "#A3B68A", // Sage for selected items
+  slider: "#5C724A", // Green for sliders
 
   // Text Colors
-  text: "#3A2119", // Dark brown/almost black for primary text (high contrast)
-  textSecondary: "#957662", // Medium brown for secondary text
-  textLight: "#8A7A6E", // Lighter brown-gray for light text
+  text: "#354A2F", // Deep green text
+  textSecondary: "#5C724A", // Secondary green text
+  textLight: "#7E946A", // Muted light text
   textOnPrimary: "#FFFFFF", // White text on primary background
-  textOnSecondary: "#3A2119", // Dark text on secondary background
+  textOnSecondary: "#354A2F", // Dark green text on sand background
 
   // Status Colors
   success: "#10B981",
   warning: "#F59E0B",
   error: "#EF4444",
-  info: "#79A3C3", // Using primary blue-gray for info
+  info: "#5C724A", // Use primary green for info
 
   // Health Tracker Specific - Cycle Phases
   menstrual: "#8B1538", // Red burgundy for period
-  ovulation: "#79A3C3", // Blue-gray for ovulation phase window (using primary)
+  ovulation: "#BFD7A5", // More apparent autumn sage
   exactOvulation: "#10B981", // Green for exact ovulation day (using success green)
-  follicular: "#B8E6B8", // Green pastel for follicular phase
-  luteal: "#D4B3E8", // Purple pastel for luteal phase
+  follicular: "#DDB9C1", // Pastel burgundy
+  luteal: "#C8A88F", // Brownish autumn tone
   // Legacy support
   period: "#EF4444",
   fertile: "#F59E0B",
 
   // Chart Colors (using main palette)
-  chart1: "#79A3C3", // Primary blue-gray
-  chart2: "#957662", // Medium brown
-  chart3: "#EBCDB7", // Light beige
-  chart4: "#9BB8D4", // Light blue-gray
-  chart5: "#B08E7A", // Light brown
+  chart1: "#5C724A", // Primary green
+  chart2: "#C7B793", // Sand
+  chart3: "#A3B68A", // Sage
+  chart4: "#354A2F", // Deep green
+  chart5: "#FFF7E6", // Cream
 };
