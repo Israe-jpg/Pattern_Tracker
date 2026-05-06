@@ -13,6 +13,8 @@ from app.models.tracker_user_field import TrackerUserField
 from app.models.tracker_category import TrackerCategory
 from app.models.field_option import FieldOption
 from app.models.period_cycle import PeriodCycle
+from app.models.tracker_field_override import TrackerFieldOverride
+from app.models.tracker_option_override import TrackerOptionOverride
 from app.schemas.tracker_schemas import CustomCategorySchema, FieldOptionSchema, MenstruationTrackerSetupSchema
 from app.services.category_service import CategoryService
 from app.services.period_cycle_service import PeriodCycleService
@@ -96,6 +98,210 @@ def verify_option_ownership(option_id: int, user_id: int) -> FieldOption:
         raise ValueError("Unauthorized - option does not belong to your tracker")
     
     return option
+
+
+def get_owned_tracker_for_category(category_id: int, user_id: int) -> Tracker:
+    """
+    Resolve the user's tracker for a category.
+    Allows optional tracker_id override via query/body for deterministic selection.
+    """
+    request_json = request.get_json(silent=True) or {}
+    requested_tracker_id = request.args.get('tracker_id') or request_json.get('tracker_id')
+    tracker_query = Tracker.query.filter_by(category_id=category_id, user_id=user_id)
+
+    if requested_tracker_id:
+        tracker_query = tracker_query.filter_by(id=requested_tracker_id)
+
+    tracker = tracker_query.order_by(Tracker.created_at.desc()).first()
+    if not tracker:
+        raise ValueError("Tracker not found for this category")
+    return tracker
+
+
+def upsert_field_override(tracker_id: int, tracker_field_id: int, **updates) -> TrackerFieldOverride:
+    override = TrackerFieldOverride.query.filter_by(
+        tracker_id=tracker_id,
+        tracker_field_id=tracker_field_id
+    ).first()
+    if not override:
+        override = TrackerFieldOverride(
+            tracker_id=tracker_id,
+            tracker_field_id=tracker_field_id
+        )
+        db.session.add(override)
+
+    for key, value in updates.items():
+        setattr(override, key, value)
+
+    return override
+
+
+def upsert_option_override(tracker_id: int, field_option_id: int, **updates) -> TrackerOptionOverride:
+    override = TrackerOptionOverride.query.filter_by(
+        tracker_id=tracker_id,
+        field_option_id=field_option_id
+    ).first()
+    if not override:
+        override = TrackerOptionOverride(
+            tracker_id=tracker_id,
+            field_option_id=field_option_id
+        )
+        db.session.add(override)
+
+    for key, value in updates.items():
+        setattr(override, key, value)
+
+    return override
+
+
+# ============================================================================
+# OVERRIDE READ HELPERS
+# Pre-load overrides in bulk (two queries total per endpoint) so the
+# serializers below can do O(1) dict lookups instead of N per-field queries.
+# ============================================================================
+
+def _build_field_override_map(tracker_id: int, field_ids: list) -> dict:
+    """Return {tracker_field_id: TrackerFieldOverride} for the given tracker."""
+    if not field_ids:
+        return {}
+    overrides = TrackerFieldOverride.query.filter(
+        TrackerFieldOverride.tracker_id == tracker_id,
+        TrackerFieldOverride.tracker_field_id.in_(field_ids),
+    ).all()
+    return {o.tracker_field_id: o for o in overrides}
+
+
+def _build_option_override_map(tracker_id: int, option_ids: list) -> dict:
+    """Return {field_option_id: TrackerOptionOverride} for the given tracker."""
+    if not option_ids:
+        return {}
+    overrides = TrackerOptionOverride.query.filter(
+        TrackerOptionOverride.tracker_id == tracker_id,
+        TrackerOptionOverride.field_option_id.in_(option_ids),
+    ).all()
+    return {o.field_option_id: o for o in overrides}
+
+
+def _apply_overrides_to_serialized_groups(tracker_id: int, field_groups: dict) -> dict:
+    """
+    Apply per-tracker field/option overrides to an already-serialized field_groups dict.
+
+    Used for the Period Tracker form-schema path where the schema is built by
+    CategoryService and returned as plain dicts rather than ORM objects.
+
+    field_groups structure:
+        { 'baseline': [field_dict, ...], 'period_tracker': [...], 'custom': [...] }
+
+    Each field_dict has: id, is_user_field (optional), field_order, display_label,
+    is_active, options: [option_dict, ...]
+    Each option_dict has: id, option_name, option_order, is_active, ...
+    """
+    # Collect IDs for bulk loading
+    all_field_ids = []
+    all_option_ids = []
+    for group_fields in field_groups.values():
+        for f in group_fields:
+            if not f.get('is_user_field') and f.get('id'):
+                all_field_ids.append(f['id'])
+                for opt in f.get('options') or []:
+                    if opt.get('id'):
+                        all_option_ids.append(opt['id'])
+
+    field_override_map  = _build_field_override_map(tracker_id, all_field_ids)
+    option_override_map = _build_option_override_map(tracker_id, all_option_ids)
+
+    def _patch_field(f):
+        """Return patched field dict, or None if the field should be hidden."""
+        if f.get('is_user_field'):
+            return f
+
+        override = field_override_map.get(f['id'])
+        if override and override.is_hidden:
+            return None
+
+        f = dict(f)  # shallow copy — don't mutate the original
+        if override:
+            if override.display_label is not None:
+                f['display_label'] = override.display_label
+            if override.field_order is not None:
+                f['field_order'] = override.field_order
+            if override.is_active is not None:
+                f['is_active'] = override.is_active
+        f['is_hidden'] = False
+
+        # Patch options
+        patched_options = []
+        for opt in f.get('options') or []:
+            opt_override = option_override_map.get(opt.get('id'))
+            is_hidden = opt_override.is_hidden if opt_override else False
+            effective_active = (
+                opt_override.is_active
+                if (opt_override and opt_override.is_active is not None)
+                else opt.get('is_active', True)
+            )
+            if is_hidden or not effective_active:
+                continue
+            opt = dict(opt)
+            if opt_override:
+                if opt_override.option_name is not None:
+                    opt['option_name'] = opt_override.option_name
+                if opt_override.option_order is not None:
+                    opt['option_order'] = opt_override.option_order
+            opt['is_hidden'] = False
+            patched_options.append(opt)
+
+        patched_options.sort(key=lambda x: x.get('option_order') or 0)
+        f['options'] = patched_options
+        return f
+
+    result = {}
+    for group_name, group_fields in field_groups.items():
+        patched = [_patch_field(f) for f in group_fields]
+        patched = [f for f in patched if f is not None]
+        patched.sort(key=lambda x: x.get('field_order') or 0)
+        result[group_name] = patched
+    return result
+
+
+def _merge_options(template_options, option_override_map, include_hidden: bool = False) -> list:
+    """
+    Apply per-tracker option overrides onto a list of FieldOption ORM objects.
+
+    include_hidden=False  → used by form-schema  (hide overridden/inactive options)
+    include_hidden=True   → used by management-schema (show everything + override flag)
+
+    Returns a list of plain dicts ready for JSON serialisation, sorted by
+    effective option_order.
+    """
+    result = []
+    for opt in template_options:
+        override = option_override_map.get(opt.id)
+
+        is_hidden = override.is_hidden if override else False
+        effective_active = (
+            override.is_active if (override and override.is_active is not None)
+            else opt.is_active
+        )
+
+        if not include_hidden and (is_hidden or not effective_active):
+            continue
+
+        d = opt.to_dict()
+        if override:
+            if override.option_name is not None:
+                d['option_name'] = override.option_name
+            if override.option_order is not None:
+                d['option_order'] = override.option_order
+            d['is_active'] = effective_active
+        d['is_hidden'] = is_hidden
+        # Map is_hidden → is_active=False so frontend code that reads
+        # is_active continues to work without changes.
+        if is_hidden:
+            d['is_active'] = False
+        result.append(d)
+
+    result.sort(key=lambda x: x.get('option_order') or 0)
+    return result
 
 
 def error_response(message: str, status_code: int = 400, 
@@ -620,7 +826,11 @@ def get_form_schema(tracker_id: int):
             # Format response consistently with other trackers (now using field_groups from result)
             cycle_info = result.get('cycle_info') or {}
             predictions = result.get('predictions') or {}
-            field_groups = result.get('field_groups') or {}
+            raw_field_groups = result.get('field_groups') or {}
+
+            # Apply per-tracker field/option overrides to the period schema.
+            # The service returns plain dicts, so we use the dict-level helper.
+            field_groups = _apply_overrides_to_serialized_groups(tracker.id, raw_field_groups)
             
             return success_response(
                 "Form schema retrieved successfully",
@@ -685,28 +895,76 @@ def get_form_schema(tracker_id: int):
                 is_active=True
             ).order_by(TrackerField.field_order.asc()).all()
         
+        # ---- bulk-load overrides (2 queries total) -------------------------
+        template_field_ids = [
+            f.id for f in baseline_fields + category_specific_fields
+            if isinstance(f, TrackerField)
+        ]
+        if not is_prebuilt:
+            template_field_ids += [f.id for f in custom_fields if isinstance(f, TrackerField)]
+
+        form_field_override_map = _build_field_override_map(tracker.id, template_field_ids)
+
+        if template_field_ids:
+            all_tmpl_options = FieldOption.query.filter(
+                FieldOption.tracker_field_id.in_(template_field_ids),
+                FieldOption.is_active == True,
+            ).all()
+            tmpl_option_ids = [o.id for o in all_tmpl_options]
+        else:
+            tmpl_option_ids = []
+
+        form_option_override_map = _build_option_override_map(tracker.id, tmpl_option_ids)
+        # ---------------------------------------------------------------------
+
         def serialize_field(field):
-            """Serialize field with options"""
+            """Serialize field with options, applying per-tracker overrides."""
             if isinstance(field, TrackerUserField):
+                # User-owned fields are never shared templates — serve as-is.
                 options = FieldOption.query.filter_by(
                     tracker_user_field_id=field.id,
-                    is_active=True
+                    is_active=True,
                 ).order_by(FieldOption.option_order.asc()).all()
-            else:
-                options = FieldOption.query.filter_by(
-                    tracker_field_id=field.id,
-                    is_active=True
-                ).order_by(FieldOption.option_order.asc()).all()
-            
+                data = field.to_dict()
+                data['options'] = [o.to_dict() for o in options]
+                data['is_hidden'] = False
+                return data
+
+            override = form_field_override_map.get(field.id)
+
+            # Field hidden by the user for this tracker → exclude from form
+            if override and override.is_hidden:
+                return None
+
             data = field.to_dict()
-            data['options'] = [o.to_dict() for o in options]
+            if override:
+                if override.display_label is not None:
+                    data['display_label'] = override.display_label
+                if override.field_order is not None:
+                    data['field_order'] = override.field_order
+                if override.is_active is not None:
+                    data['is_active'] = override.is_active
+            data['is_hidden'] = False
+
+            # Options: merge template with per-tracker overrides
+            template_options = FieldOption.query.filter_by(
+                tracker_field_id=field.id,
+                is_active=True,
+            ).order_by(FieldOption.option_order.asc()).all()
+            data['options'] = _merge_options(template_options, form_option_override_map)
             return data
-        
+
+        def _serialize_and_sort(fields):
+            serialized = [serialize_field(f) for f in fields]
+            serialized = [s for s in serialized if s is not None]
+            serialized.sort(key=lambda x: x.get('field_order') or 0)
+            return serialized
+
         # Combine all fields in field_group order
         field_groups = {
-            'baseline': [serialize_field(f) for f in baseline_fields],
-            'category_specific': [serialize_field(f) for f in category_specific_fields],
-            'custom': [serialize_field(f) for f in custom_fields]
+            'baseline': _serialize_and_sort(baseline_fields),
+            'category_specific': _serialize_and_sort(category_specific_fields),
+            'custom': _serialize_and_sort(custom_fields),
         }
         
         
@@ -794,42 +1052,88 @@ def get_management_schema(tracker_id: int):
                 field_group='custom'
             ).order_by(TrackerField.field_order.asc()).all()
         
+        # ---- bulk-load overrides (2 queries total) -------------------------
+        mgmt_template_field_ids = [
+            f.id for f in baseline_fields + category_specific_fields
+            if isinstance(f, TrackerField)
+        ]
+        if not is_prebuilt:
+            mgmt_template_field_ids += [
+                f.id for f in custom_fields if isinstance(f, TrackerField)
+            ]
+
+        mgmt_field_override_map = _build_field_override_map(tracker.id, mgmt_template_field_ids)
+
+        if mgmt_template_field_ids:
+            mgmt_all_opts = FieldOption.query.filter(
+                FieldOption.tracker_field_id.in_(mgmt_template_field_ids),
+            ).all()
+            mgmt_option_ids = [o.id for o in mgmt_all_opts]
+        else:
+            mgmt_option_ids = []
+
+        mgmt_option_override_map = _build_option_override_map(tracker.id, mgmt_option_ids)
+        # ---------------------------------------------------------------------
+
         def serialize_field(field):
-            if isinstance(field, TrackerUserField):
+            is_user_field = isinstance(field, TrackerUserField)
+            if is_user_field:
                 options = FieldOption.query.filter_by(
-                    tracker_user_field_id=field.id
+                    tracker_user_field_id=field.id,
                 ).order_by(FieldOption.option_order.asc()).all()
-            else:
-                options = FieldOption.query.filter_by(
-                    tracker_field_id=field.id
-                ).order_by(FieldOption.option_order.asc()).all()
-            
+                data = field.to_dict()
+                data['options'] = [o.to_dict() for o in options]
+                data['is_user_field'] = True
+                data['is_hidden'] = False
+                return data
+
+            override = mgmt_field_override_map.get(field.id)
             data = field.to_dict()
-            data['options'] = [o.to_dict() for o in options]
-            data['is_user_field'] = isinstance(field, TrackerUserField)
+            data['is_user_field'] = False
+
+            if override:
+                if override.display_label is not None:
+                    data['display_label'] = override.display_label
+                if override.field_order is not None:
+                    data['field_order'] = override.field_order
+                if override.is_active is not None:
+                    data['is_active'] = override.is_active
+                data['is_hidden'] = override.is_hidden
+                # Map is_hidden → is_active=False so frontend code that reads
+                # is_active continues to work without changes.
+                if override.is_hidden:
+                    data['is_active'] = False
+            else:
+                data['is_hidden'] = False
+
+            # Options — include ALL (active + inactive) for management view,
+            # but annotate each with is_hidden from its override.
+            tmpl_opts = FieldOption.query.filter_by(
+                tracker_field_id=field.id,
+            ).order_by(FieldOption.option_order.asc()).all()
+            data['options'] = _merge_options(tmpl_opts, mgmt_option_override_map, include_hidden=True)
             return data
-        
-        # Filter out container/grouping fields (fields without options that are just containers)
-        # For period tracker: exclude 'menstruating', 'not_menstruating', 'primary_data', 'calculated_data'
+
+        # Container / grouping fields never have options — filter them out.
         container_field_names = {'menstruating', 'not_menstruating', 'primary_data', 'calculated_data'}
-        
+
         def should_include_field(field):
-            """Only include fields that have options (actual data fields)"""
-            # Exclude container fields
+            """Only include fields that have at least one option (real data fields)."""
             if field.field_name in container_field_names:
                 return False
-            # Include if field has options
             if isinstance(field, TrackerUserField):
-                has_options = FieldOption.query.filter_by(tracker_user_field_id=field.id).count() > 0
-            else:
-                has_options = FieldOption.query.filter_by(tracker_field_id=field.id).count() > 0
-            return has_options
-        
+                return FieldOption.query.filter_by(tracker_user_field_id=field.id).count() > 0
+            return FieldOption.query.filter_by(tracker_field_id=field.id).count() > 0
+
         response_data = {
-            'baseline_fields': [serialize_field(f) for f in baseline_fields if should_include_field(f)],
-            'custom_fields': [serialize_field(f) for f in custom_fields if should_include_field(f)]
+            'baseline_fields': [
+                serialize_field(f) for f in baseline_fields if should_include_field(f)
+            ],
+            'custom_fields': [
+                serialize_field(f) for f in custom_fields if should_include_field(f)
+            ],
         }
-        
+
         if category_specific_fields:
             response_data['category_fields'] = [
                 serialize_field(f) for f in category_specific_fields if should_include_field(f)
@@ -996,25 +1300,55 @@ def get_field_details(tracker_field_id: int):
         return error_response(str(e), 404)
     
     try:
-        
-        # Get options based on field type
         if isinstance(field, TrackerUserField):
+            # User-owned field — no override system applies.
             options = FieldOption.query.filter_by(
                 tracker_user_field_id=field.id,
-                is_active=True
+                is_active=True,
             ).order_by(FieldOption.option_order).all()
+            field_data = field.to_dict()
+            field_data['is_hidden'] = False
+            return success_response(
+                "Field details retrieved successfully",
+                {'field': field_data, 'options': [o.to_dict() for o in options]},
+            )
+
+        # Shared template field — apply per-tracker overrides.
+        tracker = get_owned_tracker_for_category(field.category_id, user_id)
+
+        field_override = TrackerFieldOverride.query.filter_by(
+            tracker_id=tracker.id,
+            tracker_field_id=field.id,
+        ).first()
+
+        field_data = field.to_dict()
+        if field_override:
+            if field_override.display_label is not None:
+                field_data['display_label'] = field_override.display_label
+            if field_override.field_order is not None:
+                field_data['field_order'] = field_override.field_order
+            if field_override.is_active is not None:
+                field_data['is_active'] = field_override.is_active
+            field_data['is_hidden'] = field_override.is_hidden
+            if field_override.is_hidden:
+                field_data['is_active'] = False
         else:
-            options = FieldOption.query.filter_by(
-                tracker_field_id=field.id,
-                is_active=True
-            ).order_by(FieldOption.option_order).all()
-        
+            field_data['is_hidden'] = False
+
+        template_options = FieldOption.query.filter_by(
+            tracker_field_id=field.id,
+            is_active=True,
+        ).order_by(FieldOption.option_order).all()
+
+        option_ids = [o.id for o in template_options]
+        opt_override_map = _build_option_override_map(tracker.id, option_ids)
+
         return success_response(
             "Field details retrieved successfully",
             {
-                'field': field.to_dict(),
-                'options': [opt.to_dict() for opt in options]
-            }
+                'field': field_data,
+                'options': _merge_options(template_options, opt_override_map, include_hidden=True),
+            },
         )
     except Exception as e:
         return error_response(f"Failed to get field details: {str(e)}", 500)
@@ -1035,8 +1369,16 @@ def update_field_display_label(tracker_field_id: int):
         if not new_label:
             return error_response("new_label is required", 400)
         
-        # Field already retrieved and verified in the outer try block
-        field.display_label = new_label
+        # User-created fields are safe to mutate directly.
+        if isinstance(field, TrackerUserField):
+            field.display_label = new_label
+        else:
+            tracker = get_owned_tracker_for_category(field.category_id, user_id)
+            upsert_field_override(
+                tracker_id=tracker.id,
+                tracker_field_id=field.id,
+                display_label=new_label
+            )
         db.session.commit()
         
         return success_response("Field display label updated successfully")
@@ -1060,8 +1402,18 @@ def update_field_help_text(tracker_field_id: int):
         if new_help_text is None:
             return error_response("new_help_text is required", 400)
         
-        field.help_text = new_help_text
-        db.session.commit()
+        # User-created fields are safe to mutate directly.
+        # Shared template fields currently have no override column for help_text,
+        # so we only allow editing on user-owned fields.
+        if isinstance(field, TrackerUserField):
+            field.help_text = new_help_text
+            db.session.commit()
+        else:
+            return error_response(
+                "Help text on shared template fields cannot be overridden per-tracker. "
+                "Use a TrackerUserField (custom field) if you need a custom help text.",
+                400
+            )
         
         return success_response("Field help text updated successfully")
     except Exception as e:
@@ -1084,8 +1436,18 @@ def update_field_order(tracker_field_id: int):
         if new_order is None:
             return error_response("new_order is required", 400)
         
-        # Update field order (this commits internally)
-        CategoryService.update_field_order(tracker_field_id, new_order)
+        # User-created fields are safe to mutate directly.
+        if isinstance(field, TrackerUserField):
+            # Update field order (this commits internally)
+            CategoryService.update_field_order(tracker_field_id, new_order)
+        else:
+            tracker = get_owned_tracker_for_category(field.category_id, user_id)
+            upsert_field_override(
+                tracker_id=tracker.id,
+                tracker_field_id=field.id,
+                field_order=new_order
+            )
+            db.session.commit()
         
         # ALWAYS rebuild schema to reflect new order
         # Determine the category and tracker based on field type
@@ -1122,7 +1484,28 @@ def toggle_field_active_status(tracker_field_id: int):
         return error_response(str(e), 404)
     
     try:
-        CategoryService.toggle_field_active_status(tracker_field_id)
+        field = verify_field_ownership(tracker_field_id, user_id)
+        if isinstance(field, TrackerUserField):
+            CategoryService.toggle_field_active_status(tracker_field_id)
+        else:
+            tracker = get_owned_tracker_for_category(field.category_id, user_id)
+            current_override = TrackerFieldOverride.query.filter_by(
+                tracker_id=tracker.id,
+                tracker_field_id=field.id
+            ).first()
+            # Effective hidden state: override wins if one exists,
+            # otherwise fall back to template's is_active (inactive = effectively hidden).
+            if current_override:
+                current_hidden = current_override.is_hidden
+            else:
+                current_hidden = not field.is_active
+            new_hidden = not current_hidden
+            upsert_field_override(
+                tracker_id=tracker.id,
+                tracker_field_id=field.id,
+                is_hidden=new_hidden
+            )
+            db.session.commit()
         return success_response("Field active status toggled successfully")
     except Exception as e:
         return error_response(f"Failed to toggle field active status: {str(e)}", 500)
@@ -1181,10 +1564,41 @@ def get_field_options(tracker_field_id: int):
                 is_active=True
             ).order_by(FieldOption.option_order).all()
         else:
-            options = FieldOption.query.filter_by(
+            tracker = get_owned_tracker_for_category(tracker_field.category_id, user_id)
+            template_options = FieldOption.query.filter_by(
                 tracker_field_id=tracker_field.id,
                 is_active=True
             ).order_by(FieldOption.option_order).all()
+
+            option_ids = [opt.id for opt in template_options]
+            overrides = TrackerOptionOverride.query.filter(
+                TrackerOptionOverride.tracker_id == tracker.id,
+                TrackerOptionOverride.field_option_id.in_(option_ids)
+            ).all() if option_ids else []
+            overrides_by_option_id = {o.field_option_id: o for o in overrides}
+
+            merged_options = []
+            for option in template_options:
+                override = overrides_by_option_id.get(option.id)
+
+                effective_is_active = option.is_active if override is None or override.is_active is None else override.is_active
+                effective_is_hidden = override.is_hidden if override else False
+                if not effective_is_active or effective_is_hidden:
+                    continue
+
+                option_dict = option.to_dict()
+                if override and override.option_name is not None:
+                    option_dict['option_name'] = override.option_name
+                if override and override.option_order is not None:
+                    option_dict['option_order'] = override.option_order
+
+                merged_options.append(option_dict)
+
+            merged_options.sort(key=lambda opt: opt.get('option_order') or 0)
+            return success_response(
+                "Options retrieved successfully",
+                {'options': merged_options}
+            )
         
         return success_response(
             "Options retrieved successfully",
@@ -1232,6 +1646,34 @@ def update_option_info(option_id: int):
         option = FieldOption.query.filter_by(id=option_id).first()
         if not option:
             return error_response("Option not found", 404)
+
+        # Shared template options should not be mutated directly.
+        if option.tracker_field_id:
+            tracker_field = TrackerField.query.filter_by(id=option.tracker_field_id).first()
+            tracker = get_owned_tracker_for_category(tracker_field.category_id, user_id)
+
+            disallowed = [
+                key for key in validated_data.keys()
+                if key not in {'option_name', 'option_order', 'is_active'}
+            ]
+            if disallowed:
+                return error_response(
+                    "Shared option templates only support per-tracker overrides for option_name, option_order, and is_active",
+                    400
+                )
+
+            override_updates = {}
+            if 'option_name' in validated_data:
+                override_updates['option_name'] = validated_data['option_name']
+            if 'option_order' in validated_data:
+                override_updates['option_order'] = validated_data['option_order']
+            if 'is_active' in validated_data:
+                override_updates['is_active'] = validated_data['is_active']
+
+            if override_updates:
+                upsert_option_override(tracker.id, option.id, **override_updates)
+                db.session.commit()
+            return success_response("Option updated successfully")
         
         # Get the new option type (if it's being changed)
         new_option_type = validated_data.get('option_type', option.option_type)
@@ -1288,7 +1730,14 @@ def delete_option(option_id: int):
         return error_response(str(e), status)
     
     try:
-        CategoryService.delete_option_from_field(option_id)
+        option = FieldOption.query.filter_by(id=option_id).first()
+        if option and option.tracker_field_id:
+            tracker_field = TrackerField.query.filter_by(id=option.tracker_field_id).first()
+            tracker = get_owned_tracker_for_category(tracker_field.category_id, user_id)
+            upsert_option_override(tracker.id, option.id, is_hidden=True)
+            db.session.commit()
+        else:
+            CategoryService.delete_option_from_field(option_id)
         return success_response("Option deleted successfully")
     except Exception as e:
         return error_response(f"Failed to delete option: {str(e)}", 500)
@@ -1309,7 +1758,18 @@ def update_option_order(option_id: int):
         if new_order is None:
             return error_response("new_order is required", 400)
         
-        CategoryService.update_option_order(option_id, new_order)
+        option = FieldOption.query.filter_by(id=option_id).first()
+        if option and option.tracker_field_id:
+            tracker_field = TrackerField.query.filter_by(id=option.tracker_field_id).first()
+            tracker = get_owned_tracker_for_category(tracker_field.category_id, user_id)
+            upsert_option_override(
+                tracker_id=tracker.id,
+                field_option_id=option.id,
+                option_order=new_order
+            )
+            db.session.commit()
+        else:
+            CategoryService.update_option_order(option_id, new_order)
         return success_response("Option order updated successfully")
     except ValueError as ve:
         return error_response(str(ve), 400)
@@ -1328,7 +1788,28 @@ def toggle_option_active_status(option_id: int):
         return error_response(str(e), 404)
     
     try:
-        CategoryService.toggle_option_active_status(option_id)
+        option = FieldOption.query.filter_by(id=option_id).first()
+        if option and option.tracker_field_id:
+            tracker_field = TrackerField.query.filter_by(id=option.tracker_field_id).first()
+            tracker = get_owned_tracker_for_category(tracker_field.category_id, user_id)
+            current_override = TrackerOptionOverride.query.filter_by(
+                tracker_id=tracker.id,
+                field_option_id=option.id
+            ).first()
+            # Effective hidden state: override wins if one exists,
+            # otherwise fall back to template's is_active.
+            if current_override:
+                current_hidden = current_override.is_hidden
+            else:
+                current_hidden = not option.is_active
+            upsert_option_override(
+                tracker_id=tracker.id,
+                field_option_id=option.id,
+                is_hidden=not current_hidden
+            )
+            db.session.commit()
+        else:
+            CategoryService.toggle_option_active_status(option_id)
         return success_response("Option active status toggled successfully")
     except Exception as e:
         return error_response(f"Failed to toggle option active status: {str(e)}", 500)
