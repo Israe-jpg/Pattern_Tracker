@@ -10,6 +10,15 @@ db = SQLAlchemy()
 migrate = Migrate()
 jwt = JWTManager()
 
+
+def _log_jwt_event(event_name, details):
+    """Centralized JWT debug logging for auth troubleshooting."""
+    try:
+        print(f"[JWT_DEBUG] {event_name}: {details}")
+    except Exception:
+        # Never let debug logging break request handling
+        pass
+
 def create_app(config_name='development'):
     """Application factory pattern"""
     app = Flask(__name__)
@@ -22,6 +31,36 @@ def create_app(config_name='development'):
     migrate.init_app(app, db)
     jwt.init_app(app)
     CORS(app)
+
+    @jwt.unauthorized_loader
+    def handle_missing_jwt(reason):
+        _log_jwt_event("missing_token", reason)
+        return {"msg": reason}, 401
+
+    @jwt.invalid_token_loader
+    def handle_invalid_jwt(reason):
+        _log_jwt_event("invalid_token", reason)
+        return {"msg": reason}, 401
+
+    @jwt.expired_token_loader
+    def handle_expired_jwt(jwt_header, jwt_payload):
+        token_type = jwt_payload.get("type", "unknown")
+        subject = jwt_payload.get("sub", "unknown")
+        _log_jwt_event(
+            "expired_token",
+            f"type={token_type}, sub={subject}, header={jwt_header}",
+        )
+        return {"msg": "Token has expired"}, 401
+
+    @jwt.revoked_token_loader
+    def handle_revoked_jwt(jwt_header, jwt_payload):
+        token_type = jwt_payload.get("type", "unknown")
+        subject = jwt_payload.get("sub", "unknown")
+        _log_jwt_event(
+            "revoked_token",
+            f"type={token_type}, sub={subject}, header={jwt_header}",
+        )
+        return {"msg": "Token has been revoked"}, 401
     
     # Import models
     from app.models import User, TrackerCategory, Tracker, TrackerField, FieldOption, TrackingData, PeriodCycle

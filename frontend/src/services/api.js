@@ -119,14 +119,24 @@ api.interceptors.response.use(
           throw new Error("Failed to refresh token");
         }
       } catch (refreshError) {
+        const refreshStatus = refreshError?.response?.status;
+        const refreshPayload = refreshError?.response?.data;
+        console.error("Token refresh failed", {
+          status: refreshStatus,
+          data: refreshPayload,
+          message: refreshError?.message,
+        });
+
         // Refresh failed - clear all tokens and logout user
         processQueue(refreshError, null);
         isRefreshing = false;
         await AsyncStorage.multiRemove([ACCESS_TOKEN_KEY, REFRESH_TOKEN_KEY]);
         
         // Preserve the original error message for debugging
-        const errorMessage = refreshError.message || 
-          refreshError.response?.data?.error || 
+        const errorMessage =
+          refreshError.response?.data?.msg ||
+          refreshError.response?.data?.error ||
+          refreshError.message || 
           "Failed to refresh token";
         
         // Create a new error with more context

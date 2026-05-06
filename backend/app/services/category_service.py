@@ -257,7 +257,7 @@ class CategoryService:
                     print(f"Failed to initialize {category_name}: {str(e)}")
                     continue
             
-                baseline_fields_exist = TrackerField.query.filter_by(
+            baseline_fields_exist = TrackerField.query.filter_by(
                 category_id=category.id,
                 field_group='baseline'
             ).first() is not None
