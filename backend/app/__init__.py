@@ -63,7 +63,11 @@ def create_app(config_name='development'):
         return {"msg": "Token has been revoked"}, 401
     
     # Import models
-    from app.models import User, TrackerCategory, Tracker, TrackerField, FieldOption, TrackingData, PeriodCycle
+    from app.models import (
+        User, TrackerCategory, Tracker, TrackerField, TrackerUserField,
+        FieldOption, TrackingData, PeriodCycle,
+        TrackerFieldOverride, TrackerOptionOverride,
+    )
     
     # Register blueprints
     from app.routes.auth import auth_bp
