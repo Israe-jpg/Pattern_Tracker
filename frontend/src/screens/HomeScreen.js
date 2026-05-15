@@ -26,7 +26,7 @@ const SWIPE_THRESHOLD = 50; // Minimum distance to trigger swipe
 
 export default function HomeScreen({ navigation }) {
   const { logout } = useAuth();
-  const { activeTracker, trackers: contextTrackers, loadTrackers: loadContextTrackers, setActiveTracker } = useTracker();
+  const { activeTracker, trackers: contextTrackers, loadTrackers: loadContextTrackers, setActiveTracker, clearActiveTracker } = useTracker();
   const [menuVisible, setMenuVisible] = useState(false);
   const [editMode, setEditMode] = useState(false);
 
@@ -285,12 +285,9 @@ export default function HomeScreen({ navigation }) {
           trackers={contextTrackers}
           onTrackerPress={handleTrackerPress}
           onCreateCustomTracker={() => {
-            // TODO: Navigate to create custom tracker screen
-            Alert.alert(
-              "Create Custom Tracker",
-              "This feature will be implemented soon. You'll be able to create your own custom tracker with custom fields.",
-              [{ text: "OK" }]
-            );
+            setMenuVisible(false);
+            setEditMode(false);
+            navigation.navigate("CreateCustomTracker");
           }}
           onEditTrackersList={() => {
             // This is handled by setEditMode in the dropdown
@@ -298,29 +295,25 @@ export default function HomeScreen({ navigation }) {
           editMode={editMode}
           setEditMode={setEditMode}
           onSaveDefaultChange={saveDefaultTrackerChange}
-          onDeleteTracker={async (tracker) => {
+          onDeleteTracker={(tracker) => {
             Alert.alert(
               "Delete Tracker",
               `Are you sure you want to delete "${tracker.name}"? This action cannot be undone.`,
               [
-                {
-                  text: "Cancel",
-                  style: "cancel",
-                },
+                { text: "Cancel", style: "cancel" },
                 {
                   text: "Delete",
                   style: "destructive",
                   onPress: async () => {
                     try {
-                      // TODO: Implement delete tracker API call
-                      // await trackerService.deleteTracker(tracker.id);
-                      Alert.alert("Success", "Tracker deleted successfully");
-                      loadContextTrackers(); // Reload trackers after deletion
+                      await trackerService.deleteTracker(tracker.id);
+                      if (activeTracker?.id === tracker.id) {
+                        await clearActiveTracker();
+                      } else {
+                        await loadContextTrackers();
+                      }
                     } catch (error) {
-                      Alert.alert(
-                        "Error",
-                        "Failed to delete tracker. Please try again."
-                      );
+                      Alert.alert("Error", "Failed to delete tracker. Please try again.");
                     }
                   },
                 },

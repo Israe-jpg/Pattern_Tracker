@@ -1,6 +1,7 @@
 import api from "./api";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { API_ENDPOINTS } from "../constants/config";
+import { isTokenExpired } from "../utils/tokenUtils";
 
 // Storage keys
 const ACCESS_TOKEN_KEY = "auth_token";
@@ -51,14 +52,46 @@ export const authService = {
       }
     );
 
-    const { access_token } = response.data;
+    const { access_token, refresh_token: new_refresh_token } = response.data;
 
     if (access_token) {
       await AsyncStorage.setItem(ACCESS_TOKEN_KEY, access_token);
+      if (new_refresh_token) {
+        await AsyncStorage.setItem(REFRESH_TOKEN_KEY, new_refresh_token);
+      }
       return access_token;
     }
 
     throw new Error("Failed to refresh token");
+  },
+
+  /**
+   * Refresh access token when expired but refresh token is still valid.
+   * Call before other API requests on app startup to avoid parallel 401s.
+   */
+  ensureValidAccessToken: async () => {
+    const { access_token, refresh_token } = await authService.getTokens();
+
+    if (!refresh_token) {
+      return !!access_token && !isTokenExpired(access_token);
+    }
+
+    if (refresh_token && isTokenExpired(refresh_token)) {
+      await AsyncStorage.multiRemove([ACCESS_TOKEN_KEY, REFRESH_TOKEN_KEY]);
+      return false;
+    }
+
+    if (access_token && !isTokenExpired(access_token, 60)) {
+      return true;
+    }
+
+    try {
+      await authService.refreshToken();
+      return true;
+    } catch {
+      await AsyncStorage.multiRemove([ACCESS_TOKEN_KEY, REFRESH_TOKEN_KEY]);
+      return false;
+    }
   },
 
   // Logout user and clear all tokens
@@ -80,10 +113,10 @@ export const authService = {
     return response.data.user || response.data;
   },
 
-  // Check if user is authenticated (has valid token)
+  // Check if user has a stored session (access or refresh token)
   isAuthenticated: async () => {
-    const token = await AsyncStorage.getItem(ACCESS_TOKEN_KEY);
-    return !!token;
+    const { access_token, refresh_token } = await authService.getTokens();
+    return !!(access_token || refresh_token);
   },
 
   // Get stored tokens (for debugging/testing)

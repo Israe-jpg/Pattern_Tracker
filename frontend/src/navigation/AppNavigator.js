@@ -14,6 +14,7 @@ import CalendarOverviewScreen from "../screens/CalendarOverviewScreen";
 import TrackerDetailScreen from "../screens/TrackerDetailScreen";
 import LogSymptomsScreen from "../screens/LogSymptomsScreen";
 import ConfigurePeriodTrackerScreen from "../screens/ConfigurePeriodTrackerScreen";
+import CreateCustomTrackerScreen from "../screens/CreateCustomTrackerScreen";
 
 const Stack = createNativeStackNavigator();
 
@@ -50,6 +51,10 @@ export default function AppNavigator() {
           <Stack.Screen
             name="ConfigurePeriodTracker"
             component={ConfigurePeriodTrackerScreen}
+          />
+          <Stack.Screen
+            name="CreateCustomTracker"
+            component={CreateCustomTrackerScreen}
           />
         </>
       )}

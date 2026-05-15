@@ -613,7 +613,10 @@ def delete_tracker(tracker_id: int):
         # Store category info before deleting tracker
         category_id = tracker.category_id
         is_custom_category = not tracker.is_default
-        
+
+        # Delete period cycles first (no ondelete CASCADE on that FK)
+        PeriodCycle.query.filter_by(tracker_id=tracker_id).delete()
+
         # Delete the tracker first (before category to avoid FK violation)
         db.session.delete(tracker)
         db.session.flush()  # Flush to ensure tracker deletion is processed
@@ -1647,33 +1650,38 @@ def update_option_info(option_id: int):
         if not option:
             return error_response("Option not found", 404)
 
-        # Shared template options should not be mutated directly.
+        # Shared template options (from prebuilt categories) should not be mutated directly.
+        # Custom category options (user-owned) can be updated fully.
         if option.tracker_field_id:
             tracker_field = TrackerField.query.filter_by(id=option.tracker_field_id).first()
-            tracker = get_owned_tracker_for_category(tracker_field.category_id, user_id)
+            category = TrackerCategory.query.filter_by(id=tracker_field.category_id).first()
 
-            disallowed = [
-                key for key in validated_data.keys()
-                if key not in {'option_name', 'option_order', 'is_active'}
-            ]
-            if disallowed:
-                return error_response(
-                    "Shared option templates only support per-tracker overrides for option_name, option_order, and is_active",
-                    400
-                )
+            if CategoryService.is_prebuilt_category(category.name):
+                # Prebuilt tracker: only allow per-tracker overrides
+                tracker = get_owned_tracker_for_category(tracker_field.category_id, user_id)
 
-            override_updates = {}
-            if 'option_name' in validated_data:
-                override_updates['option_name'] = validated_data['option_name']
-            if 'option_order' in validated_data:
-                override_updates['option_order'] = validated_data['option_order']
-            if 'is_active' in validated_data:
-                override_updates['is_active'] = validated_data['is_active']
+                disallowed = [
+                    key for key in validated_data.keys()
+                    if key not in {'option_name', 'option_order', 'is_active'}
+                ]
+                if disallowed:
+                    return error_response(
+                        "Shared option templates only support per-tracker overrides for option_name, option_order, and is_active",
+                        400
+                    )
 
-            if override_updates:
-                upsert_option_override(tracker.id, option.id, **override_updates)
-                db.session.commit()
-            return success_response("Option updated successfully")
+                override_updates = {}
+                if 'option_name' in validated_data:
+                    override_updates['option_name'] = validated_data['option_name']
+                if 'option_order' in validated_data:
+                    override_updates['option_order'] = validated_data['option_order']
+                if 'is_active' in validated_data:
+                    override_updates['is_active'] = validated_data['is_active']
+
+                if override_updates:
+                    upsert_option_override(tracker.id, option.id, **override_updates)
+                    db.session.commit()
+                return success_response("Option updated successfully")
         
         # Get the new option type (if it's being changed)
         new_option_type = validated_data.get('option_type', option.option_type)

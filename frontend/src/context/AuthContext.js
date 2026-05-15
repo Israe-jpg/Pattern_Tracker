@@ -28,9 +28,14 @@ export const AuthProvider = ({ children }) => {
       
       if (authenticated) {
         try {
-          // getProfile() will trigger API interceptor if token is expired
-          // Interceptor will try to refresh token automatically
-          // Only if refresh fails will this throw an error
+          // Refresh access token before profile/trackers run in parallel
+          const sessionOk = await authService.ensureValidAccessToken();
+          if (!sessionOk) {
+            setIsAuthenticated(false);
+            setUser(null);
+            return;
+          }
+
           const profile = await authService.getProfile();
           setUser(profile);
         } catch (profileError) {

@@ -33,7 +33,7 @@ class PeriodCycle(db.Model):
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
-    tracker = db.relationship('Tracker', backref='period_cycles')
+    tracker = db.relationship('Tracker', backref=db.backref('period_cycles', passive_deletes=True))
 
     def __repr__(self):
         return f'<PeriodCycle {self.id} tracker={self.tracker_id} start={self.cycle_start_date}>'
