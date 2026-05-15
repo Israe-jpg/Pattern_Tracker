@@ -20,6 +20,7 @@ export const CustomDay = (props) => {
     onLogPeriod,
     markedDates,
     dayBackgroundColor = colors.background,
+    highlightToday = false,
   } = props;
   const cycleDay = marking?.cycleDay;
   const phase = marking?.phase;
@@ -66,6 +67,14 @@ export const CustomDay = (props) => {
 
   // Determine background color for today based on phase
   const todayPhase = marking?.phase || phase;
+  const hasPhaseTodayFill =
+    todayPhase === "menstrual" ||
+    todayPhase === "period" ||
+    todayPhase === "ovulation" ||
+    todayPhase === "follicular" ||
+    todayPhase === "luteal" ||
+    isExactOvulationDay;
+
   let todayBackgroundColor = colors.primary;
   if (isToday) {
     if (todayPhase === "menstrual" || todayPhase === "period") {
@@ -76,12 +85,19 @@ export const CustomDay = (props) => {
       todayBackgroundColor = colors.follicular;
     } else if (todayPhase === "luteal") {
       todayBackgroundColor = colors.luteal;
+    } else if (highlightToday) {
+      todayBackgroundColor = colors.todayHighlight;
     }
   }
 
+  const showTodayFaintFill =
+    highlightToday && isToday && !isEditMode && !isPredictedPeriod && !isPredictedOvulation && !hasPhaseTodayFill;
+  const showTodayFaintRing =
+    highlightToday && isToday && !isEditMode && !isPredictedPeriod && !isPredictedOvulation && hasPhaseTodayFill;
+
   // Determine text color based on state
   let textColor = colors.text;
-  if (state === "today" || isToday) {
+  if ((state === "today" || isToday) && !showTodayFaintFill) {
     textColor = colors.textOnPrimary;
   } else if (state === "selected") {
     textColor = colors.textOnPrimary;
@@ -142,7 +158,9 @@ export const CustomDay = (props) => {
       style={[
         styles.dayContainer,
         { backgroundColor: dayBackgroundColor },
-        isToday && !isEditMode && !isPredictedPeriod && !isPredictedOvulation && [styles.todayContainer, { backgroundColor: todayBackgroundColor }],
+        showTodayFaintFill && [styles.todayContainer, styles.todayFaintFill],
+        showTodayFaintRing && styles.todayFaintRing,
+        isToday && !isEditMode && !isPredictedPeriod && !isPredictedOvulation && !showTodayFaintFill && [styles.todayContainer, { backgroundColor: todayBackgroundColor }],
         isExactOvulationDay && !isToday && !isEditMode && !isPredictedPeriod && !isPredictedOvulation && [styles.ovulationContainer, { backgroundColor: colors.ovulation }],
         isMenstrual && !isToday && !isExactOvulationDay && !isEditMode && !isPredictedPeriod && !isPredictedOvulation && [styles.menstrualContainer, { backgroundColor: colors.menstrual }],
         // Selected: use brown background for normal days and for predicted period/ovulation (so text is visible)
@@ -185,7 +203,8 @@ export const CustomDay = (props) => {
                 ? colors.text // Always use regular text color in edit mode (no background)
                 : textColor 
             },
-            (isToday || isExactOvulationDay || isMenstrual) && !isEditMode && !isPredictedPeriod && !isPredictedOvulation && styles.todayText,
+            (isToday || isExactOvulationDay || isMenstrual) && !isEditMode && !isPredictedPeriod && !isPredictedOvulation && !showTodayFaintFill && styles.todayText,
+            showTodayFaintFill && styles.todayFaintFillText,
             // Selected: bold and visible (textColor already set to textOnPrimary for selected above)
             state === "selected" && !isEditMode && styles.selectedText,
             state === "disabled" && styles.disabledText,
@@ -261,6 +280,19 @@ const styles = StyleSheet.create({
   },
   todayContainer: {
     borderRadius: 17,
+  },
+  todayFaintFill: {
+    backgroundColor: colors.todayHighlight,
+  },
+  todayFaintRing: {
+    borderRadius: 17,
+    borderWidth: 2,
+    borderColor: colors.primaryLight,
+    backgroundColor: "transparent",
+  },
+  todayFaintFillText: {
+    fontWeight: "600",
+    color: colors.primary,
   },
   ovulationContainer: {
     borderRadius: 17,

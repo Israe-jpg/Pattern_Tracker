@@ -29,6 +29,7 @@ export const colors = {
   trackerItemLight: "#7E946A", // Lighter tracker borders/dividers
   calendar: "#FFFCF7", // Match off-white app background
   calendarShadow: "#DDE8CC", // Soft light green shadow for calendar edges
+  todayHighlight: "rgba(163, 182, 138, 0.35)", // Faint sage ring/fill for today on home calendar
   formSchemaBackground: "#FFFCF7", // Off-white for Log Symptoms background
   formFieldBackground: "#FFFFFF", // White for form fields
   insightsCard: "#FFF3DD", // Bright beige cream for insights cards
