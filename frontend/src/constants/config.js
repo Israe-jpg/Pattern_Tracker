@@ -63,6 +63,7 @@ export const API_ENDPOINTS = {
   CREATE_CUSTOM_TRACKER: "/trackers/create-custom-category",
   TRACKER_SETTINGS: (id) => `/trackers/${id}/tracker-settings`,
   UPDATE_DEFAULT_TRACKER: (id) => `/trackers/update-default-tracker/${id}`,
+  DELETE_TRACKER: (id) => `/trackers/delete-tracker/${id}`,
   CREATE_NEW_FIELD: (id) => `/trackers/${id}/create-new-field`,
   DELETE_FIELD: (fieldId) => `/trackers/${fieldId}/delete-field`,
   DELETE_OPTION: (optionId) => `/trackers/${optionId}/delete-option`,

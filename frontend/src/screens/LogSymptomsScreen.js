@@ -480,7 +480,7 @@ export default function LogSymptomsScreen({ route, navigation }) {
                 updatedSchema.baseline_fields,
                 updatedSchema.category_fields,
                 updatedSchema.custom_fields,
-              ];
+              ].filter(Boolean);
               for (const fieldArray of fieldArrays) {
                 const index = fieldArray.findIndex((f) => f.id === field.id);
                 if (index !== -1) {
@@ -620,7 +620,7 @@ export default function LogSymptomsScreen({ route, navigation }) {
                 updatedSchema.baseline_fields,
                 updatedSchema.category_fields,
                 updatedSchema.custom_fields,
-              ];
+              ].filter(Boolean);
               for (const fieldArray of fieldArrays) {
                 const fieldIndex = fieldArray.findIndex(
                   (f) => f.id === field.id
@@ -675,7 +675,7 @@ export default function LogSymptomsScreen({ route, navigation }) {
             updatedSchema.baseline_fields,
             updatedSchema.category_fields,
             updatedSchema.custom_fields,
-          ];
+          ].filter(Boolean);
           for (const fieldArray of fieldArrays) {
             const fieldIndex = fieldArray.findIndex(
               (f) => f.id === editingField.id

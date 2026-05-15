@@ -144,10 +144,10 @@ export default function CreateCustomTrackerScreen({ navigation }) {
         custom_fields: pendingFields,
       };
       const result = await trackerService.createCustomTracker(payload);
-      await loadTrackers();
       if (result.tracker_id) {
-        setActiveTracker(result.tracker_id);
+        await setActiveTracker({ id: result.tracker_id });
       }
+      await loadTrackers();
       navigation.navigate("Home");
     } catch (err) {
       const message =

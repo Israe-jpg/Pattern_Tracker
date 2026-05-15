@@ -95,25 +95,9 @@ export default function MenuDrawer({
     trackers?.filter((tracker) => isPrebuiltTracker(tracker)) || [];
 
   const handleDelete = (tracker) => {
-    Alert.alert(
-      "Delete Tracker",
-      `Are you sure you want to delete "${tracker.name}"? This action cannot be undone.`,
-      [
-        {
-          text: "Cancel",
-          style: "cancel",
-        },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: () => {
-            if (onDeleteTracker) {
-              onDeleteTracker(tracker.id);
-            }
-          },
-        },
-      ]
-    );
+    if (onDeleteTracker) {
+      onDeleteTracker(tracker);
+    }
   };
 
   const handleToggleDefault = (tracker) => {
