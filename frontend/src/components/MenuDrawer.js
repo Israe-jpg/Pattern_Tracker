@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
+  Image,
   StyleSheet,
   TouchableOpacity,
   Animated,
@@ -12,7 +13,7 @@ import {
 } from "react-native";
 import { PanGestureHandler, State } from "react-native-gesture-handler";
 import { Ionicons } from "@expo/vector-icons";
-import { colors, APP_NAME } from "../constants/colors";
+import { colors } from "../constants/colors";
 import { useAuth } from "../context/AuthContext";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
@@ -194,7 +195,7 @@ export default function MenuDrawer({
                   ? stagedDefaultTrackerId
                   : defaultTrackerId) === item.id
                   ? "#FFD700"
-                  : colors.textOnPrimary
+                  : colors.textSecondary
               }
             />
           </TouchableOpacity>
@@ -252,7 +253,12 @@ export default function MenuDrawer({
           ]}
         >
           <View style={styles.drawerHeader}>
-            <Text style={styles.drawerTitle}>{APP_NAME}</Text>
+            <Image
+              source={require("../../assets/logo.png")}
+              style={styles.drawerLogo}
+              resizeMode="contain"
+              accessibilityLabel="Trackt"
+            />
             <TouchableOpacity onPress={onClose} style={styles.closeButton}>
               <Ionicons name="close" size={24} color={colors.text} />
             </TouchableOpacity>
@@ -479,7 +485,7 @@ const styles = StyleSheet.create({
     top: 0,
     bottom: 0,
     width: DRAWER_WIDTH,
-    backgroundColor: colors.navigation,
+    backgroundColor: colors.background,
     zIndex: 999,
     ...(Platform.OS === "web"
       ? {
@@ -503,12 +509,11 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingTop: 60,
     borderBottomWidth: 1,
-    borderBottomColor: colors.navigation,
+    borderBottomColor: colors.border,
   },
-  drawerTitle: {
-    fontSize: 24,
-    fontWeight: "bold",
-    color: colors.textOnPrimary,
+  drawerLogo: {
+    width: 150,
+    height: 55,
   },
   closeButton: {
     padding: 4,
@@ -526,7 +531,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: "600",
-    color: colors.textOnPrimary,
+    color: colors.text,
   },
   doneButtonText: {
     fontSize: 16,
@@ -546,18 +551,20 @@ const styles = StyleSheet.create({
   sectionSubtitle: {
     fontSize: 16,
     fontWeight: "600",
-    color: "rgba(255, 255, 255, 0.7)", // White/greyish color
+    color: colors.textSecondary,
   },
   hideButton: {
     paddingHorizontal: 12,
     paddingVertical: 4,
-    borderRadius: 4,
-    backgroundColor: colors.navigationLight,
+    borderRadius: 8,
+    backgroundColor: colors.insightsCard,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   hideButtonText: {
     fontSize: 12,
     fontWeight: "600",
-    color: colors.textOnPrimary,
+    color: colors.textOnSecondary,
   },
   trackersList: {
     marginBottom: 0,
