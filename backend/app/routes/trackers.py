@@ -548,6 +548,25 @@ def update_tracker_settings(tracker_id: int):
         old_settings = tracker.settings
         tracker.settings = settings
         flag_modified(tracker, 'settings')
+        db.session.flush()
+
+        # For Period Tracker initial setup, create a PeriodCycle for the last
+        # period start date so it is immediately visible in the calendar.
+        if category and category.name == 'Period Tracker':
+            last_period_str = settings.get('last_period_start_date')
+            if last_period_str:
+                try:
+                    last_period_date = datetime.strptime(last_period_str, '%Y-%m-%d').date()
+                    existing = PeriodCycle.query.filter_by(
+                        tracker_id=tracker_id,
+                        cycle_start_date=last_period_date
+                    ).first()
+                    if not existing:
+                        PeriodCycleService.create_cycle(tracker_id, last_period_date, settings)
+                        logging.info(f"Created initial PeriodCycle for tracker {tracker_id} on {last_period_date}")
+                except Exception as cycle_err:
+                    logging.warning(f"Could not create initial PeriodCycle: {cycle_err}")
+
         db.session.commit()
         
         logging.info(f"Successfully updated tracker {tracker_id} settings. Old: {old_settings}, New: {tracker.settings}")
