@@ -285,12 +285,9 @@ export default function HomeScreen({ navigation }) {
           trackers={contextTrackers}
           onTrackerPress={handleTrackerPress}
           onCreateCustomTracker={() => {
-            // TODO: Navigate to create custom tracker screen
-            Alert.alert(
-              "Create Custom Tracker",
-              "This feature will be implemented soon. You'll be able to create your own custom tracker with custom fields.",
-              [{ text: "OK" }]
-            );
+            setMenuVisible(false);
+            setEditMode(false);
+            navigation.navigate("CreateCustomTracker");
           }}
           onEditTrackersList={() => {
             // This is handled by setEditMode in the dropdown
