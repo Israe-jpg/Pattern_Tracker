@@ -220,10 +220,8 @@ export default function ProfileScreen({ navigation }) {
         onPress: async () => {
           try {
             await logout();
-            navigation.reset({
-              index: 0,
-              routes: [{ name: "Login" }],
-            });
+            // AppNavigator automatically switches to the auth stack
+            // when isAuthenticated becomes false — no manual reset needed.
           } catch (error) {
             console.error("Logout error:", error);
             Alert.alert("Error", "Failed to logout. Please try again.");

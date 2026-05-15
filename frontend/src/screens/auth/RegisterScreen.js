@@ -42,85 +42,87 @@ export default function RegisterScreen({ navigation }) {
     clearFieldError(field);
   };
 
-  // Validate individual field with real-time feedback
+  // Validate a single field and update errors via functional setState (no stale closures)
   const validateField = (field, value) => {
-    const fieldErrors = { ...errors };
-
-    switch (field) {
-      case "username":
-        if (!value) {
-          fieldErrors.username = "Username is required";
-        } else if (value.length < 3) {
-          fieldErrors.username = "Username must be at least 3 characters";
-        } else if (!/^[a-zA-Z0-9_]+$/.test(value)) {
-          fieldErrors.username =
-            "Username can only contain letters, numbers, and underscores";
-        } else {
-          delete fieldErrors.username;
-        }
-        break;
-
-      case "email":
-        if (!value) {
-          fieldErrors.email = "Email is required";
-        } else {
-          const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-          if (!emailRegex.test(value)) {
-            fieldErrors.email = "Please enter a valid email address";
+    setErrors((prev) => {
+      const next = { ...prev };
+      switch (field) {
+        case "username":
+          if (!value) {
+            next.username = "Username is required";
+          } else if (value.length < 3) {
+            next.username = "Username must be at least 3 characters";
+          } else if (!/^[a-zA-Z0-9_]+$/.test(value)) {
+            next.username = "Username can only contain letters, numbers, and underscores";
           } else {
-            delete fieldErrors.email;
+            delete next.username;
           }
-        }
-        break;
-
-      case "password":
-        if (!value) {
-          fieldErrors.password = "Password is required";
-        } else if (value.length < 8) {
-          fieldErrors.password = "Password must be at least 8 characters";
-        } else {
-          delete fieldErrors.password;
-          // Re-validate confirm password when password changes
-          if (formData.confirmPassword) {
-            validateField("confirmPassword", formData.confirmPassword);
+          break;
+        case "email":
+          if (!value) {
+            next.email = "Email is required";
+          } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+            next.email = "Please enter a valid email address";
+          } else {
+            delete next.email;
           }
-        }
-        break;
-
-      case "confirmPassword":
-        if (!value) {
-          fieldErrors.confirmPassword = "Please confirm your password";
-        } else if (value !== formData.password) {
-          fieldErrors.confirmPassword = "Passwords do not match";
-        } else {
-          delete fieldErrors.confirmPassword;
-        }
-        break;
-    }
-
-    setErrors(fieldErrors);
+          break;
+        case "password":
+          if (!value) {
+            next.password = "Password is required";
+          } else if (value.length < 8) {
+            next.password = "Password must be at least 8 characters";
+          } else {
+            delete next.password;
+          }
+          break;
+        case "confirmPassword":
+          if (!value) {
+            next.confirmPassword = "Please confirm your password";
+          } else if (value !== formData.password) {
+            next.confirmPassword = "Passwords do not match";
+          } else {
+            delete next.confirmPassword;
+          }
+          break;
+      }
+      return next;
+    });
   };
 
-  // Validate all fields before submission
+  // Validate all required fields synchronously — returns true if form is valid.
+  // Computes errors locally so the result never depends on stale state.
   const validateAll = () => {
     const newErrors = {};
 
-    validateField("username", formData.username);
-    validateField("email", formData.email);
-    validateField("password", formData.password);
-    validateField("confirmPassword", formData.confirmPassword);
+    if (!formData.username) {
+      newErrors.username = "Username is required";
+    } else if (formData.username.length < 3) {
+      newErrors.username = "Username must be at least 3 characters";
+    } else if (!/^[a-zA-Z0-9_]+$/.test(formData.username)) {
+      newErrors.username = "Username can only contain letters, numbers, and underscores";
+    }
 
-    // Check required fields
-    if (!formData.username) newErrors.username = "Username is required";
-    if (!formData.email) newErrors.email = "Email is required";
-    if (!formData.password) newErrors.password = "Password is required";
-    if (!formData.confirmPassword)
+    if (!formData.email) {
+      newErrors.email = "Email is required";
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+      newErrors.email = "Please enter a valid email address";
+    }
+
+    if (!formData.password) {
+      newErrors.password = "Password is required";
+    } else if (formData.password.length < 8) {
+      newErrors.password = "Password must be at least 8 characters";
+    }
+
+    if (!formData.confirmPassword) {
       newErrors.confirmPassword = "Please confirm your password";
+    } else if (formData.confirmPassword !== formData.password) {
+      newErrors.confirmPassword = "Passwords do not match";
+    }
 
-    setErrors((prev) => ({ ...prev, ...newErrors }));
-    return (
-      Object.keys(newErrors).length === 0 && Object.keys(errors).length === 0
-    );
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
   };
 
   // Parse backend validation errors and map to form fields
@@ -187,14 +189,7 @@ export default function RegisterScreen({ navigation }) {
   };
 
   const handleRegister = async () => {
-    setErrors({});
-
     if (!validateAll()) {
-      // Re-validate all fields to show all errors
-      validateField("username", formData.username);
-      validateField("email", formData.email);
-      validateField("password", formData.password);
-      validateField("confirmPassword", formData.confirmPassword);
       return;
     }
 
@@ -288,7 +283,9 @@ export default function RegisterScreen({ navigation }) {
                 updateField("username", value);
                 if (value) validateField("username", value);
               }}
-              onBlur={() => validateField("username", formData.username)}
+              onBlur={() => {
+                if (formData.username) validateField("username", formData.username);
+              }}
               autoCapitalize="none"
               returnKeyType="next"
               blurOnSubmit={false}
@@ -308,7 +305,9 @@ export default function RegisterScreen({ navigation }) {
                 updateField("email", value);
                 if (value) validateField("email", value);
               }}
-              onBlur={() => validateField("email", formData.email)}
+              onBlur={() => {
+                if (formData.email) validateField("email", formData.email);
+              }}
               keyboardType="email-address"
               autoCapitalize="none"
               returnKeyType="next"
@@ -329,7 +328,9 @@ export default function RegisterScreen({ navigation }) {
                 updateField("password", value);
                 if (value) validateField("password", value);
               }}
-              onBlur={() => validateField("password", formData.password)}
+              onBlur={() => {
+                if (formData.password) validateField("password", formData.password);
+              }}
               secureTextEntry
               returnKeyType="next"
               blurOnSubmit={false}
@@ -354,9 +355,10 @@ export default function RegisterScreen({ navigation }) {
               }}
               returnKeyType="next"
               blurOnSubmit={false}
-              onBlur={() =>
-                validateField("confirmPassword", formData.confirmPassword)
-              }
+              onBlur={() => {
+                if (formData.confirmPassword)
+                  validateField("confirmPassword", formData.confirmPassword);
+              }}
               secureTextEntry
             />
             {errors.confirmPassword && (

@@ -107,17 +107,14 @@ export default function LoginScreen({ navigation }) {
               onChangeText={(value) => {
                 setEmail(value);
                 clearFieldError('email');
-                if (value) {
-                  const error = validateEmail(value);
+              }}
+              onBlur={() => {
+                // Only validate format if user has typed something
+                if (email) {
+                  const error = validateEmail(email);
                   if (error) {
                     setErrors((prev) => ({ ...prev, email: error }));
                   }
-                }
-              }}
-              onBlur={() => {
-                const error = validateEmail(email);
-                if (error) {
-                  setErrors((prev) => ({ ...prev, email: error }));
                 }
               }}
               keyboardType="email-address"
@@ -138,11 +135,6 @@ export default function LoginScreen({ navigation }) {
               onChangeText={(value) => {
                 setPassword(value);
                 clearFieldError('password');
-              }}
-              onBlur={() => {
-                if (!password) {
-                  setErrors((prev) => ({ ...prev, password: 'Password is required' }));
-                }
               }}
               secureTextEntry
               returnKeyType="done"
