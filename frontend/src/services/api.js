@@ -100,11 +100,15 @@ api.interceptors.response.use(
           }
         );
 
-        const { access_token } = refreshResponse.data;
+        const { access_token, refresh_token: new_refresh_token } =
+          refreshResponse.data;
 
         if (access_token) {
-          // Store new access token
+          // Store new tokens (refresh rotation extends the session)
           await AsyncStorage.setItem(ACCESS_TOKEN_KEY, access_token);
+          if (new_refresh_token) {
+            await AsyncStorage.setItem(REFRESH_TOKEN_KEY, new_refresh_token);
+          }
 
           // Update original request with new token
           originalRequest.headers.Authorization = `Bearer ${access_token}`;

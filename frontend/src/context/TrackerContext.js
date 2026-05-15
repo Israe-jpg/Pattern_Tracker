@@ -1,6 +1,7 @@
 import React, { createContext, useState, useEffect, useContext, useCallback, useRef, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { trackerService } from '../services/trackerService';
+import { useAuth } from './AuthContext';
 
 const TrackerContext = createContext({});
 
@@ -15,6 +16,7 @@ export const useTracker = () => {
 };
 
 export const TrackerProvider = ({ children }) => {
+  const { isAuthenticated, loading: authLoading } = useAuth();
   const [activeTrackerId, setActiveTrackerId] = useState(null);
   const [trackers, setTrackers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -25,27 +27,32 @@ export const TrackerProvider = ({ children }) => {
     activeTrackerIdRef.current = activeTrackerId;
   }, [activeTrackerId]);
 
-  // On app start, clear persisted tracker and load trackers
-  // This ensures tracker resets on app restart but persists during navigation
+  // On app start, clear persisted tracker and load trackers after auth is ready
   useEffect(() => {
     const initializeApp = async () => {
+      if (authLoading) {
+        return;
+      }
+
+      if (!isAuthenticated) {
+        setLoading(false);
+        return;
+      }
+
       if (isInitialMount.current) {
         isInitialMount.current = false;
         try {
-          // On first mount (app start), clear any persisted tracker
-          // This ensures we start with default tracker on app restart
           await AsyncStorage.removeItem(ACTIVE_TRACKER_ID_KEY);
         } catch (error) {
           console.error('Error clearing persisted tracker on app start:', error);
         }
-        // Load trackers after clearing (will use default tracker)
         await loadTrackers();
       }
     };
 
     initializeApp();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [authLoading, isAuthenticated]);
 
   // Load trackers and determine active tracker
   const loadTrackers = useCallback(async () => {
