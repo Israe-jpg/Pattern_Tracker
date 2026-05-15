@@ -2,11 +2,12 @@ import React, { useState } from "react";
 import {
   View,
   Text,
+  Image,
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
 } from "react-native";
-import { colors } from "../../constants/colors";
+import { colors, APP_NAME } from "../../constants/colors";
 import { useAuth } from "../../context/AuthContext";
 import Button from "../../components/Button";
 
@@ -50,6 +51,12 @@ export default function GenderScreen({ navigation }) {
   return (
     <View style={styles.container}>
       <View style={styles.content}>
+        <Image
+          source={require("../../../assets/logo.png")}
+          style={styles.logo}
+          resizeMode="contain"
+          accessibilityLabel={APP_NAME}
+        />
         <Text style={styles.title}>What is your biological sex?</Text>
         <Text style={styles.subtitle}>
           This information helps us provide personalized health tracking
@@ -108,6 +115,12 @@ const styles = StyleSheet.create({
     maxWidth: 400,
     alignSelf: "center",
     width: "100%",
+  },
+  logo: {
+    width: 100,
+    height: 100,
+    alignSelf: "center",
+    marginBottom: 16,
   },
   title: {
     fontSize: 24,

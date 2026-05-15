@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import {
   View,
   Text,
+  Image,
   TextInput,
   TouchableOpacity,
   StyleSheet,
@@ -86,6 +87,12 @@ export default function LoginScreen({ navigation }) {
       keyboardDismissMode="on-drag"
     >
       <View style={styles.content}>
+        <Image
+          source={require('../../../assets/logo.png')}
+          style={styles.logo}
+          resizeMode="contain"
+          accessibilityLabel={APP_NAME}
+        />
         <Text style={styles.title}>{APP_NAME}</Text>
         <Text style={styles.subtitle}>Sign in to continue</Text>
 
@@ -192,6 +199,12 @@ const styles = StyleSheet.create({
   },
   content: {
     width: '100%',
+  },
+  logo: {
+    width: 100,
+    height: 100,
+    alignSelf: 'center',
+    marginBottom: 8,
   },
   title: {
     fontSize: 32,

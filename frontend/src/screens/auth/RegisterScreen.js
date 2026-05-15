@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import {
   View,
   Text,
+  Image,
   TextInput,
   TouchableOpacity,
   StyleSheet,
@@ -10,7 +11,7 @@ import {
   ScrollView,
 } from "react-native";
 import { useAuth } from "../../context/AuthContext";
-import { colors } from "../../constants/colors";
+import { colors, APP_NAME } from "../../constants/colors";
 
 export default function RegisterScreen({ navigation }) {
   const [formData, setFormData] = useState({
@@ -268,6 +269,12 @@ export default function RegisterScreen({ navigation }) {
       keyboardDismissMode="on-drag"
     >
       <View style={styles.content}>
+        <Image
+          source={require("../../../assets/logo.png")}
+          style={styles.logo}
+          resizeMode="contain"
+          accessibilityLabel={APP_NAME}
+        />
         <Text style={styles.title}>Create Account</Text>
         <Text style={styles.subtitle}>Sign up to get started</Text>
 
@@ -452,6 +459,12 @@ const styles = StyleSheet.create({
   },
   content: {
     width: "100%",
+  },
+  logo: {
+    width: 100,
+    height: 100,
+    alignSelf: "center",
+    marginBottom: 8,
   },
   title: {
     fontSize: 32,

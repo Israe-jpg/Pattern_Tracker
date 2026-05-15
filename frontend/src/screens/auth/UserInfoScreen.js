@@ -2,12 +2,13 @@ import React, { useState } from "react";
 import {
   View,
   Text,
+  Image,
   StyleSheet,
   TouchableOpacity,
   ScrollView,
   Platform,
 } from "react-native";
-import { colors } from "../../constants/colors";
+import { colors, APP_NAME } from "../../constants/colors";
 import { useAuth } from "../../context/AuthContext";
 import Button from "../../components/Button";
 import PickerModal from "../../components/PickerModal";
@@ -147,6 +148,12 @@ export default function UserInfoScreen({ navigation }) {
       contentContainerStyle={styles.contentContainer}
     >
       <View style={styles.content}>
+        <Image
+          source={require("../../../assets/logo.png")}
+          style={styles.logo}
+          resizeMode="contain"
+          accessibilityLabel={APP_NAME}
+        />
         <Text style={styles.title}>Tell us about yourself</Text>
         <Text style={styles.subtitle}>
           This information helps us provide personalized health insights.
@@ -369,6 +376,12 @@ const styles = StyleSheet.create({
     maxWidth: 400,
     alignSelf: "center",
     width: "100%",
+  },
+  logo: {
+    width: 100,
+    height: 100,
+    alignSelf: "center",
+    marginBottom: 16,
   },
   title: {
     fontSize: 24,
