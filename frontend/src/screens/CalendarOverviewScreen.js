@@ -14,7 +14,7 @@ import {
   Dimensions,
   Alert,
 } from "react-native";
-import { useRoute, useNavigation } from "@react-navigation/native";
+import { useRoute, useNavigation, useFocusEffect } from "@react-navigation/native";
 import { CalendarList } from "react-native-calendars";
 import { Ionicons } from "@expo/vector-icons";
 import { colors } from "../constants/colors";
@@ -37,7 +37,9 @@ export default function CalendarOverviewScreen() {
 
   const [loading, setLoading] = useState(true);
   const [markedDates, setMarkedDates] = useState({});
-  const [isEditMode, setIsEditMode] = useState(false);
+  // editModeType: null | 'period_dates' | 'data_entries'
+  const [editModeType, setEditModeType] = useState(null);
+  const [showEditDropdown, setShowEditDropdown] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [refreshing, setRefreshing] = useState(false); // Track calendar refresh
   const [selectedPeriodDates, setSelectedPeriodDates] = useState(new Set()); // Simple set of date strings
@@ -47,12 +49,15 @@ export default function CalendarOverviewScreen() {
   const isHandlingNavigation = useRef(false);
 
   const isPeriodTracker = tracker?.category_name === "Period Tracker";
+  const isEditMode = editModeType !== null;
+  const isPeriodDateEditMode = editModeType === "period_dates";
+  const isDataEntryEditMode = editModeType === "data_entries";
 
   // Create dayComponent for period trackers (same as CalendarSection)
-  // Also use custom day component in edit mode for all trackers
+  // Also use custom day component when in any edit mode
   const dayComponent = useMemo(() => {
-    // Use custom day component for period trackers or when in edit mode
-    if (!isPeriodTracker && !isEditMode) return undefined;
+    // Use custom day component for period trackers or when in any edit mode
+    if (!isPeriodTracker && editModeType === null) return undefined;
 
     return (props) => {
       const { date, state, marking } = props;
@@ -67,17 +72,14 @@ export default function CalendarOverviewScreen() {
         ...dateMarking,
       };
 
-      // In edit mode, determine if this date is selected as a period date
+      // In period_dates edit mode, determine if this date is selected as a period date
       const isSelectedPeriodDate = selectedPeriodDates.has(dateString);
       const originalIsMenstrual =
         dateMarking.phase === "menstrual" || dateMarking.phase === "period";
 
-      // isToggledPeriod logic:
-      // - If selected and not originally menstrual: true (adding new period)
-      // - If not selected and originally menstrual: false (removing period)
-      // - Otherwise: undefined (no change)
+      // isToggledPeriod only applies in period_dates mode
       let isToggledPeriod = undefined;
-      if (isEditMode) {
+      if (isPeriodDateEditMode) {
         if (isSelectedPeriodDate && !originalIsMenstrual) {
           isToggledPeriod = true; // New period date
         } else if (!isSelectedPeriodDate && originalIsMenstrual) {
@@ -89,10 +91,10 @@ export default function CalendarOverviewScreen() {
         <CustomDay
           {...props}
           marking={fullMarking}
-          isEditMode={isEditMode}
-          isSelected={isEditMode && isSelectedPeriodDate}
+          isEditMode={isPeriodDateEditMode}
+          isSelected={isPeriodDateEditMode && isSelectedPeriodDate}
           isToggledPeriod={isToggledPeriod}
-          onDayPress={isEditMode ? handleDayPress : undefined}
+          onDayPress={editModeType !== null ? handleDayPress : undefined}
           dayBackgroundColor={colors.background}
         />
       );
@@ -100,7 +102,8 @@ export default function CalendarOverviewScreen() {
   }, [
     isPeriodTracker,
     markedDates,
-    isEditMode,
+    editModeType,
+    isPeriodDateEditMode,
     selectedPeriodDates,
     handleDayPress,
     refreshKey,
@@ -130,9 +133,9 @@ export default function CalendarOverviewScreen() {
     }
   };
 
-  // Automatically detect if there are pending changes
+  // Automatically detect if there are pending changes (only relevant in period_dates mode)
   const hasEditModeChanges = useMemo(() => {
-    if (!isEditMode) return false;
+    if (!isPeriodDateEditMode) return false;
 
     // Compare current selection with initial state
     if (selectedPeriodDates.size !== initialPeriodDates.size) return true;
@@ -142,7 +145,7 @@ export default function CalendarOverviewScreen() {
     }
 
     return false;
-  }, [isEditMode, selectedPeriodDates, initialPeriodDates]);
+  }, [isPeriodDateEditMode, selectedPeriodDates, initialPeriodDates]);
 
   // Handle navigation with unsaved changes
   useEffect(() => {
@@ -153,8 +156,8 @@ export default function CalendarOverviewScreen() {
         return;
       }
 
-      if (!isEditMode || !hasEditModeChanges) {
-        // No unsaved changes, allow navigation
+      if (!isPeriodDateEditMode || !hasEditModeChanges) {
+        // No unsaved changes (or not in period edit mode), allow navigation
         return;
       }
 
@@ -177,11 +180,9 @@ export default function CalendarOverviewScreen() {
             text: "Don't Save",
             style: "destructive",
             onPress: () => {
-              // Clear changes and navigate back
               setSelectedPeriodDates(new Set());
               setInitialPeriodDates(new Set());
-              setIsEditMode(false);
-              // Use navigation.goBack() instead of dispatch to avoid state issues
+              setEditModeType(null);
               navigation.goBack();
             },
           },
@@ -190,8 +191,7 @@ export default function CalendarOverviewScreen() {
             onPress: async () => {
               const success = await savePendingChanges();
               if (success) {
-                setIsEditMode(false);
-                // Use navigation.goBack() instead of dispatch to avoid state issues
+                setEditModeType(null);
                 navigation.goBack();
               }
             },
@@ -201,7 +201,7 @@ export default function CalendarOverviewScreen() {
     });
 
     return unsubscribe;
-  }, [navigation, isEditMode, hasEditModeChanges]);
+  }, [navigation, isPeriodDateEditMode, hasEditModeChanges]);
 
   const loadCalendarData = async (showLoading = true) => {
     if (!tracker) {
@@ -528,7 +528,7 @@ export default function CalendarOverviewScreen() {
       await trackerService.bulkUpdatePeriods(tracker.id, periodDatesArray);
 
       // Exit edit mode FIRST to prevent any stale UI
-      setIsEditMode(false);
+      setEditModeType(null);
       setSelectedPeriodDates(new Set());
       setInitialPeriodDates(new Set());
 
@@ -566,14 +566,41 @@ export default function CalendarOverviewScreen() {
   };
 
   /**
-   * Handle day press in edit mode - toggle period selection
-   * Auto-selects period_length days when adding new period (or predicted period)
+   * Handle day press in edit mode.
+   * - period_dates mode: toggle period date selection
+   * - data_entries mode: show alert and navigate to LogSymptoms for that date
    */
   const handleDayPress = useCallback(
     (day) => {
       if (!isEditMode) return;
 
       const dateString = day.dateString;
+
+      if (isDataEntryEditMode) {
+        const formattedDate = new Date(dateString + "T00:00:00").toLocaleDateString(
+          "en-US",
+          { weekday: "long", year: "numeric", month: "long", day: "numeric" },
+        );
+        Alert.alert(
+          "Update Day's Data Entry",
+          formattedDate,
+          [
+            { text: "Cancel", style: "cancel" },
+            {
+              text: "Update",
+              onPress: () => {
+                navigation.navigate("LogSymptoms", {
+                  trackerId: tracker.id,
+                  entryDate: dateString,
+                });
+              },
+            },
+          ],
+        );
+        return;
+      }
+
+      // period_dates mode: toggle period selection
       const isCurrentlySelected = selectedPeriodDates.has(dateString);
       const marking = markedDates[dateString];
       const isPredicted = marking?.isPredictedPeriod === true;
@@ -585,12 +612,8 @@ export default function CalendarOverviewScreen() {
         const next = new Set(prev);
 
         if (isCurrentlySelected) {
-          // Already selected - deselect just this day
           next.delete(dateString);
         } else {
-          // Not selected - add it
-          // Auto-select period_length days for: empty days OR predicted period days
-          // Only single-toggle for actual logged period days
           if (!isActualPeriod) {
             const periodLength = trackerSettings?.average_period_length || 5;
             const startDate = new Date(dateString);
@@ -601,7 +624,6 @@ export default function CalendarOverviewScreen() {
               next.add(dStr);
             }
           } else {
-            // Just add the single day (actual period day)
             next.add(dateString);
           }
         }
@@ -609,59 +631,14 @@ export default function CalendarOverviewScreen() {
         return next;
       });
     },
-    [isEditMode, selectedPeriodDates, markedDates, trackerSettings],
+    [isEditMode, isDataEntryEditMode, selectedPeriodDates, markedDates, trackerSettings, tracker, navigation],
   );
 
   /**
-   * Toggle edit mode
+   * Enter "Edit Period Dates" mode — loads actual period dates from cycles.
    */
-  const toggleEditMode = async () => {
-    // If clicking checkmark in edit mode, show save confirmation
-    if (isEditMode) {
-      if (hasEditModeChanges) {
-        Alert.alert(
-          "Save Changes?",
-          "Your changes will be saved.",
-          [
-            {
-              text: "Don't Save",
-              style: "destructive",
-              onPress: () => {
-                // Discard changes
-                setSelectedPeriodDates(new Set());
-                setInitialPeriodDates(new Set());
-                setIsEditMode(false);
-              },
-            },
-            {
-              text: "Cancel",
-              style: "cancel",
-            },
-            {
-              text: "Save",
-              onPress: async () => {
-                const success = await savePendingChanges();
-                if (success) {
-                  setIsEditMode(false);
-                }
-              },
-            },
-          ],
-          { cancelable: true },
-        );
-      } else {
-        // No changes, just exit
-        setIsEditMode(false);
-        setSelectedPeriodDates(new Set());
-        setInitialPeriodDates(new Set());
-      }
-      return;
-    }
-
-    // Entering edit mode - initialize with ACTUAL logged period dates from cycles
+  const enterPeriodEditMode = async () => {
     const currentPeriodDates = new Set();
-
-    // Fetch actual period dates from cycles (not predicted)
     try {
       const cyclesResponse = await trackerService.getCyclesHistory(tracker.id, {
         params: { months: 12, include_current: true },
@@ -670,7 +647,6 @@ export default function CalendarOverviewScreen() {
       const allCycles =
         cyclesResponse.data?.cycles || cyclesResponse.cycles || [];
 
-      // Extract all ACTUAL period dates from cycles
       for (const cycle of allCycles) {
         if (!cycle.period_start_date) continue;
 
@@ -684,7 +660,6 @@ export default function CalendarOverviewScreen() {
             : cycle.period_end_date
           : periodStartStr;
 
-        // Add all dates from period_start to period_end
         const periodStart = new Date(periodStartStr);
         const periodEnd = new Date(periodEndStr);
         const currentDate = new Date(periodStart);
@@ -697,12 +672,68 @@ export default function CalendarOverviewScreen() {
 
       setSelectedPeriodDates(new Set(currentPeriodDates));
       setInitialPeriodDates(new Set(currentPeriodDates));
-      setIsEditMode(true);
+      setEditModeType("period_dates");
     } catch (error) {
       console.error("Error loading cycles for edit mode:", error);
       Alert.alert("Error", "Failed to load period data for editing.");
     }
   };
+
+  /**
+   * Exit the current edit mode, prompting to save if there are period date changes.
+   */
+  const exitEditMode = async () => {
+    if (isDataEntryEditMode) {
+      setEditModeType(null);
+      return;
+    }
+
+    // period_dates mode
+    if (hasEditModeChanges) {
+      Alert.alert(
+        "Save Changes?",
+        "Your changes will be saved.",
+        [
+          {
+            text: "Don't Save",
+            style: "destructive",
+            onPress: () => {
+              setSelectedPeriodDates(new Set());
+              setInitialPeriodDates(new Set());
+              setEditModeType(null);
+            },
+          },
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Save",
+            onPress: async () => {
+              const success = await savePendingChanges();
+              if (success) {
+                setEditModeType(null);
+              }
+            },
+          },
+        ],
+        { cancelable: true },
+      );
+    } else {
+      setEditModeType(null);
+      setSelectedPeriodDates(new Set());
+      setInitialPeriodDates(new Set());
+    }
+  };
+
+  /**
+   * Silently reload calendar data when screen regains focus
+   * (e.g., after returning from LogSymptoms after a past-entry update).
+   */
+  useFocusEffect(
+    React.useCallback(() => {
+      if (!loading && tracker && editModeType !== "period_dates") {
+        loadCalendarData(false);
+      }
+    }, [tracker, loading, editModeType]),
+  );
 
   if (loading) {
     return (
@@ -730,16 +761,12 @@ export default function CalendarOverviewScreen() {
         <TouchableOpacity
           style={styles.backButton}
           onPress={() => {
-            if (isEditMode && hasEditModeChanges) {
-              // Show confirmation dialog
+            if (isPeriodDateEditMode && hasEditModeChanges) {
               Alert.alert(
                 "Unsaved Changes",
                 "You have unsaved changes. What would you like to do?",
                 [
-                  {
-                    text: "Cancel",
-                    style: "cancel",
-                  },
+                  { text: "Cancel", style: "cancel" },
                   {
                     text: "Don't Save",
                     style: "destructive",
@@ -747,7 +774,7 @@ export default function CalendarOverviewScreen() {
                       isHandlingNavigation.current = true;
                       setSelectedPeriodDates(new Set());
                       setInitialPeriodDates(new Set());
-                      setIsEditMode(false);
+                      setEditModeType(null);
                       navigation.goBack();
                     },
                   },
@@ -757,7 +784,7 @@ export default function CalendarOverviewScreen() {
                       const success = await savePendingChanges();
                       if (success) {
                         isHandlingNavigation.current = true;
-                        setIsEditMode(false);
+                        setEditModeType(null);
                         navigation.goBack();
                       }
                     },
@@ -765,6 +792,7 @@ export default function CalendarOverviewScreen() {
                 ],
               );
             } else {
+              if (editModeType !== null) setEditModeType(null);
               navigation.goBack();
             }
           }}
@@ -772,32 +800,109 @@ export default function CalendarOverviewScreen() {
           <Ionicons name="arrow-back" size={24} color={colors.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Calendar Overview</Text>
-        <TouchableOpacity
-          style={[
-            styles.headerEditButton,
-            isEditMode &&
-              !hasEditModeChanges &&
-              styles.headerEditButtonDisabled,
-            submitting && styles.headerEditButtonDisabled,
-          ]}
-          onPress={toggleEditMode}
-          disabled={(isEditMode && !hasEditModeChanges) || submitting}
-        >
-          {submitting ? (
-          <ActivityIndicator size="small" color={colors.textOnPrimary} />
-          ) : (
-            <Ionicons
-              name={isEditMode ? "checkmark" : "create-outline"}
-              size={24}
-              color={
-                isEditMode && !hasEditModeChanges
-                  ? colors.textLight
-                  : colors.textOnPrimary
+
+        {/* Edit button: checkmark when in edit mode, pencil otherwise */}
+        {isEditMode ? (
+          <TouchableOpacity
+            style={[
+              styles.headerEditButton,
+              isPeriodDateEditMode &&
+                !hasEditModeChanges &&
+                styles.headerEditButtonDisabled,
+              submitting && styles.headerEditButtonDisabled,
+            ]}
+            onPress={exitEditMode}
+            disabled={(isPeriodDateEditMode && !hasEditModeChanges) || submitting}
+          >
+            {submitting ? (
+              <ActivityIndicator size="small" color={colors.textOnPrimary} />
+            ) : (
+              <Ionicons
+                name="checkmark"
+                size={24}
+                color={
+                  isPeriodDateEditMode && !hasEditModeChanges
+                    ? colors.textLight
+                    : colors.textOnPrimary
+                }
+              />
+            )}
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity
+            style={styles.headerEditButton}
+            onPress={() => {
+              if (isPeriodTracker) {
+                setShowEditDropdown((prev) => !prev);
+              } else {
+                setEditModeType("data_entries");
               }
-            />
-          )}
-        </TouchableOpacity>
+            }}
+          >
+            <Ionicons name="create-outline" size={24} color={colors.textOnPrimary} />
+          </TouchableOpacity>
+        )}
       </View>
+
+      {/* Edit-mode dropdown (period trackers only) */}
+      {showEditDropdown && !isEditMode && (
+        <>
+          <TouchableOpacity
+            style={styles.dropdownBackdrop}
+            activeOpacity={1}
+            onPress={() => setShowEditDropdown(false)}
+          />
+          <View style={styles.editDropdown}>
+            <TouchableOpacity
+              style={styles.editDropdownItem}
+              onPress={() => {
+                setShowEditDropdown(false);
+                enterPeriodEditMode();
+              }}
+            >
+              <Ionicons
+                name="calendar-outline"
+                size={18}
+                color={colors.textOnPrimary}
+                style={styles.editDropdownIcon}
+              />
+              <Text style={styles.editDropdownText}>Edit period dates</Text>
+            </TouchableOpacity>
+            <View style={styles.editDropdownDivider} />
+            <TouchableOpacity
+              style={styles.editDropdownItem}
+              onPress={() => {
+                setShowEditDropdown(false);
+                setEditModeType("data_entries");
+              }}
+            >
+              <Ionicons
+                name="create-outline"
+                size={18}
+                color={colors.textOnPrimary}
+                style={styles.editDropdownIcon}
+              />
+              <Text style={styles.editDropdownText}>Edit data entries</Text>
+            </TouchableOpacity>
+          </View>
+        </>
+      )}
+
+      {/* Banner shown when in data-entry edit mode */}
+      {isDataEntryEditMode && (
+        <View style={styles.editModeBanner}>
+          <Ionicons name="pencil" size={14} color={colors.primary} />
+          <Text style={styles.editModeBannerText}>
+            Tap any day to update its data entry
+          </Text>
+          <TouchableOpacity
+            style={styles.editModeBannerClose}
+            onPress={() => setEditModeType(null)}
+          >
+            <Ionicons name="close" size={16} color={colors.textLight} />
+          </TouchableOpacity>
+        </View>
+      )}
 
       {refreshing ? (
         <View style={styles.refreshingContainer}>
@@ -820,9 +925,8 @@ export default function CalendarOverviewScreen() {
           calendarHeight={350}
           dayComponent={dayComponent}
           onDayPress={(day) => {
-            if (isEditMode) {
+            if (editModeType !== null) {
               handleDayPress(day);
-            } else {
             }
           }}
           contentContainerStyle={{
@@ -924,7 +1028,6 @@ const styles = StyleSheet.create({
     borderColor: colors.calendarShadow,
     borderRadius: 16,
     marginBottom: 20,
-    // Match Home page calendar shadow border styling
     shadowColor: colors.calendarShadow,
     shadowOffset: {
       width: 0,
@@ -933,5 +1036,71 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.55,
     shadowRadius: 10,
     elevation: 5,
+  },
+  // Dropdown
+  dropdownBackdrop: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 998,
+  },
+  editDropdown: {
+    position: "absolute",
+    top: 90,
+    right: 20,
+    minWidth: 220,
+    backgroundColor: colors.navigation,
+    borderRadius: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    zIndex: 999,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 10,
+  },
+  editDropdownItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+  },
+  editDropdownIcon: {
+    marginRight: 10,
+  },
+  editDropdownText: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: colors.textOnPrimary,
+  },
+  editDropdownDivider: {
+    height: 1,
+    backgroundColor: colors.textOnPrimary,
+    opacity: 0.15,
+    marginVertical: 4,
+  },
+  // Data-entry edit mode banner
+  editModeBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    gap: 8,
+  },
+  editModeBannerText: {
+    flex: 1,
+    fontSize: 13,
+    color: colors.text,
+    fontStyle: "italic",
+  },
+  editModeBannerClose: {
+    padding: 4,
   },
 });

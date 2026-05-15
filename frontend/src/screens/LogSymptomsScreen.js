@@ -38,13 +38,15 @@ import { buildZodSchema } from "../utils/formSchemaBuilder";
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 export default function LogSymptomsScreen({ route, navigation }) {
-  const { trackerId } = route.params || {};
+  const { trackerId, entryDate: entryDateParam } = route.params || {};
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [formSchema, setFormSchema] = useState(null);
   const [managementSchema, setManagementSchema] = useState(null);
   const [existingData, setExistingData] = useState(null);
-  const [entryDate] = useState(new Date().toISOString().split("T")[0]); // Today's date
+  const [entryDate] = useState(
+    entryDateParam || new Date().toISOString().split("T")[0],
+  );
   const [isEditMode, setIsEditMode] = useState(false);
   const [showFieldModal, setShowFieldModal] = useState(false);
   const [editingField, setEditingField] = useState(null);
@@ -1519,7 +1521,11 @@ export default function LogSymptomsScreen({ route, navigation }) {
           <Ionicons name="arrow-back" size={24} color={colors.textOnPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>
-          {isEditMode ? "Edit Form" : existingData ? "Update" : "Log"} Symptoms
+          {isEditMode
+            ? "Edit Form"
+            : entryDate !== new Date().toISOString().split("T")[0]
+            ? "Update Past Entry"
+            : `${existingData ? "Update" : "Log"} Symptoms`}
         </Text>
         <TouchableOpacity
           style={[
