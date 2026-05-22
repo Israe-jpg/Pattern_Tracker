@@ -40,6 +40,8 @@ export default function FieldCreationModal({
       currentChoiceInput: "",
       minValue: 0,
       maxValue: 10,
+      lowLabel: "",
+      highLabel: "",
     },
   ]);
   const scrollViewRef = useRef(null);
@@ -77,6 +79,8 @@ export default function FieldCreationModal({
         currentChoiceInput: "",
         minValue: opt.min_value ?? 0,
         maxValue: opt.max_value ?? 10,
+        lowLabel: opt.low_label || "",
+        highLabel: opt.high_label || "",
         optionId: opt.id, // Keep track of existing option ID for updates
       }));
 
@@ -110,6 +114,8 @@ export default function FieldCreationModal({
         currentChoiceInput: "",
         minValue: 0,
         maxValue: 10,
+        lowLabel: "",
+        highLabel: "",
       },
     ]);
     // Scroll to bottom to show the new option
@@ -230,6 +236,8 @@ export default function FieldCreationModal({
       if (opt.optionType === "rating") {
         optionData.min_value = opt.minValue ?? 0;
         optionData.max_value = opt.maxValue ?? 10;
+        if (opt.lowLabel?.trim()) optionData.low_label = opt.lowLabel.trim();
+        if (opt.highLabel?.trim()) optionData.high_label = opt.highLabel.trim();
       }
 
       return {
@@ -258,6 +266,8 @@ export default function FieldCreationModal({
         currentChoiceInput: "",
         minValue: 0,
         maxValue: 10,
+        lowLabel: "",
+        highLabel: "",
       },
     ]);
   };
@@ -419,7 +429,7 @@ export default function FieldCreationModal({
                   ) : null}
                 </View>
 
-                {/* Rating Scale Min/Max */}
+                {/* Rating Scale Min/Max + optional labels */}
                 {option.optionType === "rating" && (
                   <View style={styles.inputGroup}>
                     <Text style={styles.label}>Rating Scale Range</Text>
@@ -554,6 +564,43 @@ export default function FieldCreationModal({
                             <Ionicons name="add" size={20} color="#FFFFFF" />
                           </TouchableOpacity>
                         </View>
+                      </View>
+                    </View>
+
+                    {/* Optional endpoint labels */}
+                    <Text style={[styles.label, { marginTop: 16 }]}>
+                      Scale Labels{" "}
+                      <Text style={styles.optionalHint}>(optional)</Text>
+                    </Text>
+                    <View style={styles.labelsRow}>
+                      <View style={styles.labelInputWrapper}>
+                        <Text style={styles.labelHint}>Low end</Text>
+                        <TextInput
+                          style={styles.labelInput}
+                          placeholder="e.g. None"
+                          value={option.lowLabel || ""}
+                          onChangeText={(text) =>
+                            handleUpdateOption(optionIndex, "lowLabel", text)
+                          }
+                          placeholderTextColor={colors.textLight}
+                          maxLength={20}
+                        />
+                      </View>
+                      <View style={styles.labelArrow}>
+                        <Text style={styles.labelArrowText}>→</Text>
+                      </View>
+                      <View style={styles.labelInputWrapper}>
+                        <Text style={styles.labelHint}>High end</Text>
+                        <TextInput
+                          style={styles.labelInput}
+                          placeholder="e.g. Severe"
+                          value={option.highLabel || ""}
+                          onChangeText={(text) =>
+                            handleUpdateOption(optionIndex, "highLabel", text)
+                          }
+                          placeholderTextColor={colors.textLight}
+                          maxLength={20}
+                        />
                       </View>
                     </View>
                   </View>
@@ -951,5 +998,45 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "700",
     color: colors.text,
+  },
+  optionalHint: {
+    fontSize: 12,
+    fontWeight: "400",
+    color: colors.textLight,
+  },
+  labelsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 4,
+  },
+  labelInputWrapper: {
+    flex: 1,
+  },
+  labelHint: {
+    fontSize: 11,
+    fontWeight: "500",
+    color: colors.textLight,
+    marginBottom: 4,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  labelInput: {
+    backgroundColor: colors.formFieldBackground,
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    fontSize: 14,
+    color: colors.text,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  labelArrow: {
+    paddingTop: 18,
+    alignItems: "center",
+  },
+  labelArrowText: {
+    fontSize: 18,
+    color: colors.textLight,
   },
 });

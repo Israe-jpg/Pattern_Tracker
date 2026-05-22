@@ -1,24 +1,33 @@
-import React, { useState, useEffect } from "react";
-import { View, Text, StyleSheet } from "react-native";
+import React, { useState, useEffect, useRef } from "react";
+import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { ReanimatedSlider } from "../ReanimatedSlider";
 import { colors } from "../../constants/colors";
 
+// Interpolate: sage-light (#A3B68A) → deep-green (#354A2F)
+const interpolateColor = (ratio) => {
+  const s = { r: 163, g: 182, b: 138 };
+  const e = { r: 53, g: 74, b: 47 };
+  return `rgb(${Math.round(s.r + (e.r - s.r) * ratio)},${Math.round(
+    s.g + (e.g - s.g) * ratio
+  )},${Math.round(s.b + (e.b - s.b) * ratio)})`;
+};
+
 const SliderOption = React.memo(
-  ({ sliderId, minValue, maxValue, value, onChange }) => {
-    // Track if slider has been set (not null)
+  ({ sliderId, minValue, maxValue, value, onChange, lowLabel, highLabel }) => {
+    const min = minValue ?? 0;
+    const max = maxValue ?? 10;
+
     const isSet = value !== null && value !== undefined;
 
-    // Slider internal range: minValue-1 to maxValue
-    // minValue-1 = "not set", minValue onwards = actual values
-    const sliderMin = minValue - 1;
-    const sliderMax = maxValue;
+    // Slider internal range: min-1 (= "not set") to max
+    const sliderMin = min - 1;
+    const sliderMax = max;
 
-    // Internal slider position (includes the "not set" position)
     const [sliderPosition, setSliderPosition] = useState(
       isSet ? value : sliderMin
     );
 
-    // Update slider position when external value changes (form reset scenario)
+    // Sync when external value changes (e.g. form reset)
     useEffect(() => {
       if (
         value !== null &&
@@ -32,107 +41,199 @@ const SliderOption = React.memo(
       }
     }, [value, sliderMin]);
 
-    // Use ref to store onChange to prevent recreation
-    const onChangeRef = React.useRef(onChange);
-    React.useEffect(() => {
+    const onChangeRef = useRef(onChange);
+    useEffect(() => {
       onChangeRef.current = onChange;
     }, [onChange]);
 
-    // Handle slider change
     const handleValueChange = React.useCallback(
       (newPosition) => {
         setSliderPosition(newPosition);
-
-        // If at the leftmost position (sliderMin), set to null
-        // Otherwise, use the actual value
-        const actualValue = newPosition <= sliderMin ? null : newPosition;
-
-        if (onChangeRef.current) {
-          onChangeRef.current(actualValue);
-        }
+        const actual = newPosition <= sliderMin ? null : newPosition;
+        if (onChangeRef.current) onChangeRef.current(actual);
       },
       [sliderMin]
     );
 
-    // Check if currently at "not set" position
-    const isAtNotSetPosition = sliderPosition <= sliderMin;
+    const handleClear = () => {
+      setSliderPosition(sliderMin);
+      if (onChangeRef.current) onChangeRef.current(null);
+    };
+
+    const isAtNotSet = sliderPosition <= sliderMin;
+    const ratio = isAtNotSet
+      ? 0
+      : (sliderPosition - min) / Math.max(max - min, 1);
+    const activeColor = isAtNotSet ? colors.border : interpolateColor(ratio);
+
+    // Tick marks — up to 11
+    const tickCount = Math.min(max - min + 1, 11);
+    const ticks = Array.from({ length: tickCount }, (_, i) =>
+      Math.round(min + (i * (max - min)) / Math.max(tickCount - 1, 1))
+    );
 
     return (
-      <View style={styles.sliderContainer}>
+      <View style={styles.container}>
+        {/* Value row: badge on left, clear on far right */}
         <View style={styles.valueRow}>
-          {isAtNotSetPosition ? (
-            <Text style={styles.sliderValuePlaceholder}>Not set</Text>
+          {isAtNotSet ? (
+            <View style={styles.notSetPill}>
+              <Text style={styles.notSetText}>Not set</Text>
+            </View>
           ) : (
-            <Text style={styles.sliderValueDisplay}>
-              {Math.round(sliderPosition)}
-            </Text>
+            <View style={[styles.valueBadge, { backgroundColor: activeColor }]}>
+              <Text style={styles.valueNumber}>
+                {Math.round(sliderPosition)}
+              </Text>
+            </View>
+          )}
+
+          <View style={{ flex: 1 }} />
+
+          {!isAtNotSet && (
+            <TouchableOpacity
+              style={styles.clearButton}
+              onPress={handleClear}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.clearText}>Clear</Text>
+            </TouchableOpacity>
           )}
         </View>
-        <ReanimatedSlider
-          minValue={sliderMin}
-          maxValue={sliderMax}
-          value={sliderPosition}
-          onValueChange={handleValueChange}
-          step={1}
-          minimumTrackTintColor={
-            isAtNotSetPosition ? colors.surface : colors.slider
-          }
-          maximumTrackTintColor={colors.surface}
-          thumbTintColor={isAtNotSetPosition ? colors.border : colors.slider}
-        />
-        <View style={styles.sliderLabels}>
-          <Text style={styles.sliderLabel}>{minValue}</Text>
-          <Text style={styles.sliderLabel}>{maxValue}</Text>
+
+        {/* Slider */}
+        <View style={styles.sliderWrapper}>
+          <ReanimatedSlider
+            minValue={sliderMin}
+            maxValue={sliderMax}
+            value={sliderPosition}
+            onValueChange={handleValueChange}
+            step={1}
+            minimumTrackTintColor={activeColor}
+            maximumTrackTintColor="#DDE8CC"
+            thumbTintColor={isAtNotSet ? "#DDE8CC" : activeColor}
+          />
+        </View>
+
+        {/* Tick marks */}
+        <View style={styles.tickRow}>
+          {ticks.map((tick, i) => (
+            <View key={i} style={styles.tickItem}>
+              <View
+                style={[
+                  styles.tick,
+                  !isAtNotSet && tick <= Math.round(sliderPosition)
+                    ? { backgroundColor: activeColor }
+                    : { backgroundColor: "#DDE8CC" },
+                ]}
+              />
+            </View>
+          ))}
+        </View>
+
+        {/* Min / Max labels */}
+        <View style={styles.labelsRow}>
+          <Text style={styles.labelMin}>
+            {lowLabel ? `${min} · ${lowLabel}` : String(min)}
+          </Text>
+          <Text style={styles.labelMax}>
+            {highLabel ? `${max} · ${highLabel}` : String(max)}
+          </Text>
         </View>
       </View>
     );
   },
-  (prevProps, nextProps) => {
-    // Only re-render if value or callbacks changed
-    return (
-      prevProps.minValue === nextProps.minValue &&
-      prevProps.maxValue === nextProps.maxValue &&
-      prevProps.value === nextProps.value &&
-      prevProps.onChange === nextProps.onChange
-    );
-  }
+  (prev, next) =>
+    prev.minValue === next.minValue &&
+    prev.maxValue === next.maxValue &&
+    prev.value === next.value &&
+    prev.onChange === next.onChange &&
+    prev.lowLabel === next.lowLabel &&
+    prev.highLabel === next.highLabel
 );
 
 SliderOption.displayName = "SliderOption";
 
 const styles = StyleSheet.create({
-  sliderContainer: {
+  container: {
     marginTop: 4,
   },
   valueRow: {
     flexDirection: "row",
-    justifyContent: "center",
     alignItems: "center",
-    marginBottom: 8,
-    minHeight: 28,
+    marginBottom: 12,
+    minHeight: 36,
   },
-  sliderValueDisplay: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: colors.slider,
+  valueBadge: {
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 20,
+    minWidth: 48,
+    alignItems: "center",
   },
-  sliderValuePlaceholder: {
-    fontSize: 16,
-    fontWeight: "600",
+  valueNumber: {
+    fontSize: 22,
+    fontWeight: "800",
+    color: "#FFFFFF",
+    lineHeight: 26,
+  },
+  notSetPill: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 20,
+    backgroundColor: "#F0EDE6",
+    borderWidth: 1,
+    borderColor: "#DDE8CC",
+  },
+  notSetText: {
+    fontSize: 14,
+    fontWeight: "500",
     color: colors.textLight,
     fontStyle: "italic",
   },
-  sliderLabels: {
+  clearButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 10,
+    backgroundColor: colors.error + "15",
+  },
+  clearText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: colors.error,
+  },
+  sliderWrapper: {
+    marginHorizontal: -4,
+  },
+  tickRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
-    marginTop: 6,
-    paddingHorizontal: 4,
+    paddingHorizontal: 14,
+    marginTop: 2,
   },
-  sliderLabel: {
-    fontSize: 11,
+  tickItem: {
+    alignItems: "center",
+  },
+  tick: {
+    width: 2,
+    height: 6,
+    borderRadius: 1,
+  },
+  labelsRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingHorizontal: 12,
+    marginTop: 6,
+  },
+  labelMin: {
+    fontSize: 12,
+    fontWeight: "600",
     color: colors.textLight,
-    fontWeight: "500",
+  },
+  labelMax: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: colors.textLight,
   },
 });
 

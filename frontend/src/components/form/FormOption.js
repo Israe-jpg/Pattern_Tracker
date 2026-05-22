@@ -29,6 +29,8 @@ const FormOption = React.memo(
               maxValue={option.max_value || 10}
               value={value}
               onChange={onChange}
+              lowLabel={option.low_label || null}
+              highLabel={option.high_label || null}
             />
           </View>
         );
