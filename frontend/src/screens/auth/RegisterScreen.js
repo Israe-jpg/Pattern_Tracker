@@ -9,7 +9,10 @@ import {
   Alert,
   ActivityIndicator,
   ScrollView,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../../context/AuthContext";
 import { colors, APP_NAME } from "../../constants/colors";
 
@@ -24,8 +27,14 @@ export default function RegisterScreen({ navigation }) {
   });
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [focused, setFocused] = useState({});
 
   const { register, login } = useAuth();
+
+  const setFocus = (field, val) =>
+    setFocused((prev) => ({ ...prev, [field]: val }));
 
   // Clear field error when user starts typing
   const clearFieldError = (field) => {
@@ -262,187 +271,332 @@ export default function RegisterScreen({ navigation }) {
   };
 
   return (
-    <ScrollView
+    <KeyboardAvoidingView
       style={styles.container}
-      contentContainerStyle={styles.contentContainer}
-      keyboardShouldPersistTaps="handled"
-      keyboardDismissMode="on-drag"
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
-      <View style={styles.content}>
-        <Image
-          source={require("../../../assets/logo.png")}
-          style={styles.logo}
-          resizeMode="contain"
-          accessibilityLabel={APP_NAME}
-        />
-        <Text style={styles.title}>Create Account</Text>
-        <Text style={styles.subtitle}>Sign up to get started</Text>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Header */}
+        <View style={styles.header}>
+          <Image
+            source={require("../../../assets/logo.png")}
+            style={styles.logo}
+            resizeMode="contain"
+            accessibilityLabel={APP_NAME}
+          />
+        </View>
 
-        <View style={styles.form}>
+        {/* Form card */}
+        <View style={styles.card}>
+          <Text style={styles.title}>Create your account</Text>
+          <Text style={styles.subtitle}>
+            Join Trackt to start your health journey
+          </Text>
+
+          {/* General error */}
           {errors.general && (
-            <View style={styles.errorContainer}>
-              <Text style={styles.errorText}>{errors.general}</Text>
+            <View style={styles.generalErrorContainer}>
+              <Ionicons name="alert-circle-outline" size={16} color={colors.error} />
+              <Text style={styles.generalErrorText}>{errors.general}</Text>
             </View>
           )}
 
-          <View>
-            <TextInput
-              style={[styles.input, errors.username && styles.inputError]}
-              placeholder="Username *"
-              placeholderTextColor={colors.textLight}
-              value={formData.username}
-              onChangeText={(value) => {
-                updateField("username", value);
-                if (value) validateField("username", value);
-              }}
-              onBlur={() => validateField("username", formData.username)}
-              autoCapitalize="none"
-              returnKeyType="next"
-              blurOnSubmit={false}
-            />
+          {/* Username */}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.label}>Username <Text style={styles.required}>*</Text></Text>
+            <View style={[
+              styles.inputWrapper,
+              focused.username && styles.inputWrapperFocused,
+              errors.username && styles.inputWrapperError,
+            ]}>
+              <Ionicons
+                name="person-outline"
+                size={18}
+                color={errors.username ? colors.error : focused.username ? colors.primary : colors.textLight}
+                style={styles.inputIcon}
+              />
+              <TextInput
+                style={styles.input}
+                placeholder="e.g. john_doe"
+                placeholderTextColor={colors.textLight}
+                value={formData.username}
+                onChangeText={(value) => {
+                  updateField("username", value);
+                  if (value) validateField("username", value);
+                }}
+                onFocus={() => setFocus("username", true)}
+                onBlur={() => {
+                  setFocus("username", false);
+                  validateField("username", formData.username);
+                }}
+                autoCapitalize="none"
+                returnKeyType="next"
+                blurOnSubmit={false}
+              />
+            </View>
             {errors.username && (
-              <Text style={styles.errorText}>{errors.username}</Text>
+              <View style={styles.fieldError}>
+                <Ionicons name="alert-circle" size={13} color={colors.error} />
+                <Text style={styles.fieldErrorText}>{errors.username}</Text>
+              </View>
             )}
           </View>
 
-          <View>
-            <TextInput
-              style={[styles.input, errors.email && styles.inputError]}
-              placeholder="Email *"
-              placeholderTextColor={colors.textLight}
-              value={formData.email}
-              onChangeText={(value) => {
-                updateField("email", value);
-                if (value) validateField("email", value);
-              }}
-              onBlur={() => validateField("email", formData.email)}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              returnKeyType="next"
-              blurOnSubmit={false}
-            />
+          {/* Email */}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.label}>Email <Text style={styles.required}>*</Text></Text>
+            <View style={[
+              styles.inputWrapper,
+              focused.email && styles.inputWrapperFocused,
+              errors.email && styles.inputWrapperError,
+            ]}>
+              <Ionicons
+                name="mail-outline"
+                size={18}
+                color={errors.email ? colors.error : focused.email ? colors.primary : colors.textLight}
+                style={styles.inputIcon}
+              />
+              <TextInput
+                style={styles.input}
+                placeholder="you@example.com"
+                placeholderTextColor={colors.textLight}
+                value={formData.email}
+                onChangeText={(value) => {
+                  updateField("email", value);
+                  if (value) validateField("email", value);
+                }}
+                onFocus={() => setFocus("email", true)}
+                onBlur={() => {
+                  setFocus("email", false);
+                  validateField("email", formData.email);
+                }}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                returnKeyType="next"
+                blurOnSubmit={false}
+              />
+            </View>
             {errors.email && (
-              <Text style={styles.errorText}>{errors.email}</Text>
+              <View style={styles.fieldError}>
+                <Ionicons name="alert-circle" size={13} color={colors.error} />
+                <Text style={styles.fieldErrorText}>{errors.email}</Text>
+              </View>
             )}
           </View>
 
-          <View>
-            <TextInput
-              style={[styles.input, errors.password && styles.inputError]}
-              placeholder="Password *"
-              placeholderTextColor={colors.textLight}
-              value={formData.password}
-              onChangeText={(value) => {
-                updateField("password", value);
-                if (value) validateField("password", value);
-              }}
-              onBlur={() => validateField("password", formData.password)}
-              secureTextEntry
-              returnKeyType="next"
-              blurOnSubmit={false}
-            />
+          {/* Password */}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.label}>Password <Text style={styles.required}>*</Text></Text>
+            <View style={[
+              styles.inputWrapper,
+              focused.password && styles.inputWrapperFocused,
+              errors.password && styles.inputWrapperError,
+            ]}>
+              <Ionicons
+                name="lock-closed-outline"
+                size={18}
+                color={errors.password ? colors.error : focused.password ? colors.primary : colors.textLight}
+                style={styles.inputIcon}
+              />
+              <TextInput
+                style={styles.input}
+                placeholder="Min. 8 characters"
+                placeholderTextColor={colors.textLight}
+                value={formData.password}
+                onChangeText={(value) => {
+                  updateField("password", value);
+                  if (value) validateField("password", value);
+                }}
+                onFocus={() => setFocus("password", true)}
+                onBlur={() => {
+                  setFocus("password", false);
+                  validateField("password", formData.password);
+                }}
+                secureTextEntry={!showPassword}
+                returnKeyType="next"
+                blurOnSubmit={false}
+              />
+              <TouchableOpacity
+                onPress={() => setShowPassword((v) => !v)}
+                style={styles.eyeButton}
+                activeOpacity={0.7}
+              >
+                <Ionicons
+                  name={showPassword ? "eye-outline" : "eye-off-outline"}
+                  size={18}
+                  color={colors.textLight}
+                />
+              </TouchableOpacity>
+            </View>
             {errors.password && (
-              <Text style={styles.errorText}>{errors.password}</Text>
+              <View style={styles.fieldError}>
+                <Ionicons name="alert-circle" size={13} color={colors.error} />
+                <Text style={styles.fieldErrorText}>{errors.password}</Text>
+              </View>
             )}
           </View>
 
-          <View>
-            <TextInput
-              style={[
-                styles.input,
-                errors.confirmPassword && styles.inputError,
-              ]}
-              placeholder="Confirm Password *"
-              placeholderTextColor={colors.textLight}
-              value={formData.confirmPassword}
-              onChangeText={(value) => {
-                updateField("confirmPassword", value);
-                if (value) validateField("confirmPassword", value);
-              }}
-              returnKeyType="next"
-              blurOnSubmit={false}
-              onBlur={() =>
-                validateField("confirmPassword", formData.confirmPassword)
-              }
-              secureTextEntry
-            />
+          {/* Confirm Password */}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.label}>Confirm Password <Text style={styles.required}>*</Text></Text>
+            <View style={[
+              styles.inputWrapper,
+              focused.confirmPassword && styles.inputWrapperFocused,
+              errors.confirmPassword && styles.inputWrapperError,
+            ]}>
+              <Ionicons
+                name="shield-checkmark-outline"
+                size={18}
+                color={errors.confirmPassword ? colors.error : focused.confirmPassword ? colors.primary : colors.textLight}
+                style={styles.inputIcon}
+              />
+              <TextInput
+                style={styles.input}
+                placeholder="Repeat your password"
+                placeholderTextColor={colors.textLight}
+                value={formData.confirmPassword}
+                onChangeText={(value) => {
+                  updateField("confirmPassword", value);
+                  if (value) validateField("confirmPassword", value);
+                }}
+                onFocus={() => setFocus("confirmPassword", true)}
+                onBlur={() => {
+                  setFocus("confirmPassword", false);
+                  validateField("confirmPassword", formData.confirmPassword);
+                }}
+                secureTextEntry={!showConfirmPassword}
+                returnKeyType="next"
+                blurOnSubmit={false}
+              />
+              <TouchableOpacity
+                onPress={() => setShowConfirmPassword((v) => !v)}
+                style={styles.eyeButton}
+                activeOpacity={0.7}
+              >
+                <Ionicons
+                  name={showConfirmPassword ? "eye-outline" : "eye-off-outline"}
+                  size={18}
+                  color={colors.textLight}
+                />
+              </TouchableOpacity>
+            </View>
             {errors.confirmPassword && (
-              <Text style={styles.errorText}>{errors.confirmPassword}</Text>
+              <View style={styles.fieldError}>
+                <Ionicons name="alert-circle" size={13} color={colors.error} />
+                <Text style={styles.fieldErrorText}>{errors.confirmPassword}</Text>
+              </View>
             )}
           </View>
 
-          <View>
-            <TextInput
-              style={[styles.input, errors.first_name && styles.inputError]}
-              placeholder="First Name"
-              placeholderTextColor={colors.textLight}
-              value={formData.first_name}
-              onChangeText={(value) => {
-                updateField("first_name", value);
-                if (value && errors.first_name)
-                  validateField("first_name", value);
-              }}
-              returnKeyType="next"
-              blurOnSubmit={false}
-              onBlur={() => {
-                if (formData.first_name && errors.first_name) {
-                  validateField("first_name", formData.first_name);
-                }
-              }}
-            />
-            {errors.first_name && (
-              <Text style={styles.errorText}>{errors.first_name}</Text>
-            )}
+          {/* First & Last name row */}
+          <View style={styles.nameRow}>
+            <View style={[styles.fieldGroup, styles.nameField]}>
+              <Text style={styles.label}>First Name</Text>
+              <View style={[
+                styles.inputWrapper,
+                focused.first_name && styles.inputWrapperFocused,
+                errors.first_name && styles.inputWrapperError,
+              ]}>
+                <Ionicons
+                  name="person-outline"
+                  size={18}
+                  color={errors.first_name ? colors.error : focused.first_name ? colors.primary : colors.textLight}
+                  style={styles.inputIcon}
+                />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Jane"
+                  placeholderTextColor={colors.textLight}
+                  value={formData.first_name}
+                  onChangeText={(value) => updateField("first_name", value)}
+                  onFocus={() => setFocus("first_name", true)}
+                  onBlur={() => setFocus("first_name", false)}
+                  returnKeyType="next"
+                  blurOnSubmit={false}
+                />
+              </View>
+              {errors.first_name && (
+                <View style={styles.fieldError}>
+                  <Ionicons name="alert-circle" size={13} color={colors.error} />
+                  <Text style={styles.fieldErrorText}>{errors.first_name}</Text>
+                </View>
+              )}
+            </View>
+
+            <View style={[styles.fieldGroup, styles.nameField]}>
+              <Text style={styles.label}>Last Name</Text>
+              <View style={[
+                styles.inputWrapper,
+                focused.last_name && styles.inputWrapperFocused,
+                errors.last_name && styles.inputWrapperError,
+              ]}>
+                <Ionicons
+                  name="person-outline"
+                  size={18}
+                  color={errors.last_name ? colors.error : focused.last_name ? colors.primary : colors.textLight}
+                  style={styles.inputIcon}
+                />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Doe"
+                  placeholderTextColor={colors.textLight}
+                  value={formData.last_name}
+                  onChangeText={(value) => updateField("last_name", value)}
+                  onFocus={() => setFocus("last_name", true)}
+                  onBlur={() => setFocus("last_name", false)}
+                  returnKeyType="done"
+                  onSubmitEditing={handleRegister}
+                />
+              </View>
+              {errors.last_name && (
+                <View style={styles.fieldError}>
+                  <Ionicons name="alert-circle" size={13} color={colors.error} />
+                  <Text style={styles.fieldErrorText}>{errors.last_name}</Text>
+                </View>
+              )}
+            </View>
           </View>
 
-          <View>
-            <TextInput
-              style={[styles.input, errors.last_name && styles.inputError]}
-              placeholder="Last Name"
-              placeholderTextColor={colors.textLight}
-              value={formData.last_name}
-              onChangeText={(value) => {
-                updateField("last_name", value);
-                if (value && errors.last_name)
-                  validateField("last_name", value);
-              }}
-              returnKeyType="done"
-              blurOnSubmit={true}
-              onBlur={() => {
-                if (formData.last_name && errors.last_name) {
-                  validateField("last_name", formData.last_name);
-                }
-              }}
-            />
-            {errors.last_name && (
-              <Text style={styles.errorText}>{errors.last_name}</Text>
-            )}
-          </View>
-
+          {/* Submit button */}
           <TouchableOpacity
             style={[styles.button, loading && styles.buttonDisabled]}
             onPress={handleRegister}
             disabled={loading}
-            activeOpacity={0.7}
+            activeOpacity={0.85}
           >
             {loading ? (
-              <ActivityIndicator color="#fff" />
+              <ActivityIndicator color="#fff" size="small" />
             ) : (
-              <Text style={styles.buttonText}>Sign Up</Text>
+              <Text style={styles.buttonText}>Create Account</Text>
             )}
           </TouchableOpacity>
 
+          {/* Divider */}
+          <View style={styles.dividerRow}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>or</Text>
+            <View style={styles.dividerLine} />
+          </View>
+
+          {/* Login link */}
           <TouchableOpacity
-            style={styles.linkButton}
+            style={styles.loginButton}
             onPress={() => navigation.navigate("Login")}
+            activeOpacity={0.7}
           >
-            <Text style={styles.linkText}>
-              Already have an account? Sign in
+            <Text style={styles.loginText}>
+              Already have an account?{" "}
+              <Text style={styles.loginTextBold}>Sign in</Text>
             </Text>
           </TouchableOpacity>
         </View>
-      </View>
-    </ScrollView>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -451,87 +605,190 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
-  contentContainer: {
+  scrollContent: {
     flexGrow: 1,
-    justifyContent: "center",
-    padding: 20,
-    paddingTop: 60,
+    paddingBottom: 32,
   },
-  content: {
-    width: "100%",
+
+  // Header
+  header: {
+    alignItems: "center",
+    paddingTop: 56,
+    paddingBottom: 24,
+    paddingHorizontal: 24,
   },
   logo: {
-    width: 100,
-    height: 100,
-    alignSelf: "center",
-    marginBottom: 8,
+    width: 180,
+    height: 56,
+  },
+
+  // Card
+  card: {
+    marginHorizontal: 20,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    padding: 28,
+    shadowColor: "#354A2F",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    elevation: 4,
   },
   title: {
-    fontSize: 32,
-    fontWeight: "bold",
+    fontSize: 24,
+    fontWeight: "700",
     color: colors.text,
-    textAlign: "center",
-    marginBottom: 8,
+    marginBottom: 6,
+    letterSpacing: -0.3,
   },
   subtitle: {
-    fontSize: 16,
-    color: colors.textSecondary,
-    textAlign: "center",
-    marginBottom: 40,
+    fontSize: 14,
+    color: colors.textLight,
+    marginBottom: 24,
+    lineHeight: 20,
   },
-  form: {
-    width: "100%",
+  required: {
+    color: colors.error,
+  },
+
+  // General error
+  generalErrorContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FEF2F2",
+    borderWidth: 1,
+    borderColor: "#FECACA",
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 16,
+    gap: 8,
+  },
+  generalErrorText: {
+    color: colors.error,
+    fontSize: 13,
+    flex: 1,
+    lineHeight: 18,
+  },
+
+  // Fields
+  fieldGroup: {
+    marginBottom: 16,
+  },
+  label: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: colors.text,
+    marginBottom: 8,
+    letterSpacing: 0.1,
+  },
+  inputWrapper: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.background,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: "#E5E0D8",
+    paddingHorizontal: 14,
+    height: 50,
+  },
+  inputWrapperFocused: {
+    borderColor: colors.primary,
+    backgroundColor: "#FAFFF7",
+  },
+  inputWrapperError: {
+    borderColor: colors.error,
+    backgroundColor: "#FFF9F9",
+  },
+  inputIcon: {
+    marginRight: 10,
   },
   input: {
-    backgroundColor: colors.surface,
-    borderRadius: 8,
-    padding: 16,
-    fontSize: 16,
+    flex: 1,
+    fontSize: 15,
     color: colors.text,
-    marginBottom: 4,
-    borderWidth: 1,
-    borderColor: colors.border,
+    paddingVertical: 0,
   },
-  inputError: {
-    borderColor: colors.error,
-    borderWidth: 1,
+  eyeButton: {
+    padding: 4,
+    marginLeft: 6,
   },
-  errorContainer: {
-    backgroundColor: "#FEE2E2",
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: colors.error,
+  fieldError: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 5,
+    gap: 4,
   },
-  errorText: {
-    color: colors.error,
+  fieldErrorText: {
     fontSize: 12,
-    marginTop: 4,
-    marginBottom: 8,
-    marginLeft: 4,
+    color: colors.error,
+    flex: 1,
   },
+
+  // Name row
+  nameRow: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  nameField: {
+    flex: 1,
+  },
+
+  // Button
   button: {
     backgroundColor: colors.primary,
-    borderRadius: 8,
-    padding: 16,
+    borderRadius: 12,
+    height: 52,
     alignItems: "center",
-    marginTop: 8,
+    justifyContent: "center",
+    marginTop: 4,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
   buttonDisabled: {
     opacity: 0.6,
+    shadowOpacity: 0,
+    elevation: 0,
   },
   buttonText: {
-    color: "#fff",
+    color: "#FFFFFF",
     fontSize: 16,
-    fontWeight: "600",
+    fontWeight: "700",
+    letterSpacing: 0.3,
   },
-  linkButton: {
-    marginTop: 20,
+
+  // Divider
+  dividerRow: {
+    flexDirection: "row",
     alignItems: "center",
+    marginTop: 24,
+    marginBottom: 20,
+    gap: 12,
   },
-  linkText: {
-    color: colors.primary,
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: "#EDE8E0",
+  },
+  dividerText: {
+    fontSize: 13,
+    color: colors.textLight,
+    fontWeight: "500",
+  },
+
+  // Login link
+  loginButton: {
+    alignItems: "center",
+    paddingVertical: 4,
+  },
+  loginText: {
     fontSize: 14,
+    color: colors.textLight,
+  },
+  loginTextBold: {
+    color: colors.primary,
+    fontWeight: "700",
   },
 });

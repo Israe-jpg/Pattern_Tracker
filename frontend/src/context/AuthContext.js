@@ -1,5 +1,8 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { authService } from '../services/authService';
+
+const FIRST_LAUNCH_KEY = '@trackt_has_launched';
 
 const AuthContext = createContext({});
 
@@ -15,6 +18,7 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isFirstLaunch, setIsFirstLaunch] = useState(false);
 
   // Check authentication status on app start
   useEffect(() => {
@@ -23,6 +27,13 @@ export const AuthProvider = ({ children }) => {
 
   const checkAuthStatus = async () => {
     try {
+      // Determine if this is the very first time the app has been opened
+      const hasLaunched = await AsyncStorage.getItem(FIRST_LAUNCH_KEY);
+      if (hasLaunched === null) {
+        setIsFirstLaunch(true);
+        await AsyncStorage.setItem(FIRST_LAUNCH_KEY, 'true');
+      }
+
       const authenticated = await authService.isAuthenticated();
       setIsAuthenticated(authenticated);
       
@@ -278,6 +289,7 @@ export const AuthProvider = ({ children }) => {
     user,
     loading,
     isAuthenticated,
+    isFirstLaunch,
     login,
     logout,
     register,

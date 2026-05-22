@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
+  Image,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
@@ -564,7 +565,12 @@ export default function ProfileScreen({ navigation }) {
         </TouchableOpacity>
 
         <View style={styles.footer}>
-          <Text style={styles.footerText}>{APP_NAME}</Text>
+          <Image
+            source={require("../../assets/logo.png")}
+            style={styles.footerLogo}
+            resizeMode="contain"
+            accessibilityLabel={APP_NAME}
+          />
           <Text style={styles.footerText}>Version 1.0.0</Text>
         </View>
       </ScrollView>
@@ -808,6 +814,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: 20,
     marginBottom: 40,
+  },
+  footerLogo: {
+    width: 120,
+    height: 44,
+    marginBottom: 8,
   },
   footerText: {
     fontSize: 12,

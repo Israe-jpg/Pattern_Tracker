@@ -19,7 +19,7 @@ import CreateCustomTrackerScreen from "../screens/CreateCustomTrackerScreen";
 const Stack = createNativeStackNavigator();
 
 export default function AppNavigator() {
-  const { isAuthenticated, loading, user } = useAuth();
+  const { isAuthenticated, loading, user, isFirstLaunch } = useAuth();
 
   if (loading) {
     return <LoadingScreen />;
@@ -31,10 +31,18 @@ export default function AppNavigator() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       {!isAuthenticated ? (
-        <>
-          <Stack.Screen name="Login" component={LoginScreen} />
-          <Stack.Screen name="Register" component={RegisterScreen} />
-        </>
+        // First-time users see Register first; returning users see Login first
+        isFirstLaunch ? (
+          <>
+            <Stack.Screen name="Register" component={RegisterScreen} />
+            <Stack.Screen name="Login" component={LoginScreen} />
+          </>
+        ) : (
+          <>
+            <Stack.Screen name="Login" component={LoginScreen} />
+            <Stack.Screen name="Register" component={RegisterScreen} />
+          </>
+        )
       ) : needsGender ? (
         <>
           <Stack.Screen name="Gender" component={GenderScreen} />
