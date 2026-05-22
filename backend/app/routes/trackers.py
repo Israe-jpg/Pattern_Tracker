@@ -548,13 +548,42 @@ def update_tracker_settings(tracker_id: int):
         old_settings = tracker.settings
         tracker.settings = settings
         flag_modified(tracker, 'settings')
+
+        # For Period Tracker: create an initial cycle from last_period_start_date
+        # when this is the first-time configuration (no cycles exist yet).
+        initial_cycle = None
+        if category and category.name == 'Period Tracker':
+            last_period_str = settings.get('last_period_start_date')
+            has_cycles = PeriodCycle.query.filter_by(tracker_id=tracker_id).first() is not None
+
+            if last_period_str and not has_cycles:
+                try:
+                    from datetime import date as _date
+                    last_period_date = _date.fromisoformat(last_period_str)
+                    initial_cycle = PeriodCycleService.create_cycle(
+                        tracker_id, last_period_date, settings
+                    )
+                    PeriodCycleService.finalize_cycle(initial_cycle, tracker_id)
+                    logging.info(
+                        f"Created initial cycle for tracker {tracker_id} "
+                        f"from last_period_start_date {last_period_str}"
+                    )
+                except Exception as cycle_err:
+                    # Don't fail the whole settings save if cycle creation fails
+                    logging.error(f"Failed to create initial cycle: {cycle_err}")
+                    initial_cycle = None
+
         db.session.commit()
-        
+
         logging.info(f"Successfully updated tracker {tracker_id} settings. Old: {old_settings}, New: {tracker.settings}")
-        
+
+        response_data = {'settings': tracker.settings}
+        if initial_cycle:
+            response_data['initial_cycle'] = initial_cycle.to_dict()
+
         return success_response(
             "Tracker settings updated successfully",
-            {'settings': tracker.settings}
+            response_data
         )
     
     except Exception as e:
