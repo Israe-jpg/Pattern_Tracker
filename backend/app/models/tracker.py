@@ -5,7 +5,7 @@ class Tracker(db.Model):
     __tablename__ = 'trackers'
     
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     category_id = db.Column(db.Integer, db.ForeignKey('tracker_categories.id'), nullable=False)
     data = db.relationship('TrackingData', backref='tracker', lazy=True, passive_deletes=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)

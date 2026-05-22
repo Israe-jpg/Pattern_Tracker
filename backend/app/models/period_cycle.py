@@ -10,7 +10,7 @@ class PeriodCycle(db.Model):
     __tablename__ = 'period_cycles'
 
     id = db.Column(db.Integer, primary_key=True)
-    tracker_id = db.Column(db.Integer, db.ForeignKey('trackers.id'), nullable=False)
+    tracker_id = db.Column(db.Integer, db.ForeignKey('trackers.id', ondelete='CASCADE'), nullable=False)
 
     # Cycle dates
     cycle_start_date = db.Column(db.Date, nullable=False, index=True)
