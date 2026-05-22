@@ -26,6 +26,7 @@ import {
   calculateCycleDayForDate,
   sortCyclesByStartDate,
 } from "../utils/cycleCalculations";
+import { parseLocalDate, formatDate } from "../utils/dateUtils";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -223,8 +224,8 @@ export default function CalendarOverviewScreen() {
       try {
         const entriesResponse = await dataTrackingService.getDataRange(
           tracker.id,
-          startDate.toISOString().split("T")[0],
-          endDate.toISOString().split("T")[0],
+          formatDate(startDate),
+          formatDate(endDate),
           { params: { per_page: 100 } },
         );
 
@@ -252,8 +253,8 @@ export default function CalendarOverviewScreen() {
             try {
               const pageResponse = await dataTrackingService.getDataRange(
                 tracker.id,
-                startDate.toISOString().split("T")[0],
-                endDate.toISOString().split("T")[0],
+                formatDate(startDate),
+                formatDate(endDate),
                 { params: { per_page: 100, page: currentPage } },
               );
 
@@ -309,9 +310,8 @@ export default function CalendarOverviewScreen() {
           // Calculate cycle day and phase for all dates in the range
           // IMPORTANT: Preserve existing marked and dotColor properties from entries
           const currentDate = new Date(startDate);
-          let cycleDayCount = 0;
           while (currentDate <= endDate) {
-            const dateStr = currentDate.toISOString().split("T")[0];
+            const dateStr = formatDate(currentDate);
             // Use shared utility function
             const calculated = calculateCycleDayForDate(dateStr, sortedCycles);
 
@@ -344,15 +344,13 @@ export default function CalendarOverviewScreen() {
           const currentCycle = sortedCycles.find(
             (cycle) => !cycle.cycle_end_date,
           );
-          const todayStr = new Date().toISOString().split("T")[0];
+          const todayStr = formatDate(new Date());
 
           if (currentCycle) {
-            const periodStart = new Date(currentCycle.period_start_date);
-            periodStart.setHours(0, 0, 0, 0);
-            const cycleStart = new Date(
+            const periodStart = parseLocalDate(currentCycle.period_start_date);
+            const cycleStart = parseLocalDate(
               currentCycle.cycle_start_date || currentCycle.period_start_date,
             );
-            cycleStart.setHours(0, 0, 0, 0);
             const periodLength = currentCycle.period_length || 5;
             const cycleLength = currentCycle.cycle_length || 28;
             const ovulationDayNum = cycleLength - 14;
@@ -361,7 +359,7 @@ export default function CalendarOverviewScreen() {
             for (let i = 0; i < periodLength; i++) {
               const d = new Date(periodStart);
               d.setDate(d.getDate() + i);
-              const dateStr = d.toISOString().split("T")[0];
+              const dateStr = formatDate(d);
               const diffDays =
                 Math.floor((d - cycleStart) / (1000 * 60 * 60 * 24)) + 1;
               const cycleDay = diffDays > 0 ? diffDays : i + 1;
@@ -375,25 +373,20 @@ export default function CalendarOverviewScreen() {
 
             // 2) Annotations from today until day before predicted next period
             const predNext = currentCycle.predicted_next_period_date
-              ? new Date(currentCycle.predicted_next_period_date)
+              ? parseLocalDate(currentCycle.predicted_next_period_date)
               : null;
             const predOvulationDate = currentCycle.predicted_ovulation_date
-              ? new Date(currentCycle.predicted_ovulation_date)
+              ? parseLocalDate(currentCycle.predicted_ovulation_date)
               : null;
-            if (predOvulationDate) predOvulationDate.setHours(0, 0, 0, 0);
             if (predNext) {
-              predNext.setHours(0, 0, 0, 0);
               const endAnnot = new Date(predNext);
               endAnnot.setDate(endAnnot.getDate() - 1);
-              const endAnnotStr = endAnnot.toISOString().split("T")[0];
 
-              let d = new Date(todayStr);
-              d.setHours(0, 0, 0, 0);
-              const endD = new Date(endAnnotStr);
-              endD.setHours(0, 0, 0, 0);
+              let d = parseLocalDate(todayStr);
+              const endD = endAnnot;
 
               while (d <= endD) {
-                const dateStr = d.toISOString().split("T")[0];
+                const dateStr = formatDate(d);
                 const diffDays =
                   Math.floor((d - cycleStart) / (1000 * 60 * 60 * 24)) + 1;
                 const cycleDay = diffDays > 0 ? diffDays : null;
@@ -408,7 +401,6 @@ export default function CalendarOverviewScreen() {
                 let phase = "menstrual";
                 let isExactOvulationDay = false;
                 if (!inPeriod) {
-                  // Only the single predicted ovulation date gets ovulation styling (step 3). Here we use follicular/luteal only.
                   if (
                     predOvulationDate &&
                     d.getTime() === predOvulationDate.getTime()
@@ -438,18 +430,15 @@ export default function CalendarOverviewScreen() {
 
             // 3) Predicted ovulation (only if not inside current period range)
             if (currentCycle.predicted_ovulation_date) {
-              const ovulationDate = new Date(
+              const ovulationDate = parseLocalDate(
                 currentCycle.predicted_ovulation_date,
               );
-              ovulationDate.setHours(0, 0, 0, 0);
               const periodEnd = new Date(periodStart);
               periodEnd.setDate(periodEnd.getDate() + periodLength - 1);
               const ovulationInPeriod =
                 ovulationDate >= periodStart && ovulationDate <= periodEnd;
               if (!ovulationInPeriod) {
-                const ovulationDateStr = ovulationDate
-                  .toISOString()
-                  .split("T")[0];
+                const ovulationDateStr = formatDate(ovulationDate);
                 const existingMarking = dates[ovulationDateStr] || {};
                 dates[ovulationDateStr] = {
                   ...existingMarking,
@@ -462,11 +451,10 @@ export default function CalendarOverviewScreen() {
 
             // 4) Predicted next period (only show if in the future)
             if (currentCycle.predicted_next_period_date) {
-              const predictedStartDate = new Date(
+              const predictedStartDate = parseLocalDate(
                 currentCycle.predicted_next_period_date,
               );
-              const today = new Date(todayStr);
-              today.setHours(0, 0, 0, 0);
+              const today = parseLocalDate(todayStr);
 
               for (let i = 0; i < periodLength; i++) {
                 const predictedDate = new Date(predictedStartDate);
@@ -474,7 +462,7 @@ export default function CalendarOverviewScreen() {
 
                 // Only add predicted period dates that are in the future
                 if (predictedDate > today) {
-                  const dateStr = predictedDate.toISOString().split("T")[0];
+                  const dateStr = formatDate(predictedDate);
 
                   const existingMarking = dates[dateStr] || {};
                   dates[dateStr] = {
@@ -616,11 +604,11 @@ export default function CalendarOverviewScreen() {
         } else {
           if (!isActualPeriod) {
             const periodLength = trackerSettings?.average_period_length || 5;
-            const startDate = new Date(dateString);
+            const startDate = parseLocalDate(dateString);
             for (let i = 0; i < periodLength; i++) {
               const d = new Date(startDate);
               d.setDate(d.getDate() + i);
-              const dStr = d.toISOString().split("T")[0];
+              const dStr = formatDate(d);
               next.add(dStr);
             }
           } else {
@@ -660,12 +648,12 @@ export default function CalendarOverviewScreen() {
             : cycle.period_end_date
           : periodStartStr;
 
-        const periodStart = new Date(periodStartStr);
-        const periodEnd = new Date(periodEndStr);
+        const periodStart = parseLocalDate(periodStartStr);
+        const periodEnd = parseLocalDate(periodEndStr);
         const currentDate = new Date(periodStart);
 
         while (currentDate <= periodEnd) {
-          currentPeriodDates.add(currentDate.toISOString().split("T")[0]);
+          currentPeriodDates.add(formatDate(currentDate));
           currentDate.setDate(currentDate.getDate() + 1);
         }
       }
@@ -912,7 +900,7 @@ export default function CalendarOverviewScreen() {
       ) : (
         <CalendarList
           key={`calendar-${refreshKey}`}
-          current={new Date().toISOString().split("T")[0]}
+          current={formatDate(new Date())}
           pastScrollRange={11}
           futureScrollRange={1}
           markedDates={markedDates}

@@ -2,6 +2,7 @@ import { useState, useCallback, useRef } from "react";
 import { trackerService } from "../services/trackerService";
 import { dataTrackingService } from "../services/dataTrackingService";
 import { colors } from "../constants/colors";
+import { parseLocalDate, formatDate } from "../utils/dateUtils";
 
 /**
  * Custom hook to manage tracker data, calendar, and insights
@@ -13,7 +14,7 @@ export const useTrackerData = () => {
   const [defaultTracker, setDefaultTracker] = useState(null);
   const [calendarData, setCalendarData] = useState({});
   const [selectedDate, setSelectedDate] = useState(
-    new Date().toISOString().split("T")[0]
+    formatDate(new Date())
   );
   const [needsSetup, setNeedsSetup] = useState(null); // null = checking, true = needs setup, false = configured
   const [insights, setInsights] = useState(null);
@@ -203,8 +204,8 @@ export const useTrackerData = () => {
           
           // Sort cycles by start date (oldest first)
           allCycles.sort((a, b) => {
-            const dateA = new Date(a.cycle_start_date || a.period_start_date);
-            const dateB = new Date(b.cycle_start_date || b.period_start_date);
+            const dateA = parseLocalDate(a.cycle_start_date || a.period_start_date);
+            const dateB = parseLocalDate(b.cycle_start_date || b.period_start_date);
             return dateA - dateB;
           });
           
@@ -225,7 +226,7 @@ export const useTrackerData = () => {
           
           // Get the first cycle start date for sequential numbering
           if (allCycles.length > 0) {
-            firstCycleStartDate = new Date(
+            firstCycleStartDate = parseLocalDate(
               allCycles[0].cycle_start_date || allCycles[0].period_start_date
             );
           }
@@ -317,13 +318,11 @@ export const useTrackerData = () => {
         
         // Current cycle: full period span + annotations from today to next predicted period
         const currentCycle = allCycles.find(cycle => !cycle.cycle_end_date);
-        const todayStr = new Date().toISOString().split("T")[0];
+        const todayStr = formatDate(new Date());
         
         if (currentCycle) {
-          const periodStart = new Date(currentCycle.period_start_date);
-          periodStart.setHours(0, 0, 0, 0);
-          const cycleStart = new Date(currentCycle.cycle_start_date || currentCycle.period_start_date);
-          cycleStart.setHours(0, 0, 0, 0);
+          const periodStart = parseLocalDate(currentCycle.period_start_date);
+          const cycleStart = parseLocalDate(currentCycle.cycle_start_date || currentCycle.period_start_date);
           const periodLength = currentCycle.period_length || 5;
           const cycleLength = currentCycle.cycle_length || 28;
           const ovulationDayNum = cycleLength - 14;
@@ -332,7 +331,7 @@ export const useTrackerData = () => {
           for (let i = 0; i < periodLength; i++) {
             const d = new Date(periodStart);
             d.setDate(d.getDate() + i);
-            const dateStr = d.toISOString().split("T")[0];
+            const dateStr = formatDate(d);
             const diffDays = Math.floor((d - cycleStart) / (1000 * 60 * 60 * 24)) + 1;
             const cycleDay = diffDays > 0 ? diffDays : i + 1;
             const existingMarking = markedDates[dateStr] || {};
@@ -345,25 +344,20 @@ export const useTrackerData = () => {
           
           // 2) Annotations from today until day before predicted next period
           const predNext = currentCycle.predicted_next_period_date
-            ? new Date(currentCycle.predicted_next_period_date)
+            ? parseLocalDate(currentCycle.predicted_next_period_date)
             : null;
           const predOvulationDate = currentCycle.predicted_ovulation_date
-            ? new Date(currentCycle.predicted_ovulation_date)
+            ? parseLocalDate(currentCycle.predicted_ovulation_date)
             : null;
-          if (predOvulationDate) predOvulationDate.setHours(0, 0, 0, 0);
           if (predNext) {
-            predNext.setHours(0, 0, 0, 0);
             const endAnnot = new Date(predNext);
             endAnnot.setDate(endAnnot.getDate() - 1);
-            const endAnnotStr = endAnnot.toISOString().split("T")[0];
             
-            let d = new Date(todayStr);
-            d.setHours(0, 0, 0, 0);
-            const endD = new Date(endAnnotStr);
-            endD.setHours(0, 0, 0, 0);
+            let d = parseLocalDate(todayStr);
+            const endD = endAnnot;
             
             while (d <= endD) {
-              const dateStr = d.toISOString().split("T")[0];
+              const dateStr = formatDate(d);
               const diffDays = Math.floor((d - cycleStart) / (1000 * 60 * 60 * 24)) + 1;
               const cycleDay = diffDays > 0 ? diffDays : null;
               if (!cycleDay) {
@@ -377,7 +371,6 @@ export const useTrackerData = () => {
               let phase = "menstrual";
               let isExactOvulationDay = false;
               if (!inPeriod) {
-                // Only the single predicted ovulation date gets ovulation styling (step 3). Here we use follicular/luteal only.
                 if (predOvulationDate && d.getTime() === predOvulationDate.getTime()) {
                   phase = "ovulation";
                   isExactOvulationDay = true;
@@ -403,13 +396,12 @@ export const useTrackerData = () => {
           
           // 3) Predicted ovulation (only if not inside current period range)
           if (currentCycle.predicted_ovulation_date) {
-            const ovulationDate = new Date(currentCycle.predicted_ovulation_date);
-            ovulationDate.setHours(0, 0, 0, 0);
+            const ovulationDate = parseLocalDate(currentCycle.predicted_ovulation_date);
             const periodEndForOvul = new Date(periodStart);
             periodEndForOvul.setDate(periodEndForOvul.getDate() + periodLength - 1);
             const ovulationInPeriod = ovulationDate >= periodStart && ovulationDate <= periodEndForOvul;
             if (!ovulationInPeriod) {
-              const ovulationDateStr = ovulationDate.toISOString().split("T")[0];
+              const ovulationDateStr = formatDate(ovulationDate);
               const existingMarking = markedDates[ovulationDateStr] || {};
               markedDates[ovulationDateStr] = {
                 ...existingMarking,
@@ -422,9 +414,8 @@ export const useTrackerData = () => {
           
           // 4) Predicted next period (only show if in the future)
           if (currentCycle.predicted_next_period_date) {
-            const predictedStartDate = new Date(currentCycle.predicted_next_period_date);
-            const today = new Date(todayStr);
-            today.setHours(0, 0, 0, 0);
+            const predictedStartDate = parseLocalDate(currentCycle.predicted_next_period_date);
+            const today = parseLocalDate(todayStr);
             
             for (let i = 0; i < periodLength; i++) {
               const predictedDate = new Date(predictedStartDate);
@@ -432,7 +423,7 @@ export const useTrackerData = () => {
               
               // Only add predicted period dates that are in the future
               if (predictedDate > today) {
-                const dateStr = predictedDate.toISOString().split("T")[0];
+                const dateStr = formatDate(predictedDate);
                 
                 const existingMarking = markedDates[dateStr] || {};
                 markedDates[dateStr] = {
@@ -495,11 +486,10 @@ export const useTrackerData = () => {
     const allCycles = allCyclesOverride || cycleHistory;
     if (!allCycles || allCycles.length === 0) return { cycleDay: null, phase: null, isExactOvulationDay: false };
     
-    const today = new Date().toISOString().split("T")[0];
-    if (dateString > today) return { cycleDay: null, phase: null, isExactOvulationDay: false }; // Don't show cycle day for future dates
+    const today = formatDate(new Date());
+    if (dateString > today) return { cycleDay: null, phase: null, isExactOvulationDay: false };
     
     // Check cache first - use dateString as key (cache is cleared when cycles change)
-    // Using just dateString is safe because we clear cache when cycle history changes
     const cacheKey = dateString;
     const cached = cycleDayCacheRef.current.get(cacheKey);
     if (cached !== undefined) {
@@ -509,13 +499,11 @@ export const useTrackerData = () => {
     // Optional: Limit cache size to prevent unbounded growth (keep last 500 entries)
     const MAX_CACHE_SIZE = 500;
     if (cycleDayCacheRef.current.size >= MAX_CACHE_SIZE) {
-      // Remove oldest entries (first 100) - simple FIFO approach
       const keysToDelete = Array.from(cycleDayCacheRef.current.keys()).slice(0, 100);
       keysToDelete.forEach(key => cycleDayCacheRef.current.delete(key));
     }
     
-    const currentDate = new Date(dateString);
-    currentDate.setHours(0, 0, 0, 0);
+    const currentDate = parseLocalDate(dateString);
     let foundCycle = null;
     
     // Find the current cycle first (the one without cycle_end_date)
@@ -527,8 +515,7 @@ export const useTrackerData = () => {
         const cycleStartStr = cycle.cycle_start_date || cycle.period_start_date;
         if (cycleStartStr) {
           currentCycle = cycle;
-          currentCycleStart = new Date(cycleStartStr);
-          currentCycleStart.setHours(0, 0, 0, 0);
+          currentCycleStart = parseLocalDate(cycleStartStr);
           break;
         }
       }
@@ -544,12 +531,9 @@ export const useTrackerData = () => {
           const cycleStartStr = cycle.cycle_start_date || cycle.period_start_date;
           if (!cycleStartStr) continue;
           
-          const cycleStart = new Date(cycleStartStr);
-          cycleStart.setHours(0, 0, 0, 0);
-          const cycleEnd = new Date(cycle.cycle_end_date);
-          cycleEnd.setHours(0, 0, 0, 0);
+          const cycleStart = parseLocalDate(cycleStartStr);
+          const cycleEnd = parseLocalDate(cycle.cycle_end_date);
           
-          // Check if date is within this completed cycle's range
           if (currentDate >= cycleStart && currentDate <= cycleEnd) {
             foundCycle = cycle;
             break;
@@ -559,10 +543,8 @@ export const useTrackerData = () => {
     }
     
     if (foundCycle) {
-      // Calculate day within this specific cycle
       const cycleStartStr = foundCycle.cycle_start_date || foundCycle.period_start_date;
-      const cycleStart = new Date(cycleStartStr);
-      cycleStart.setHours(0, 0, 0, 0);
+      const cycleStart = parseLocalDate(cycleStartStr);
       const diffTime = currentDate - cycleStart;
       const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24)) + 1;
       const cycleDay = diffDays > 0 ? diffDays : null;
@@ -571,29 +553,17 @@ export const useTrackerData = () => {
         return { cycleDay: null, phase: null, isExactOvulationDay: false };
       }
       
-      // Calculate phase based on cycle day
-      // Use cycle's period_length if available, otherwise default to 5
-      const periodLength = foundCycle.period_length || 5;
-      // Use cycle's cycle_length if available, otherwise default to 28
       const cycleLength = foundCycle.cycle_length || 28;
       
-      // Check for exact ovulation day
-      // Priority 1: For ended cycles, calculate ovulation date from cycle_end (cycle_end - 14 days)
-      // Priority 2: For current cycles, use predicted_ovulation_date
       let isExactOvulationDay = false;
       let ovulationDate = null;
       
       if (foundCycle.cycle_end_date) {
-        // Ended cycle: calculate ovulation date (14 days before cycle end)
-        const cycleEnd = new Date(foundCycle.cycle_end_date);
-        cycleEnd.setHours(0, 0, 0, 0);
+        const cycleEnd = parseLocalDate(foundCycle.cycle_end_date);
         ovulationDate = new Date(cycleEnd);
         ovulationDate.setDate(ovulationDate.getDate() - 14);
-        ovulationDate.setHours(0, 0, 0, 0);
       } else if (foundCycle.predicted_ovulation_date) {
-        // Current cycle: use predicted ovulation date
-        ovulationDate = new Date(foundCycle.predicted_ovulation_date);
-        ovulationDate.setHours(0, 0, 0, 0);
+        ovulationDate = parseLocalDate(foundCycle.predicted_ovulation_date);
       }
       
       if (ovulationDate && currentDate.getTime() === ovulationDate.getTime()) {
@@ -602,31 +572,21 @@ export const useTrackerData = () => {
       
       let phase = null;
       
-      // CRITICAL FIX: Use ACTUAL period dates from DB, not cycleDay calculation
-      const periodStart = new Date(foundCycle.period_start_date);
-      periodStart.setHours(0, 0, 0, 0);
-      const periodEnd = foundCycle.period_end_date 
-        ? new Date(foundCycle.period_end_date) 
-        : new Date(periodStart);
-      periodEnd.setHours(0, 0, 0, 0);
+      const periodStart = parseLocalDate(foundCycle.period_start_date);
+      const periodEnd = foundCycle.period_end_date
+        ? parseLocalDate(foundCycle.period_end_date)
+        : periodStart;
       
       if (currentDate >= periodStart && currentDate <= periodEnd) {
         phase = "menstrual";
       } else {
-        // Calculate ovulation day (fallback if predicted_ovulation_date not available)
-        const ovulationDay = cycleLength - 14; // Typically 14 days before next period
-        
-        // Use ovulation date (calculated for ended cycles or predicted for current cycles)
         if (ovulationDate) {
-          const cycleStart = new Date(foundCycle.cycle_start_date || foundCycle.period_start_date);
-          cycleStart.setHours(0, 0, 0, 0);
-          const diffTime = ovulationDate - cycleStart;
-          const calculatedOvulationDay = Math.floor(diffTime / (1000 * 60 * 60 * 24)) + 1;
+          const ovulCycleStart = parseLocalDate(foundCycle.cycle_start_date || foundCycle.period_start_date);
+          const diffTime2 = ovulationDate - ovulCycleStart;
+          const calculatedOvulationDay = Math.floor(diffTime2 / (1000 * 60 * 60 * 24)) + 1;
           
-          // Ovulation phase is 5 days around the ovulation day
           if (cycleDay >= calculatedOvulationDay - 2 && cycleDay <= calculatedOvulationDay + 2) {
             phase = "ovulation";
-            // Mark the exact ovulation day
             if (cycleDay === calculatedOvulationDay && !isExactOvulationDay) {
               isExactOvulationDay = true;
             }
@@ -636,11 +596,9 @@ export const useTrackerData = () => {
             phase = "luteal";
           }
         } else {
-          // Fallback to calculated ovulation day
           const fallbackOvulationDay = cycleLength - 14;
           if (cycleDay >= fallbackOvulationDay - 2 && cycleDay <= fallbackOvulationDay + 2) {
             phase = "ovulation";
-            // Mark the exact ovulation day (calculated)
             if (cycleDay === fallbackOvulationDay) {
               isExactOvulationDay = true;
             }

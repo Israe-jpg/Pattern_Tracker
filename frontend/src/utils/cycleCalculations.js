@@ -3,6 +3,8 @@
  * Shared across calendar components
  */
 
+import { parseLocalDate, formatDate } from './dateUtils';
+
 /**
  * Calculate cycle day and phase for a given date
  * @param {string} dateString - Date in YYYY-MM-DD format
@@ -14,13 +16,12 @@ export const calculateCycleDayForDate = (dateString, allCycles) => {
     return { cycleDay: null, phase: null, isExactOvulationDay: false };
   }
   
-  const today = new Date().toISOString().split("T")[0];
+  const today = formatDate(new Date());
   if (dateString > today) {
     return { cycleDay: null, phase: null, isExactOvulationDay: false };
   }
   
-  const currentDate = new Date(dateString);
-  currentDate.setHours(0, 0, 0, 0);
+  const currentDate = parseLocalDate(dateString);
   let foundCycle = null;
   
   // Strategy: Check all cycles (both current and completed) to find which one contains this date
@@ -32,8 +33,8 @@ export const calculateCycleDayForDate = (dateString, allCycles) => {
   const completedCycles = allCycles
     .filter(cycle => cycle.cycle_end_date)
     .sort((a, b) => {
-      const dateA = new Date(a.cycle_start_date || a.period_start_date);
-      const dateB = new Date(b.cycle_start_date || b.period_start_date);
+      const dateA = parseLocalDate(a.cycle_start_date || a.period_start_date);
+      const dateB = parseLocalDate(b.cycle_start_date || b.period_start_date);
       return dateB - dateA; // Descending order (most recent first)
     });
   
@@ -41,10 +42,8 @@ export const calculateCycleDayForDate = (dateString, allCycles) => {
     const cycleStartStr = cycle.cycle_start_date || cycle.period_start_date;
     if (!cycleStartStr) continue;
     
-    const cycleStart = new Date(cycleStartStr);
-    cycleStart.setHours(0, 0, 0, 0);
-    const cycleEnd = new Date(cycle.cycle_end_date);
-    cycleEnd.setHours(0, 0, 0, 0);
+    const cycleStart = parseLocalDate(cycleStartStr);
+    const cycleEnd = parseLocalDate(cycle.cycle_end_date);
     
     // Check if date falls within this completed cycle's range
     if (currentDate >= cycleStart && currentDate <= cycleEnd) {
@@ -63,8 +62,7 @@ export const calculateCycleDayForDate = (dateString, allCycles) => {
       if (!cycle.cycle_end_date) {
         const cycleStartStr = cycle.cycle_start_date || cycle.period_start_date;
         if (cycleStartStr) {
-          const cycleStart = new Date(cycleStartStr);
-          cycleStart.setHours(0, 0, 0, 0);
+          const cycleStart = parseLocalDate(cycleStartStr);
           
           // Use the most recent current cycle (in case there are multiple)
           if (!latestCurrentCycleStart || cycleStart > latestCurrentCycleStart) {
@@ -87,8 +85,7 @@ export const calculateCycleDayForDate = (dateString, allCycles) => {
   
   // Calculate day within this cycle
   const cycleStartStr = foundCycle.cycle_start_date || foundCycle.period_start_date;
-  const cycleStart = new Date(cycleStartStr);
-  cycleStart.setHours(0, 0, 0, 0);
+  const cycleStart = parseLocalDate(cycleStartStr);
   const diffTime = currentDate - cycleStart;
   const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24)) + 1;
   const cycleDay = diffDays > 0 ? diffDays : null;
@@ -103,15 +100,12 @@ export const calculateCycleDayForDate = (dateString, allCycles) => {
   
   if (foundCycle.cycle_end_date) {
     // Ended cycle: calculate ovulation date (14 days before cycle end)
-    const cycleEnd = new Date(foundCycle.cycle_end_date);
-    cycleEnd.setHours(0, 0, 0, 0);
+    const cycleEnd = parseLocalDate(foundCycle.cycle_end_date);
     ovulationDate = new Date(cycleEnd);
     ovulationDate.setDate(ovulationDate.getDate() - 14);
-    ovulationDate.setHours(0, 0, 0, 0);
   } else if (foundCycle.predicted_ovulation_date) {
     // Current cycle: use predicted ovulation date
-    ovulationDate = new Date(foundCycle.predicted_ovulation_date);
-    ovulationDate.setHours(0, 0, 0, 0);
+    ovulationDate = parseLocalDate(foundCycle.predicted_ovulation_date);
   }
   
   if (ovulationDate && currentDate.getTime() === ovulationDate.getTime()) {
@@ -119,27 +113,21 @@ export const calculateCycleDayForDate = (dateString, allCycles) => {
   }
   
   // Calculate phase
-  const periodLength = foundCycle.period_length || 5;
   const cycleLength = foundCycle.cycle_length || 28;
   let phase = null;
   
-  // CRITICAL FIX: Check if date is in ACTUAL period range (not predicted)
-  // Use period_start_date and period_end_date from DB, not cycleDay calculation
-  const periodStart = new Date(foundCycle.period_start_date);
-  periodStart.setHours(0, 0, 0, 0);
-  const periodEnd = foundCycle.period_end_date 
-    ? new Date(foundCycle.period_end_date) 
-    : new Date(periodStart);
-  periodEnd.setHours(0, 0, 0, 0);
+  // Check if date is in ACTUAL period range using DB dates
+  const periodStart = parseLocalDate(foundCycle.period_start_date);
+  const periodEnd = foundCycle.period_end_date
+    ? parseLocalDate(foundCycle.period_end_date)
+    : periodStart;
   
-  // Compare actual dates (FIXES DISPLAY MISMATCH)
   if (currentDate >= periodStart && currentDate <= periodEnd) {
     phase = "menstrual";
   } else if (ovulationDate) {
-    const cycleStart = new Date(foundCycle.cycle_start_date || foundCycle.period_start_date);
-    cycleStart.setHours(0, 0, 0, 0);
-    const diffTime = ovulationDate - cycleStart;
-    const calculatedOvulationDay = Math.floor(diffTime / (1000 * 60 * 60 * 24)) + 1;
+    const ovulCycleStart = parseLocalDate(foundCycle.cycle_start_date || foundCycle.period_start_date);
+    const diffTime2 = ovulationDate - ovulCycleStart;
+    const calculatedOvulationDay = Math.floor(diffTime2 / (1000 * 60 * 60 * 24)) + 1;
     
     if (cycleDay >= calculatedOvulationDay - 2 && cycleDay <= calculatedOvulationDay + 2) {
       phase = "ovulation";
@@ -176,8 +164,8 @@ export const calculateCycleDayForDate = (dateString, allCycles) => {
  */
 export const sortCyclesByStartDate = (cycles) => {
   return [...cycles].sort((a, b) => {
-    const dateA = new Date(a.cycle_start_date || a.period_start_date);
-    const dateB = new Date(b.cycle_start_date || b.period_start_date);
+    const dateA = parseLocalDate(a.cycle_start_date || a.period_start_date);
+    const dateB = parseLocalDate(b.cycle_start_date || b.period_start_date);
     return dateA - dateB;
   });
 };

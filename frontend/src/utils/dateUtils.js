@@ -3,6 +3,17 @@
  */
 
 /**
+ * Parse a YYYY-MM-DD string as a local-timezone Date (midnight local time).
+ * Avoids the UTC-shift bug of new Date("YYYY-MM-DD") which treats the string
+ * as UTC midnight and can land on the wrong local calendar day.
+ */
+export const parseLocalDate = (dateStr) => {
+  if (!dateStr) return null;
+  const [year, month, day] = dateStr.split('-').map(Number);
+  return new Date(year, month - 1, day);
+};
+
+/**
  * Format date to YYYY-MM-DD
  */
 export const formatDate = (date) => {
