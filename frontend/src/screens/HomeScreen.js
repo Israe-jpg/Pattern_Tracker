@@ -38,7 +38,9 @@ export default function HomeScreen({ navigation }) {
     setSelectedDate,
     needsSetup,
     insights,
+    insightsLoading,
     isPeriodTracker,
+    cycleHistory,
     loadCalendarData,
     loadInsights,
     checkPeriodTrackerSetup,
@@ -269,7 +271,10 @@ export default function HomeScreen({ navigation }) {
               {needsSetup === false && (
                 <InsightsSection
                   insights={insights}
+                  insightsLoading={insightsLoading}
                   isPeriodTracker={isPeriodTracker}
+                  cycleHistory={cycleHistory}
+                  trackerId={activeTracker?.id}
                 />
               )}
             </>

@@ -82,5 +82,25 @@ export const dataTrackingService = {
     const response = await api.get(API_ENDPOINTS.CYCLE_ANALYSIS(trackerId));
     return response.data;
   },
+
+  // Get comparison data (week/month/general)
+  getCompare: async (trackerId, params = {}) => {
+    const response = await api.get(API_ENDPOINTS.COMPARE(trackerId), { params });
+    return response.data;
+  },
+
+  // Get top correlations
+  getCorrelations: async (trackerId, params = {}) => {
+    const response = await api.get(API_ENDPOINTS.CORRELATIONS(trackerId), { params });
+    return response.data;
+  },
+
+  // Get pattern summary for a list of fields
+  getPatternSummary: async (trackerId, fields = [], months = 3) => {
+    const params = { months };
+    if (fields.length > 0) params.fields = fields.join(",");
+    const response = await api.get(API_ENDPOINTS.PATTERN_SUMMARY(trackerId), { params });
+    return response.data;
+  },
 };
 

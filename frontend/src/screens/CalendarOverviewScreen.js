@@ -54,62 +54,6 @@ export default function CalendarOverviewScreen() {
   const isPeriodDateEditMode = editModeType === "period_dates";
   const isDataEntryEditMode = editModeType === "data_entries";
 
-  // Create dayComponent for period trackers (same as CalendarSection)
-  // Also use custom day component when in any edit mode
-  const dayComponent = useMemo(() => {
-    // Use custom day component for period trackers or when in any edit mode
-    if (!isPeriodTracker && editModeType === null) return undefined;
-
-    return (props) => {
-      const { date, state, marking } = props;
-      const dateString = date.dateString;
-      // Get marking from markedDates - this should contain cycleDay, phase, etc.
-      const dateMarking = markedDates[dateString] || {};
-
-      // Merge: props.marking (from CalendarList) + dateMarking (from our state)
-      // dateMarking takes precedence to ensure cycleDay/phase are included
-      const fullMarking = {
-        ...(marking || {}),
-        ...dateMarking,
-      };
-
-      // In period_dates edit mode, determine if this date is selected as a period date
-      const isSelectedPeriodDate = selectedPeriodDates.has(dateString);
-      const originalIsMenstrual =
-        dateMarking.phase === "menstrual" || dateMarking.phase === "period";
-
-      // isToggledPeriod only applies in period_dates mode
-      let isToggledPeriod = undefined;
-      if (isPeriodDateEditMode) {
-        if (isSelectedPeriodDate && !originalIsMenstrual) {
-          isToggledPeriod = true; // New period date
-        } else if (!isSelectedPeriodDate && originalIsMenstrual) {
-          isToggledPeriod = false; // Removing period date
-        }
-      }
-
-      return (
-        <CustomDay
-          {...props}
-          marking={fullMarking}
-          isEditMode={isPeriodDateEditMode}
-          isSelected={isPeriodDateEditMode && isSelectedPeriodDate}
-          isToggledPeriod={isToggledPeriod}
-          onDayPress={editModeType !== null ? handleDayPress : undefined}
-          dayBackgroundColor={colors.background}
-        />
-      );
-    };
-  }, [
-    isPeriodTracker,
-    markedDates,
-    editModeType,
-    isPeriodDateEditMode,
-    selectedPeriodDates,
-    handleDayPress,
-    refreshKey,
-  ]);
-
   useEffect(() => {
     if (tracker) {
       loadCalendarData();
@@ -621,6 +565,62 @@ export default function CalendarOverviewScreen() {
     },
     [isEditMode, isDataEntryEditMode, selectedPeriodDates, markedDates, trackerSettings, tracker, navigation],
   );
+
+  // Create dayComponent for period trackers (same as CalendarSection)
+  // Also use custom day component when in any edit mode
+  const dayComponent = useMemo(() => {
+    // Use custom day component for period trackers or when in any edit mode
+    if (!isPeriodTracker && editModeType === null) return undefined;
+
+    return (props) => {
+      const { date, state, marking } = props;
+      const dateString = date.dateString;
+      // Get marking from markedDates - this should contain cycleDay, phase, etc.
+      const dateMarking = markedDates[dateString] || {};
+
+      // Merge: props.marking (from CalendarList) + dateMarking (from our state)
+      // dateMarking takes precedence to ensure cycleDay/phase are included
+      const fullMarking = {
+        ...(marking || {}),
+        ...dateMarking,
+      };
+
+      // In period_dates edit mode, determine if this date is selected as a period date
+      const isSelectedPeriodDate = selectedPeriodDates.has(dateString);
+      const originalIsMenstrual =
+        dateMarking.phase === "menstrual" || dateMarking.phase === "period";
+
+      // isToggledPeriod only applies in period_dates mode
+      let isToggledPeriod = undefined;
+      if (isPeriodDateEditMode) {
+        if (isSelectedPeriodDate && !originalIsMenstrual) {
+          isToggledPeriod = true; // New period date
+        } else if (!isSelectedPeriodDate && originalIsMenstrual) {
+          isToggledPeriod = false; // Removing period date
+        }
+      }
+
+      return (
+        <CustomDay
+          {...props}
+          marking={fullMarking}
+          isEditMode={isPeriodDateEditMode}
+          isSelected={isPeriodDateEditMode && isSelectedPeriodDate}
+          isToggledPeriod={isToggledPeriod}
+          onDayPress={editModeType !== null ? handleDayPress : undefined}
+          dayBackgroundColor={colors.background}
+        />
+      );
+    };
+  }, [
+    isPeriodTracker,
+    markedDates,
+    editModeType,
+    isPeriodDateEditMode,
+    selectedPeriodDates,
+    handleDayPress,
+    refreshKey,
+  ]);
 
   /**
    * Enter "Edit Period Dates" mode — loads actual period dates from cycles.
