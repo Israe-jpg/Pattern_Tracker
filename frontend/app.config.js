@@ -15,11 +15,11 @@ export default {
     ],
     ios: {
       supportsTablet: true,
-      bundleIdentifier: "com.yourname.healthtracker",  // change to your reverse-domain ID
+      bundleIdentifier: "com.israe.healthtracker",
       buildNumber: "1"
     },
     android: {
-      package: "com.yourname.healthtracker",  // change to your reverse-domain ID
+      package: "com.israe.healthtracker",
       versionCode: 1,
       adaptiveIcon: {
         backgroundColor: "#ffffff"
