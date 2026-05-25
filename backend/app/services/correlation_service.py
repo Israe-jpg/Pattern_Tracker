@@ -100,7 +100,10 @@ class CorrelationService:
         
         if len(fields) < 2:
             return {
-                'message': 'Need at least 2 fields to detect correlations',
+                'message': (
+                    'Need at least 2 tracked metrics to detect correlations. '
+                    'Log different fields, or multiple options within the same field.'
+                ),
                 'fields_available': len(fields),
                 'has_correlations': False
             }
@@ -112,31 +115,35 @@ class CorrelationService:
         
         all_correlations = []
         
-        # 1. Find triple correlations (highest priority - most insightful)
+        # 1. Cross-field triple correlations (highest priority — different parent fields)
         if len(fields) >= 3:
             triple_corrs = CorrelationService._find_triple_correlations(
                 field_data_by_date, fields, tracker_id
             )
+            for corr in triple_corrs:
+                corr['scope'] = 'cross_field'
             all_correlations.extend(triple_corrs)
         
-        # 2. Find dual correlations (standard pairwise)
+        # 2. Cross-field dual correlations (same-parent pairs intentionally excluded)
         dual_corrs = CorrelationService._find_dual_correlations(
             field_data_by_date, fields, tracker_id, min_correlation
         )
+        for corr in dual_corrs:
+            corr['scope'] = 'cross_field'
         all_correlations.extend(dual_corrs)
         
-        # 3. Sort by priority: triple first, then by observation count, then strength
-        all_correlations.sort(
-            key=lambda x: (
-                2 if x.get('type') == 'triple' else 1,  # Triple correlations first
-                x.get('observation_count', 0),  # Then by observation frequency
-                abs(x.get('strength', 0))  # Then by strength
-            ),
-            reverse=True
+        # 3. Within-field supplement — relationships between options under one field
+        within_corrs = CorrelationService._find_within_field_correlations(
+            field_data_by_date, fields, tracker_id, min_correlation
         )
+        all_correlations.extend(within_corrs)
+        
+        CorrelationService._sort_correlation_results(all_correlations)
         
         # Return only top 3 most meaningful correlations
         top_correlations = all_correlations[:3]
+        cross_field_count = sum(1 for c in all_correlations if c.get('scope') == 'cross_field')
+        within_field_count = sum(1 for c in all_correlations if c.get('scope') == 'within_field')
         
         return {
             'tracker_id': tracker_id,
@@ -148,6 +155,8 @@ class CorrelationService:
             },
             'fields_analyzed': fields,
             'total_correlations_found': len(all_correlations),
+            'cross_field_correlations_found': cross_field_count,
+            'within_field_correlations_found': within_field_count,
             'correlations': top_correlations,
             'has_correlations': len(top_correlations) > 0
         }
@@ -988,6 +997,70 @@ class CorrelationService:
         
         return True
     
+    @staticmethod
+    def _sort_correlation_results(correlations: List[Dict[str, Any]]) -> None:
+        """Rank correlations: cross-field before within-field, then type, frequency, strength."""
+        correlations.sort(
+            key=lambda x: (
+                0 if x.get('scope') == 'cross_field' else 1,
+                2 if x.get('type') == 'triple' else 1,
+                x.get('observation_count', 0),
+                abs(x.get('strength', 0)),
+            ),
+            reverse=True
+        )
+
+    @staticmethod
+    def _group_fields_by_parent(fields: List[str]) -> Dict[str, List[str]]:
+        """Group full field paths by their parent field name."""
+        groups: Dict[str, List[str]] = defaultdict(list)
+        for field in fields:
+            parent = field.split('.')[0] if '.' in field else field
+            groups[parent].append(field)
+        return dict(groups)
+
+    @staticmethod
+    def _format_parent_label(parent_field: str) -> str:
+        return parent_field.replace('_', ' ').title()
+
+    @staticmethod
+    def _find_within_field_correlations(
+        field_data_by_date: Dict,
+        all_fields: List[str],
+        tracker_id: int,
+        min_correlation: float
+    ) -> List[Dict[str, Any]]:
+        """
+        Find correlations between options that belong to the same parent field.
+        Used when cross-field data is sparse or the tracker mostly logs one field group.
+        """
+        within_correlations: List[Dict[str, Any]] = []
+
+        for parent, child_fields in CorrelationService._group_fields_by_parent(all_fields).items():
+            if len(child_fields) < 2:
+                continue
+
+            for field1, field2 in combinations(sorted(child_fields), 2):
+                pattern = CorrelationService._analyze_dual_frequent_pattern(
+                    field_data_by_date, field1, field2, tracker_id, min_correlation
+                )
+                if not pattern:
+                    continue
+
+                parent_label = CorrelationService._format_parent_label(parent)
+                pattern['scope'] = 'within_field'
+                pattern['parent_field'] = parent
+                pattern['insight'] = (
+                    f"Within {parent_label}: {pattern.get('insight', '')}"
+                )
+                within_correlations.append(pattern)
+
+        within_correlations.sort(
+            key=lambda x: (x.get('observation_count', 0), abs(x.get('strength', 0))),
+            reverse=True
+        )
+        return within_correlations
+
     @staticmethod
     def _find_triple_correlations(
         field_data_by_date: Dict,

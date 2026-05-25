@@ -2009,7 +2009,7 @@ def get_tracker_pattern_summary(tracker_id: int):
     Get pattern summary for multiple fields in a tracker.
     
     Query params:
-    - fields: Comma-separated list of field names (required)
+    - fields: Comma-separated list of field paths (optional — auto-discovered when omitted)
     - months: Number of months to analyze (default: 3)
     
     Returns patterns for all specified fields with overall insights.
@@ -2026,25 +2026,36 @@ def get_tracker_pattern_summary(tracker_id: int):
     try:
         # Get query parameters
         fields_str = request.args.get('fields')
-        if not fields_str:
-            return error_response("fields query parameter is required", 400)
-        
-        fields = [f.strip() for f in fields_str.split(',') if f.strip()]
-        if not fields:
-            return error_response("At least one field must be specified", 400)
-        
-        if len(fields) > 10:
-            return error_response("Maximum 10 fields allowed", 400)
-        
         months = request.args.get('months', type=int, default=3)
         if months < 1 or months > 12:
             return error_response("months must be between 1 and 12", 400)
-        
-        # Detect patterns for each field
+
+        if fields_str:
+            fields = [f.strip() for f in fields_str.split(',') if f.strip()]
+            if not fields:
+                return error_response("At least one field must be specified", 400)
+            if len(fields) > 10:
+                return error_response("Maximum 10 fields allowed", 400)
+        else:
+            # Auto-discover tracked metrics from recent entries
+            cutoff_date = date.today() - timedelta(days=months * 30)
+            entries = TrackingData.query.filter_by(
+                tracker_id=tracker_id
+            ).filter(
+                TrackingData.entry_date >= cutoff_date
+            ).order_by(TrackingData.entry_date.asc()).all()
+
+            fields = CorrelationService._get_all_fields(entries)
+            fields = [
+                f for f in fields
+                if not f.endswith('.notes') and 'notes' not in f.lower()
+            ][:10]
+
+        # Detect temporal patterns for each tracked metric
         field_patterns = {}
         total_patterns = 0
         high_confidence_count = 0
-        
+
         for field_name in fields:
             try:
                 patterns = PatternRecognitionService.detect_all_patterns(
@@ -2053,36 +2064,40 @@ def get_tracker_pattern_summary(tracker_id: int):
                     months=months,
                     min_confidence=0.6
                 )
-                
-                # Skip fields with no data or errors
-                if patterns and not patterns.get('message'):
+
+                if patterns and not patterns.get('message') and patterns.get('patterns'):
                     field_patterns[field_name] = {
                         'patterns_detected': len(patterns.get('patterns', {})),
                         'pattern_strength': patterns.get('pattern_strength', {}).get('overall_strength'),
-                        'key_insight': patterns.get('insights', [])[0] if patterns.get('insights') else None
+                        'key_insight': patterns.get('insights', [])[0] if patterns.get('insights') else None,
                     }
-                    
+
                     total_patterns += len(patterns.get('patterns', {}))
                     if patterns.get('pattern_strength', {}).get('overall_strength') == 'strong':
                         high_confidence_count += 1
-            
+
             except Exception:
-                continue  # Skip problematic fields
-        
+                continue
+
         if not field_patterns:
             return success_response(
                 "No patterns detected for the specified fields",
                 {
-                    'fields_analyzed': fields,
+                    'fields_analyzed': len(fields),
                     'patterns_found': 0,
-                    'message': 'Need more data or consistent tracking to detect patterns'
+                    'total_patterns_detected': 0,
+                    'message': (
+                        'No recurring time-based patterns yet — e.g. weekday trends or streaks. '
+                        'Keep logging on different days to reveal these. '
+                        'Option relationships appear under Correlations instead.'
+                    ),
                 }
             )
-        
-        # Generate overall summary
+
         summary = {
             'fields_analyzed': len(field_patterns),
             'total_patterns_detected': total_patterns,
+            'patterns_found': len(field_patterns),
             'fields_with_strong_patterns': high_confidence_count,
             'field_patterns': field_patterns,
             'overall_insight': PatternRecognitionService.generate_summary_insight(
@@ -2090,11 +2105,11 @@ def get_tracker_pattern_summary(tracker_id: int):
             ),
             'analysis_period': {
                 'months': months,
-                'start_date': (date.today() - timedelta(days=months*30)).isoformat(),
-                'end_date': date.today().isoformat()
-            }
+                'start_date': (date.today() - timedelta(days=months * 30)).isoformat(),
+                'end_date': date.today().isoformat(),
+            },
         }
-        
+
         return success_response(
             "Pattern summary retrieved successfully",
             summary

@@ -935,14 +935,32 @@ function GeneralInsights({ insights, trackerId }) {
     const load = async () => {
       try {
         setPatternLoading(true);
-        const res = await dataTrackingService.getPatternSummary(trackerId, [], 3);
+        const res = await dataTrackingService.getPatternSummary(trackerId, [], 6);
         if (!cancelled) setPatternData(res?.data || res);
-      } catch { if (!cancelled) setPatternData(null); }
-      finally { if (!cancelled) setPatternLoading(false); }
+      } catch (err) {
+        if (!cancelled) {
+          setPatternData({
+            patterns_found: 0,
+            total_patterns_detected: 0,
+            message: err?.response?.data?.error || "Could not load patterns. Try again later.",
+          });
+        }
+      } finally {
+        if (!cancelled) setPatternLoading(false);
+      }
     };
     load();
     return () => { cancelled = true; };
   }, [trackerId]);
+
+  const hasPatternResults = Boolean(
+    patternData &&
+    (
+      (patternData.patterns_found > 0) ||
+      (patternData.total_patterns_detected > 0) ||
+      Object.keys(patternData.field_patterns || {}).length > 0
+    )
+  );
 
   // Fetch correlations directly — 6 months, threshold 0.2 (wider than the
   // general-analysis default of 0.3) so we always show something meaningful.
@@ -1032,8 +1050,7 @@ function GeneralInsights({ insights, trackerId }) {
   const summary = insights?.tracking_summary;
   // Prefer the directly-fetched correlations (wider net) over the one baked
   // into the general-analysis response which uses a tighter threshold.
-  const correlations = (directCorr?.has_correlations ? directCorr : null)
-    ?? insights?.correlations;
+  const correlations = directCorr ?? insights?.correlations;
   // Only show fields that actually changed (hide stable ones)
   const allChanges = Object.entries(compareData?.top_changes || {}).filter(
     ([, v]) => v.change_direction !== "stable" && v.changed !== false
@@ -1222,9 +1239,16 @@ function GeneralInsights({ insights, trackerId }) {
             const barColor = strPct >= 60 ? colors.primary : strPct >= 35 ? colors.warning : colors.textLight;
             return (
               <View key={i} style={[s.corrItem, i > 0 && s.corrItemBorder]}>
+                {corr.scope === "within_field" ? (
+                  <View style={{ marginBottom: 4 }}>
+                    <Badge label="Same field" color={colors.textSecondary} />
+                  </View>
+                ) : null}
                 <Text style={s.corrText}>{formatInsightText(corr.insight || "")}</Text>
                 <View style={s.corrMeta}>
-                  <ProgressBar value={strPct} max={100} color={barColor} h={5} />
+                  <View style={s.corrBarWrap}>
+                    <ProgressBar value={strPct} max={100} color={barColor} h={5} />
+                  </View>
                   <Text style={[s.corrStrength, { color: barColor }]}>{strPct}%</Text>
                 </View>
               </View>
@@ -1236,7 +1260,7 @@ function GeneralInsights({ insights, trackerId }) {
       {/* 5 ── Patterns */}
       {patternLoading ? (
         <SectionLoading title="Patterns" icon="repeat-outline" />
-      ) : !patternData || patternData.patterns_found === 0 || patternData.total_patterns_detected === 0 ? (
+      ) : !hasPatternResults ? (
         <SectionEmpty
           title="Patterns"
           icon="repeat-outline"
@@ -1254,6 +1278,9 @@ function GeneralInsights({ insights, trackerId }) {
             <Badge label={`${patternData.total_patterns_detected}`} color={colors.textSecondary} />
           }
         >
+          <Text style={[s.detailText, { marginBottom: 10 }]}>
+            Recurring trends — weekdays, streaks, and time-of-month rhythms:
+          </Text>
           {patternData.overall_insight ? (
             <Text style={[s.detailText, { marginBottom: 10 }]}>{patternData.overall_insight}</Text>
           ) : null}
@@ -1266,7 +1293,9 @@ function GeneralInsights({ insights, trackerId }) {
                   <Text style={s.patternFieldLabel}>{formatFieldPath(fp)}</Text>
                   <Badge label={strength} color={sc} />
                 </View>
-                {p.key_insight ? <Text style={s.patternInsight}>{p.key_insight}</Text> : null}
+                {p.key_insight ? (
+                  <Text style={s.patternInsight}>{formatInsightText(p.key_insight)}</Text>
+                ) : null}
               </View>
             );
           })}
@@ -1688,8 +1717,9 @@ const s = StyleSheet.create({
   corrItem: { paddingVertical: 10, gap: 6 },
   corrItemBorder: { borderTopWidth: 1, borderTopColor: "#EDE5D8" },
   corrText: { fontSize: 13, color: colors.text, lineHeight: 18 },
-  corrMeta: { flexDirection: "row", alignItems: "center", gap: 8 },
-  corrStrength: { fontSize: 12, fontWeight: "700", width: 32, textAlign: "right" },
+  corrMeta: { flexDirection: "row", alignItems: "center", gap: 8, width: "100%" },
+  corrBarWrap: { flex: 1, minWidth: 0 },
+  corrStrength: { fontSize: 12, fontWeight: "700", minWidth: 36, flexShrink: 0, textAlign: "right" },
 
   // Patterns
   patternRow: { paddingVertical: 10, gap: 5 },
