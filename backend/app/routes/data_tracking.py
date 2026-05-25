@@ -2053,6 +2053,7 @@ def get_tracker_pattern_summary(tracker_id: int):
 
         # Detect temporal patterns for each tracked metric
         field_patterns = {}
+        pattern_items = []
         total_patterns = 0
         high_confidence_count = 0
 
@@ -2076,10 +2077,13 @@ def get_tracker_pattern_summary(tracker_id: int):
                     if patterns.get('pattern_strength', {}).get('overall_strength') == 'strong':
                         high_confidence_count += 1
 
+                    for item in patterns.get('ui_items') or []:
+                        pattern_items.append(item)
+
             except Exception:
                 continue
 
-        if not field_patterns:
+        if not field_patterns and not pattern_items:
             return success_response(
                 "No patterns detected for the specified fields",
                 {
@@ -2096,12 +2100,15 @@ def get_tracker_pattern_summary(tracker_id: int):
 
         summary = {
             'fields_analyzed': len(field_patterns),
-            'total_patterns_detected': total_patterns,
-            'patterns_found': len(field_patterns),
+            'total_patterns_detected': total_patterns or len(pattern_items),
+            'patterns_found': len(pattern_items) or len(field_patterns),
             'fields_with_strong_patterns': high_confidence_count,
             'field_patterns': field_patterns,
+            'pattern_items': pattern_items,
             'overall_insight': PatternRecognitionService.generate_summary_insight(
-                len(field_patterns), total_patterns, high_confidence_count
+                len(field_patterns) or len({i['field_path'] for i in pattern_items}),
+                total_patterns or len(pattern_items),
+                high_confidence_count
             ),
             'analysis_period': {
                 'months': months,

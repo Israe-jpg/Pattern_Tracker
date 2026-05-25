@@ -142,8 +142,443 @@ class PatternRecognitionService:
         
         # Add has_patterns flag for easier checking
         detected_patterns['has_patterns'] = len(detected_patterns['patterns']) > 0
+
+        detected_patterns['ui_items'] = PatternRecognitionService._build_ui_pattern_items(
+            field_name, extracted_data, detected_patterns['patterns'], field_type
+        )
         
         return detected_patterns
+
+    @staticmethod
+    def _format_display_value(value: Any) -> str:
+        if value is None:
+            return '—'
+        text = str(value).replace('_', ' ')
+        return text.title() if isinstance(value, str) else text
+
+    @staticmethod
+    def _mode_pct(frequency: Dict[Any, int], mode: Any, total: int) -> int:
+        if not total or mode is None:
+            return 0
+        return round(frequency.get(mode, 0) / total * 100)
+
+    @staticmethod
+    def _field_axis_label(field_name: str) -> str:
+        part = field_name.split('.')[-1] if '.' in field_name else field_name
+        return PatternRecognitionService._format_display_value(part)
+
+    @staticmethod
+    def _distribution_segments(
+        frequency: Dict[Any, int],
+        total: int,
+        limit: int = 5
+    ) -> List[Dict[str, Any]]:
+        if not total or not frequency:
+            return []
+        fmt = PatternRecognitionService._format_display_value
+        segments = []
+        for val, count in sorted(frequency.items(), key=lambda x: -x[1])[:limit]:
+            if not count:
+                continue
+            segments.append({
+                'value_label': fmt(val),
+                'raw_value': val,
+                'pct': round(count / total * 100),
+                'count': int(count),
+            })
+        return segments
+
+    @staticmethod
+    def _timeline_bounds(
+        extracted_data: List[Dict],
+        segments: List[Dict[str, Any]]
+    ) -> Tuple[str, str]:
+        dates = [item['entry_date'] for item in extracted_data if item.get('entry_date')]
+        for seg in segments:
+            if seg.get('start_date'):
+                dates.append(date.fromisoformat(str(seg['start_date'])[:10]))
+            if seg.get('end_date'):
+                dates.append(date.fromisoformat(str(seg['end_date'])[:10]))
+        if not dates:
+            today = date.today()
+            return today.isoformat(), today.isoformat()
+        return min(dates).isoformat(), max(dates).isoformat()
+
+    @staticmethod
+    def _short_chart_date(date_str: str) -> str:
+        try:
+            d = date.fromisoformat(str(date_str)[:10])
+            return f"{d.month}/{d.day}"
+        except ValueError:
+            return str(date_str or '')[:5]
+
+    @staticmethod
+    def _rows_to_grouped_series(
+        rows: List[Dict[str, Any]],
+        limit: int = 4
+    ) -> Tuple[List[str], List[Dict[str, Any]], bool]:
+        totals: Dict[str, float] = defaultdict(float)
+        for row in rows:
+            for seg in row.get('segments') or []:
+                totals[seg.get('value_label') or ''] += float(seg.get('pct') or 0)
+
+        top_labels = [
+            label for label, _ in sorted(totals.items(), key=lambda x: -x[1])
+            if label
+        ][:limit]
+        x_labels = [row.get('label', '') for row in rows]
+        series = []
+        for value_label in top_labels:
+            values = []
+            for row in rows:
+                match = next(
+                    (s for s in (row.get('segments') or []) if s.get('value_label') == value_label),
+                    None
+                )
+                values.append(float(match['pct']) if match else 0.0)
+            series.append({'label': value_label, 'values': values})
+
+        show_legend = len(top_labels) >= 2
+        return x_labels, series, show_legend
+
+    @staticmethod
+    def _build_bar_chart_viz(
+        x_labels: List[str],
+        y_axis_label: str,
+        series: List[Dict[str, Any]],
+        caption: str,
+        example_dates: Optional[List[str]] = None,
+        y_suffix: str = '',
+        show_legend: Optional[bool] = None,
+        streak_notes: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        if show_legend is None:
+            show_legend = len(series) >= 2
+        viz: Dict[str, Any] = {
+            'chart_type': 'bar_chart',
+            'x_labels': x_labels,
+            'y_axis_label': y_axis_label,
+            'y_suffix': y_suffix,
+            'series': series,
+            'show_legend': show_legend,
+            'caption': caption,
+            'example_dates': example_dates or [],
+        }
+        if streak_notes:
+            viz['streak_notes'] = streak_notes
+        return viz
+
+    @staticmethod
+    def _build_streak_bar_chart(
+        segments: List[Dict[str, Any]],
+        caption: str,
+    ) -> Dict[str, Any]:
+        display = segments[:8]
+        x_labels = [PatternRecognitionService._short_chart_date(s['start_date']) for s in display]
+        values = [float(s.get('length') or 0) for s in display]
+        unique_labels = {s.get('value_label') for s in display if s.get('value_label')}
+        primary_label = next(iter(unique_labels), 'Streak')
+        notes = [
+            f"{s.get('value_label', 'Streak')} · "
+            f"{PatternRecognitionService._short_chart_date(s['start_date'])}–"
+            f"{PatternRecognitionService._short_chart_date(s['end_date'])} "
+            f"({s.get('length', 0)}d)"
+            for s in display
+        ]
+        return PatternRecognitionService._build_bar_chart_viz(
+            x_labels=x_labels,
+            y_axis_label='Days in a row',
+            series=[{'label': primary_label, 'values': values}],
+            caption=caption,
+            y_suffix='d',
+            show_legend=False,
+            streak_notes=notes,
+        )
+
+    @staticmethod
+    def _build_ui_pattern_items(
+        field_name: str,
+        extracted_data: List[Dict],
+        patterns: Dict[str, Any],
+        field_type: str
+    ) -> List[Dict[str, Any]]:
+        """Build frontend-friendly pattern cards with chart payloads and example dates."""
+        items: List[Dict[str, Any]] = []
+        day_names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+        day_short = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+        fmt = PatternRecognitionService._format_display_value
+        segs = PatternRecognitionService._distribution_segments
+        axis_label = PatternRecognitionService._field_axis_label(field_name)
+        bar_viz = PatternRecognitionService._build_bar_chart_viz
+        grouped = PatternRecognitionService._rows_to_grouped_series
+        streak_chart = PatternRecognitionService._build_streak_bar_chart
+
+        def dates_on_weekday(weekday: int, limit: int = 8) -> List[str]:
+            return [
+                item['entry_date'].isoformat()
+                for item in extracted_data
+                if item.get('value') is not None and item['entry_date'].weekday() == weekday
+            ][-limit:]
+
+        def dates_in_month_period(period: str, limit: int = 8) -> List[str]:
+            result = []
+            for item in extracted_data:
+                if item.get('value') is None:
+                    continue
+                dom = item['entry_date'].day
+                bucket = 'early' if dom <= 10 else 'mid' if dom <= 20 else 'late'
+                if bucket == period:
+                    result.append(item['entry_date'].isoformat())
+            return result[-limit:]
+
+        if 'day_of_week' in patterns:
+            p = patterns['day_of_week']
+            viz: Dict[str, Any] = {}
+
+            if p.get('type') == 'numeric' and p.get('day_statistics'):
+                stats = p['day_statistics']
+                labels = []
+                values = []
+                for dow in range(7):
+                    labels.append(day_short[dow])
+                    if dow in stats:
+                        values.append(round(float(stats[dow]['mean']), 1))
+                    else:
+                        values.append(0)
+                high_day = p.get('highest_day', {}).get('day')
+                high_dow = day_names.index(high_day) if high_day in day_names else None
+                viz = bar_viz(
+                    x_labels=labels,
+                    y_axis_label=axis_label,
+                    series=[{'label': axis_label, 'values': values}],
+                    caption=f"Average peaks on {high_day}s" if high_day else f"Average {axis_label.lower()} by weekday",
+                    example_dates=dates_on_weekday(high_dow) if high_dow is not None else [],
+                    show_legend=False,
+                )
+            elif p.get('consistent_patterns') or p.get('day_patterns'):
+                rows = []
+                for dow in range(7):
+                    dp = p.get('day_patterns', {}).get(dow) or p.get('day_patterns', {}).get(str(dow))
+                    if dp:
+                        total = dp.get('count', 0)
+                        rows.append({
+                            'label': day_short[dow],
+                            'segments': segs(dp.get('frequency') or {}, total),
+                            'total': total,
+                        })
+                    else:
+                        rows.append({'label': day_short[dow], 'segments': [], 'total': 0})
+                x_labels, series, show_legend = grouped(rows)
+                top = (p.get('consistent_patterns') or [{}])[0]
+                target_day = top.get('day')
+                target_dow = day_names.index(target_day) if target_day in day_names else None
+                top_value = fmt(top.get('value'))
+                viz = bar_viz(
+                    x_labels=x_labels,
+                    y_axis_label='Share of logs',
+                    series=series,
+                    caption=(
+                        f"Often “{top_value}” on {target_day}s"
+                        if target_day and top_value != '—'
+                        else 'How your answers split across weekdays'
+                    ),
+                    example_dates=dates_on_weekday(target_dow) if target_dow is not None else [],
+                    y_suffix='%',
+                    show_legend=show_legend,
+                )
+
+            items.append({
+                'id': f"{field_name}__day_of_week",
+                'field_path': field_name,
+                'pattern_type': 'day_of_week',
+                'title': 'Weekly rhythm',
+                'insight': p.get('insight'),
+                'confidence': p.get('confidence', 'medium'),
+                'visualization': viz,
+            })
+
+        if 'time_of_month' in patterns:
+            p = patterns['time_of_month']
+            period_defs = [
+                ('Early', 'early_month', 'early'),
+                ('Mid', 'mid_month', 'mid'),
+                ('Late', 'late_month', 'late'),
+            ]
+
+            if p.get('type') == 'numeric':
+                labels = []
+                values = []
+                for i, (label, key, _) in enumerate(period_defs):
+                    labels.append(label)
+                    avg = float(p.get(key, {}).get('average', 0))
+                    values.append(round(avg, 1))
+                high = p.get('highest_period', {}).get('period', '')
+                period_key = 'early' if 'Early' in high else 'mid' if 'Mid' in high else 'late'
+                viz = bar_viz(
+                    x_labels=labels,
+                    y_axis_label=axis_label,
+                    series=[{'label': axis_label, 'values': values}],
+                    caption=(
+                        f"Highest during {high.lower()}"
+                        if high else f"{axis_label} across the month"
+                    ),
+                    example_dates=dates_in_month_period(period_key),
+                    show_legend=False,
+                )
+            else:
+                rows = []
+                for label, key, _ in period_defs:
+                    block = p.get(key) or {}
+                    total = block.get('count', 0)
+                    rows.append({
+                        'label': label,
+                        'segments': segs(block.get('frequency') or {}, total),
+                        'total': total,
+                    })
+                x_labels, series, show_legend = grouped(rows)
+                viz = bar_viz(
+                    x_labels=x_labels,
+                    y_axis_label='Share of logs',
+                    series=series,
+                    caption='Early, mid, and late month compared',
+                    y_suffix='%',
+                    show_legend=show_legend,
+                )
+
+            items.append({
+                'id': f"{field_name}__time_of_month",
+                'field_path': field_name,
+                'pattern_type': 'time_of_month',
+                'title': 'Monthly rhythm',
+                'insight': p.get('insight'),
+                'confidence': p.get('confidence', 'medium'),
+                'visualization': viz,
+            })
+
+        if 'streaks' in patterns:
+            p = patterns['streaks']
+            segments: List[Dict[str, Any]] = []
+
+            if p.get('type') == 'numeric':
+                for streak in (p.get('high_streaks') or [])[:6]:
+                    segments.append({
+                        'value_label': 'Higher than usual',
+                        'start_date': streak['start_date'],
+                        'end_date': streak['end_date'],
+                        'length': streak['length'],
+                        'tone': 'high',
+                    })
+                for streak in (p.get('low_streaks') or [])[:6]:
+                    segments.append({
+                        'value_label': 'Lower than usual',
+                        'start_date': streak['start_date'],
+                        'end_date': streak['end_date'],
+                        'length': streak['length'],
+                        'tone': 'low',
+                    })
+            elif p.get('value_streaks'):
+                ranked_values = sorted(
+                    p['value_streaks'].items(),
+                    key=lambda item: item[1].get('longest_streak', 0),
+                    reverse=True
+                )[:4]
+                for value, data in ranked_values:
+                    display_value = fmt(value)
+                    for streak in (data.get('streaks') or [])[:4]:
+                        segments.append({
+                            'value_label': display_value,
+                            'raw_value': value,
+                            'start_date': streak['start_date'],
+                            'end_date': streak['end_date'],
+                            'length': streak['length'],
+                            'tone': 'neutral',
+                        })
+
+            segments.sort(key=lambda s: s.get('start_date') or '')
+
+            items.append({
+                'id': f"{field_name}__streaks",
+                'field_path': field_name,
+                'pattern_type': 'streaks',
+                'title': 'Streaks',
+                'insight': p.get('insight'),
+                'confidence': 'medium',
+                'visualization': streak_chart(
+                    segments,
+                    'Each bar is how many days in a row the same pattern lasted',
+                ),
+            })
+
+        if 'cycle_phases' in patterns:
+            p = patterns['cycle_phases']
+            phase_labels = ['Period', 'Follicular', 'Ovulation', 'Luteal']
+            phase_keys = ['menstruation', 'follicular', 'ovulation', 'luteal']
+
+            if p.get('type') == 'numeric' and p.get('phase_statistics'):
+                stats = p['phase_statistics']
+                labels = []
+                values = []
+                high_phase = (p.get('highest_phase') or {}).get('phase', '')
+                for i, (label, key) in enumerate(zip(phase_labels, phase_keys)):
+                    labels.append(label)
+                    values.append(round(float(stats[key]['average']), 1) if key in stats else 0)
+                viz = bar_viz(
+                    x_labels=labels,
+                    y_axis_label=axis_label,
+                    series=[{'label': axis_label, 'values': values}],
+                    caption=f"Average {axis_label.lower()} by cycle phase",
+                    show_legend=False,
+                )
+            elif p.get('phase_patterns'):
+                rows = []
+                for label, key in zip(phase_labels, phase_keys):
+                    pp = p.get('phase_patterns', {}).get(key)
+                    if pp:
+                        freq_parts = str(pp.get('frequency', '0/0')).split('/')
+                        total = int(freq_parts[1]) if len(freq_parts) > 1 else pp.get('count', 0)
+                        freq = pp.get('frequency') or {}
+                        if isinstance(freq, dict) and freq:
+                            segment_list = segs(freq, total)
+                        else:
+                            mode = pp.get('most_common')
+                            segment_list = [{
+                                'value_label': fmt(mode),
+                                'raw_value': mode,
+                                'pct': pp.get('consistency') or 100,
+                                'count': total,
+                            }] if mode is not None else []
+                        rows.append({'label': label, 'segments': segment_list, 'total': total})
+                    else:
+                        rows.append({'label': label, 'segments': [], 'total': 0})
+                x_labels, series, show_legend = grouped(rows)
+                viz = bar_viz(
+                    x_labels=x_labels,
+                    y_axis_label='Share of logs',
+                    series=series,
+                    caption='Answers across cycle phases',
+                    y_suffix='%',
+                    show_legend=show_legend,
+                )
+            else:
+                viz = bar_viz(
+                    x_labels=phase_labels,
+                    y_axis_label=axis_label,
+                    series=[{'label': axis_label, 'values': [0, 0, 0, 0]}],
+                    caption='How this metric shifts across your cycle',
+                    show_legend=False,
+                )
+
+            items.append({
+                'id': f"{field_name}__cycle_phases",
+                'field_path': field_name,
+                'pattern_type': 'cycle_phases',
+                'title': 'Cycle phases',
+                'insight': p.get('insight'),
+                'confidence': p.get('confidence', 'medium'),
+                'visualization': viz,
+            })
+
+        return items
     
     @staticmethod
     def _detect_day_of_week_patterns(

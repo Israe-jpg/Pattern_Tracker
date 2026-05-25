@@ -317,23 +317,6 @@ function ProgressBar({ value, max = 100, color = colors.primary, h = 7 }) {
   );
 }
 
-// ─── Section Card wrapper ─────────────────────────────────────────────────────
-function SectionCard({ icon, iconColor = colors.primary, title, badge, headerRight, children }) {
-  return (
-    <View style={s.sectionCard}>
-      <View style={s.sectionCardHeader}>
-        <View style={[s.sectionIconWrap, { backgroundColor: iconColor + "15" }]}>
-          <Ionicons name={icon} size={18} color={iconColor} />
-        </View>
-        <Text style={[s.sectionCardTitle, headerRight ? { flex: 1 } : null]}>{title}</Text>
-        {badge}
-        {headerRight}
-      </View>
-      {children}
-    </View>
-  );
-}
-
 // ─── Time evolution field picker ──────────────────────────────────────────────
 function EvolutionFieldDropdown({
   options,
@@ -411,43 +394,10 @@ function EvolutionFieldDropdown({
   );
 }
 
-function SectionLoading({ title, icon }) {
-  return (
-    <View style={s.sectionCard}>
-      <View style={s.sectionCardHeader}>
-        <View style={[s.sectionIconWrap, { backgroundColor: colors.primary + "15" }]}>
-          <Ionicons name={icon} size={18} color={colors.primary} />
-        </View>
-        <Text style={s.sectionCardTitle}>{title}</Text>
-      </View>
-      <View style={s.sectionLoadingRow}>
-        <ActivityIndicator size="small" color={colors.primary} />
-        <Text style={s.sectionLoadingText}>Analysing…</Text>
-      </View>
-    </View>
-  );
-}
-
-function SectionEmpty({ title, icon, message }) {
-  return (
-    <View style={[s.sectionCard, s.sectionCardDashed]}>
-      <View style={s.sectionEmptyContent}>
-        <View style={[s.sectionIconWrap, { backgroundColor: colors.primaryLight + "18" }]}>
-          <Ionicons name={icon} size={18} color={colors.primaryLight} />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={s.sectionCardTitle}>{title}</Text>
-          <Text style={s.sectionEmptyText}>{message}</Text>
-        </View>
-      </View>
-    </View>
-  );
-}
-
 // ─── Expandable wrapper ───────────────────────────────────────────────────────
-function Expandable({ icon, iconColor = colors.primary, title, badge, children, defaultOpen = false }) {
-  const [open, setOpen] = useState(defaultOpen);
-  const rotAnim = useRef(new Animated.Value(defaultOpen ? 1 : 0)).current;
+function Expandable({ icon, iconColor = colors.primary, title, badge, children, dashed = false }) {
+  const [open, setOpen] = useState(false);
+  const rotAnim = useRef(new Animated.Value(0)).current;
 
   const toggle = () => {
     const toOpen = !open;
@@ -458,7 +408,7 @@ function Expandable({ icon, iconColor = colors.primary, title, badge, children, 
   const rotate = rotAnim.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "180deg"] });
 
   return (
-    <View style={s.sectionCard}>
+    <View style={[s.sectionCard, dashed && s.sectionCardDashed]}>
       <TouchableOpacity onPress={toggle} style={s.expandableHeader} activeOpacity={0.7}>
         <View style={[s.sectionIconWrap, { backgroundColor: iconColor + "15" }]}>
           <Ionicons name={icon} size={18} color={iconColor} />
@@ -471,6 +421,25 @@ function Expandable({ icon, iconColor = colors.primary, title, badge, children, 
       </TouchableOpacity>
       {open && <View style={s.expandableContent}>{children}</View>}
     </View>
+  );
+}
+
+function SectionLoading({ title, icon, iconColor = colors.primary }) {
+  return (
+    <Expandable icon={icon} iconColor={iconColor} title={title}>
+      <View style={s.sectionLoadingRow}>
+        <ActivityIndicator size="small" color={iconColor} />
+        <Text style={s.sectionLoadingText}>Analysing…</Text>
+      </View>
+    </Expandable>
+  );
+}
+
+function SectionEmpty({ title, icon, message, iconColor = colors.primaryLight }) {
+  return (
+    <Expandable icon={icon} iconColor={iconColor} title={title} dashed>
+      <Text style={s.sectionEmptyText}>{message}</Text>
+    </Expandable>
   );
 }
 
@@ -607,6 +576,439 @@ function CatDistribution({ label, distribution }) {
       ) : (
         <CatDonutDistribution distribution={distribution} />
       )}
+    </View>
+  );
+}
+
+const formatFriendlyDate = (dateStr) => {
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return String(dateStr || "");
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+};
+
+const PATTERN_TYPE_CONFIG = {
+  day_of_week: { icon: "calendar-outline", color: colors.primary },
+  time_of_month: { icon: "today-outline", color: colors.textSecondary },
+  streaks: { icon: "flame-outline", color: colors.warning },
+  cycle_phases: { icon: "moon-outline", color: colors.menstrual },
+};
+
+// ─── Pattern merge: group by field, embed streaks into weekly/monthly ─────────
+const mergePatternsByField = (items) => {
+  const byField = {};
+  items.forEach((item) => {
+    const fp = item.field_path;
+    if (!byField[fp]) byField[fp] = {};
+    byField[fp][item.pattern_type] = item;
+  });
+  const result = [];
+  Object.values(byField).forEach((typeMap) => {
+    const hasDow = "day_of_week" in typeMap;
+    const hasMom = "time_of_month" in typeMap;
+    const hasStreaks = "streaks" in typeMap;
+    const hasCycle = "cycle_phases" in typeMap;
+    if (hasDow) {
+      result.push({ ...typeMap.day_of_week, mergedStreak: hasStreaks ? typeMap.streaks : null });
+    }
+    if (hasMom) {
+      result.push({ ...typeMap.time_of_month, mergedStreak: (hasStreaks && !hasDow) ? typeMap.streaks : null });
+    }
+    if (hasStreaks && !hasDow && !hasMom) {
+      result.push(typeMap.streaks);
+    }
+    if (hasCycle) {
+      result.push(typeMap.cycle_phases);
+    }
+  });
+  return result;
+};
+
+// ─── Pattern chart color helpers ──────────────────────────────────────────────
+const CYCLE_PHASE_CFG_COLORS = {
+  Period:     "#8B1538",
+  Follicular: "#C2839A",
+  Ovulation:  "#10B981",
+  Luteal:     "#A07850",
+};
+const PATTERN_CAT_COLORS = [
+  colors.primary, "#E09C5A", colors.primaryLight, "#C2839A",
+  colors.warning, "#10B981", "#A07850", colors.secondary,
+];
+const patternBarColor = (ratio, isPeak) => {
+  if (isPeak) return colors.primaryDark;
+  if (ratio >= 0.8) return colors.primary;
+  if (ratio >= 0.55) return colors.primaryLight;
+  return "#C8D9B8";
+};
+
+// ─── Single bar column (custom, no chart library) ─────────────────────────────
+function PBarCol({ label, value, maxV, isPeak, color, ySuffix = "", chartH = 96 }) {
+  const ratio = maxV > 0 ? Math.max(0, value) / maxV : 0;
+  const bH = Math.max(4, Math.round(ratio * chartH));
+  const displayVal =
+    ySuffix === "%" ? `${Math.round(value)}%`
+    : ySuffix === "d" ? `${Math.round(value)}d`
+    : Math.abs(value) >= 10 ? String(Math.round(value))
+    : Number(value).toFixed(1);
+  const barC = color ?? patternBarColor(ratio, isPeak);
+  return (
+    <View style={{ flex: 1, alignItems: "center", justifyContent: "flex-end", minWidth: 0, paddingHorizontal: 2 }}>
+      {value > 0 && (
+        <Text style={{
+          fontSize: 9, fontWeight: isPeak ? "800" : "500",
+          color: isPeak ? colors.primaryDark : colors.textLight,
+          marginBottom: 2, textAlign: "center",
+        }}>
+          {displayVal}
+        </Text>
+      )}
+      <View style={{
+        width: "80%", height: bH, backgroundColor: barC, borderRadius: 5,
+        borderWidth: isPeak ? 2 : 0, borderColor: colors.primaryDark,
+      }} />
+      <Text numberOfLines={1} adjustsFontSizeToFit style={{
+        fontSize: 9, color: isPeak ? colors.primaryDark : colors.textLight,
+        marginTop: 4, fontWeight: isPeak ? "700" : "400", textAlign: "center",
+      }}>
+        {label}
+      </Text>
+    </View>
+  );
+}
+
+// ─── Example dates with calendar icons ───────────────────────────────────────
+function ExDates({ dates, label }) {
+  if (!dates?.length) return null;
+  return (
+    <View style={s.patternExampleWrap}>
+      {label ? <Text style={s.patternVizSubhead}>{label}</Text> : null}
+      <View style={s.patternDateChips}>
+        {dates.slice(-6).map((d) => (
+          <View key={d} style={s.patternDateChip}>
+            <Ionicons name="calendar-outline" size={10} color={colors.textSecondary} style={{ marginRight: 3 }} />
+            <Text style={s.patternDateChipText}>{formatFriendlyDate(d)}</Text>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+// ─── Streak pills (merged section) ───────────────────────────────────────────
+function StreakSection({ notes, insight }) {
+  if (!notes?.length) return null;
+  return (
+    <View style={s.streakSection}>
+      <View style={s.streakSectionHeader}>
+        <Ionicons name="flame-outline" size={13} color={colors.warning} />
+        <Text style={s.streakSectionTitle}>Streak Periods</Text>
+      </View>
+      <View style={s.streakPills}>
+        {notes.slice(0, 6).map((note, i) => {
+          const hi = /higher/i.test(note);
+          const lo = /lower/i.test(note);
+          const c = hi ? colors.success : lo ? colors.error : colors.primary;
+          const ic = hi ? "trending-up-outline" : lo ? "trending-down-outline" : "flame-outline";
+          return (
+            <View key={i} style={[s.streakPill, { backgroundColor: c + "15", borderColor: c + "40" }]}>
+              <Ionicons name={ic} size={10} color={c} />
+              <Text style={[s.streakPillText, { color: c }]}>{note}</Text>
+            </View>
+          );
+        })}
+      </View>
+      {insight ? <Text style={s.streakInsightText}>{insight}</Text> : null}
+    </View>
+  );
+}
+
+// ─── Numeric pattern bars (single series: weekly / monthly / phases) ──────────
+function NumericPatternViz({ xLabels, values, ySuffix, caption, exampleDates, peakLabel, barColors }) {
+  if (!xLabels?.length || !values?.length) return <Text style={s.patternVizEmpty}>No data.</Text>;
+  const maxV = Math.max(...values.filter((n) => n != null && !isNaN(n)), 0.01);
+  const peakIdx = values.reduce((mi, v, i) => (v ?? 0) > (values[mi] ?? 0) ? i : mi, 0);
+  return (
+    <View style={{ gap: 6 }}>
+      {caption ? <Text style={s.patternVizCaption}>{caption}</Text> : null}
+      <View style={{ flexDirection: "row", alignItems: "flex-end", height: 144, paddingTop: 8 }}>
+        {xLabels.map((lbl, i) => (
+          <PBarCol
+            key={i} label={lbl} value={values[i] ?? 0} maxV={maxV}
+            isPeak={i === peakIdx} color={barColors?.[i]}
+            ySuffix={ySuffix} chartH={96}
+          />
+        ))}
+      </View>
+      {peakIdx >= 0 && xLabels[peakIdx] ? (
+        <View style={s.peakTag}>
+          <Ionicons name="arrow-up-circle" size={12} color={colors.primaryDark} />
+          <Text style={s.peakTagText}>
+            {peakLabel || "Peak: "}{xLabels[peakIdx]}
+            {values[peakIdx] != null ? ` · ${Number(values[peakIdx]).toFixed(1)}${ySuffix}` : ""}
+          </Text>
+        </View>
+      ) : null}
+      <ExDates
+        dates={exampleDates}
+        label={peakIdx >= 0 && xLabels[peakIdx] ? `Recent occurrences on ${xLabels[peakIdx]}` : undefined}
+      />
+    </View>
+  );
+}
+
+// ─── Categorical stacked bars (multi-series: % per slot) ──────────────────────
+function CategoricalPatternViz({ xLabels, series, caption, exampleDates, showLegend }) {
+  if (!xLabels?.length || !series?.length) return <Text style={s.patternVizEmpty}>No data.</Text>;
+  const colored = series.map((sr, i) => ({ ...sr, color: PATTERN_CAT_COLORS[i % PATTERN_CAT_COLORS.length] }));
+  return (
+    <View style={{ gap: 6 }}>
+      {caption ? <Text style={s.patternVizCaption}>{caption}</Text> : null}
+      <View style={{ flexDirection: "row", alignItems: "flex-end", height: 144, paddingTop: 8 }}>
+        {xLabels.map((lbl, i) => {
+          const total = colored.reduce((sum, sr) => sum + (sr.values[i] ?? 0), 0) || 1;
+          return (
+            <View key={i} style={{ flex: 1, alignItems: "center", minWidth: 0, paddingHorizontal: 2 }}>
+              <View style={{ width: "80%", height: 96, justifyContent: "flex-end", gap: 1 }}>
+                {colored.map((cs, si) => {
+                  const pct = (cs.values[i] ?? 0) / total;
+                  const bH = Math.max(1, Math.round(pct * 96));
+                  return (
+                    <View key={si} style={{ height: bH, backgroundColor: cs.color, borderRadius: 3 }} />
+                  );
+                })}
+              </View>
+              <Text numberOfLines={1} adjustsFontSizeToFit style={{
+                fontSize: 9, color: colors.textLight, marginTop: 4, textAlign: "center",
+              }}>
+                {lbl}
+              </Text>
+            </View>
+          );
+        })}
+      </View>
+      {showLegend && (
+        <View style={s.patternLegend}>
+          {colored.map((cs, i) => (
+            <View key={i} style={s.patternLegendRow}>
+              <View style={[s.patternLegendDot, { backgroundColor: cs.color }]} />
+              <Text style={s.patternLegendLabel}>{cs.label}</Text>
+            </View>
+          ))}
+        </View>
+      )}
+      <ExDates dates={exampleDates} />
+    </View>
+  );
+}
+
+// ─── Standalone streak timeline (no weekly/monthly pattern for this field) ────
+// Parse a streak note: "Value Label · 5/1–5/5 (5d)"
+const parseStreakNote = (note) => {
+  const m = note.match(/^(.+?)\s*[·•]\s*(.+?)[–\-](.+?)\s*\((\d+)d\)/u);
+  if (m) return { valueLabel: m[1].trim(), start: m[2].trim(), end: m[3].trim(), days: parseInt(m[4], 10) };
+  // fallback: no separator found — treat the whole note as the label
+  return { valueLabel: note, start: null, end: null, days: null };
+};
+
+const labelColor = (lbl, idx) => {
+  if (!lbl) return colors.primary;
+  if (/higher/i.test(lbl)) return colors.success;
+  if (/lower/i.test(lbl)) return colors.error;
+  return PATTERN_CAT_COLORS[idx % PATTERN_CAT_COLORS.length];
+};
+
+function StandaloneStreakViz({ visualization }) {
+  if (!visualization) return null;
+  const { series = [], caption, streak_notes: notes = [] } = visualization;
+
+  // Assign a stable color per unique value label
+  const uniqueLabels = [...new Set(
+    notes.map((n) => parseStreakNote(n).valueLabel).filter(Boolean)
+  )];
+  const colorForLabel = (lbl) => labelColor(lbl, uniqueLabels.indexOf(lbl));
+
+  const parsed = notes.slice(0, 8).map(parseStreakNote);
+  const maxDays = Math.max(...parsed.map((p) => p.days ?? 1), 1);
+
+  return (
+    <View style={s.patternVizWrap}>
+      {caption ? <Text style={s.patternVizCaption}>{caption}</Text> : null}
+
+      {/* Legend when multiple distinct values exist */}
+      {uniqueLabels.length > 1 && (
+        <View style={s.patternLegend}>
+          {uniqueLabels.map((lbl) => (
+            <View key={lbl} style={s.patternLegendRow}>
+              <View style={[s.patternLegendDot, { backgroundColor: colorForLabel(lbl) }]} />
+              <Text style={s.patternLegendLabel}>{lbl}</Text>
+            </View>
+          ))}
+        </View>
+      )}
+
+      <View style={{ gap: 12, marginTop: 8 }}>
+        {parsed.map((p, i) => {
+          const c = colorForLabel(p.valueLabel);
+          const ic = /higher/i.test(p.valueLabel ?? "")
+            ? "trending-up-outline"
+            : /lower/i.test(p.valueLabel ?? "")
+              ? "trending-down-outline"
+              : "flame-outline";
+          const widthPct = maxDays > 0 ? Math.max(10, ((p.days ?? 1) / maxDays) * 100) : 10;
+
+          return (
+            <View key={i} style={s.streakRow}>
+              {/* Value label + duration badge */}
+              <View style={s.streakRowHeader}>
+                <View style={[s.streakLabelBadge, { backgroundColor: c + "18", borderColor: c + "40" }]}>
+                  <Ionicons name={ic} size={10} color={c} />
+                  <Text style={[s.streakLabelText, { color: c }]} numberOfLines={1}>
+                    {p.valueLabel || "Streak"}
+                  </Text>
+                </View>
+                <Text style={[s.streakDurationText, { color: c }]}>
+                  {p.days != null ? `${p.days}d` : ""}
+                </Text>
+              </View>
+              {/* Bar + date range */}
+              <View style={s.streakBarDateRow}>
+                <View style={s.streakTimelineBarWrap}>
+                  <View style={[s.streakTimelineBar, { width: `${widthPct}%`, backgroundColor: c }]} />
+                </View>
+                {p.start && p.end ? (
+                  <View style={s.streakDateRange}>
+                    <Ionicons name="calendar-outline" size={9} color={colors.textLight} />
+                    <Text style={s.streakDateRangeText}>{p.start} – {p.end}</Text>
+                  </View>
+                ) : null}
+              </View>
+            </View>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
+// ─── Main pattern visualization dispatcher ────────────────────────────────────
+function PatternVizRenderer({ visualization, fieldPath, patternType, mergedStreak }) {
+  if (!visualization) {
+    return <Text style={s.patternVizEmpty}>Tap to see details once chart data is available.</Text>;
+  }
+  const {
+    x_labels: xLabels = [],
+    series = [],
+    y_suffix: ySuffix = "",
+    caption,
+    example_dates: exDates = [],
+    show_legend: showLegend = false,
+    streak_notes: streakNotes,
+  } = visualization;
+
+  if (patternType === "streaks") {
+    return <StandaloneStreakViz visualization={visualization} />;
+  }
+
+  const mNotes = mergedStreak?.visualization?.streak_notes || streakNotes || [];
+  const isSingleNumeric = series.length === 1 && ySuffix !== "%";
+
+  if (patternType === "cycle_phases") {
+    const barColors = xLabels.map((lbl) => CYCLE_PHASE_CFG_COLORS[lbl]);
+    return (
+      <View style={s.patternVizWrap}>
+        {isSingleNumeric ? (
+          <NumericPatternViz
+            xLabels={xLabels} values={series[0]?.values || []}
+            ySuffix={ySuffix} caption={caption} exampleDates={exDates}
+            peakLabel="Peak phase: " barColors={barColors}
+          />
+        ) : (
+          <CategoricalPatternViz
+            xLabels={xLabels} series={series} caption={caption}
+            exampleDates={exDates} showLegend={showLegend}
+          />
+        )}
+        {mNotes.length > 0 && <StreakSection notes={mNotes} insight={mergedStreak?.insight} />}
+      </View>
+    );
+  }
+
+  // Weekly (day_of_week) or Monthly (time_of_month)
+  if (isSingleNumeric) {
+    return (
+      <View style={s.patternVizWrap}>
+        <NumericPatternViz
+          xLabels={xLabels} values={series[0]?.values || []}
+          ySuffix={ySuffix} caption={caption} exampleDates={exDates}
+          peakLabel={patternType === "day_of_week" ? "Peak day: " : "Peak period: "}
+        />
+        {mNotes.length > 0 && <StreakSection notes={mNotes} insight={mergedStreak?.insight} />}
+      </View>
+    );
+  }
+
+  return (
+    <View style={s.patternVizWrap}>
+      <CategoricalPatternViz
+        xLabels={xLabels} series={series} caption={caption}
+        exampleDates={exDates} showLegend={showLegend}
+      />
+      {mNotes.length > 0 && <StreakSection notes={mNotes} insight={mergedStreak?.insight} />}
+    </View>
+  );
+}
+
+function PatternItemRow({ item, expanded, onToggle }) {
+  const cfg = PATTERN_TYPE_CONFIG[item.pattern_type] || PATTERN_TYPE_CONFIG.day_of_week;
+  const isMerged = item.mergedStreak != null;
+  const strength = item.confidence || "medium";
+  const sc = strength === "strong" || strength === "high"
+    ? colors.primary
+    : strength === "medium"
+      ? colors.warning
+      : colors.textLight;
+
+  return (
+    <View style={[s.patternItemBlock, expanded && s.patternItemBlockOpen]}>
+      <TouchableOpacity onPress={onToggle} style={s.patternItemRow} activeOpacity={0.7}>
+        <View style={[s.patternItemIcon, { backgroundColor: cfg.color + "18" }]}>
+          <Ionicons name={cfg.icon} size={18} color={cfg.color} />
+        </View>
+        <View style={s.patternItemBody}>
+          <View style={s.patternRowHeader}>
+            <Text style={s.patternFieldLabel} numberOfLines={1}>
+              {formatFieldPath(item.field_path)}
+            </Text>
+            <View style={{ flexDirection: "row", gap: 4 }}>
+              <Badge label={strength} color={sc} />
+              {isMerged && (
+                <Badge label="+ streaks" color={colors.warning} bg={colors.warning + "12"} icon="flame-outline" />
+              )}
+            </View>
+          </View>
+          <Text style={s.patternItemTitle}>{item.title}</Text>
+          {item.insight ? (
+            <Text style={s.patternInsight} numberOfLines={expanded ? undefined : 2}>
+              {formatInsightText(item.insight)}
+            </Text>
+          ) : null}
+        </View>
+        <Ionicons
+          name={expanded ? "chevron-up-outline" : "chevron-down-outline"}
+          size={16}
+          color={colors.textLight}
+        />
+      </TouchableOpacity>
+      {expanded ? (
+        <View style={s.patternVizPanel}>
+          <PatternVizRenderer
+            visualization={item.visualization}
+            fieldPath={item.field_path}
+            patternType={item.pattern_type}
+            mergedStreak={item.mergedStreak ?? null}
+          />
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -804,7 +1206,7 @@ function PeriodOverview({ insights, currentCycleDay, currentPhase, daysUntilNext
       )}
 
       {reg && (
-        <SectionCard icon="pulse-outline" iconColor={regInfo?.color || colors.primary} title="Cycle Regularity">
+        <Expandable icon="pulse-outline" iconColor={regInfo?.color || colors.primary} title="Cycle Regularity">
           <View style={{ gap: 8 }}>
             <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
               {regInfo && <Badge label={regInfo.label} color={regInfo.color} bg={regInfo.bg} />}
@@ -813,11 +1215,11 @@ function PeriodOverview({ insights, currentCycleDay, currentPhase, daysUntilNext
             {regScore != null && <ProgressBar value={regScore} max={100} color={regInfo?.color || colors.primary} />}
             {reg.medical_note ? <Text style={s.detailText}>{reg.medical_note}</Text> : null}
           </View>
-        </SectionCard>
+        </Expandable>
       )}
 
       {pred && (
-        <SectionCard icon="analytics-outline" iconColor={colors.textSecondary} title="Prediction Accuracy">
+        <Expandable icon="analytics-outline" iconColor={colors.textSecondary} title="Prediction Accuracy">
           <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
             <View>
               <Text style={s.predBig}>{pred.average_error_days != null ? `\u00b1${pred.average_error_days.toFixed(1)}d` : "\u2014"}</Text>
@@ -832,15 +1234,15 @@ function PeriodOverview({ insights, currentCycleDay, currentPhase, daysUntilNext
             )}
           </View>
           {pred.recommendation ? <Text style={s.detailText}>{pred.recommendation}</Text> : null}
-        </SectionCard>
+        </Expandable>
       )}
 
       {compPrev?.has_comparison && (
-        <SectionCard icon="git-compare-outline" iconColor={colors.secondary} title="Cycle Comparison">
+        <Expandable icon="git-compare-outline" iconColor={colors.secondary} title="Cycle Comparison">
           {(compPrev.cycle_insights || compPrev.insights || []).slice(0, 2).map((ins, i) => (
             <Text key={i} style={s.bulletText}>• {ins}</Text>
           ))}
-        </SectionCard>
+        </Expandable>
       )}
 
       {corr?.has_correlations && (
@@ -865,6 +1267,7 @@ function GeneralInsights({ insights, trackerId }) {
   const [compareLoading, setCompareLoading] = useState(true);
   const [patternData, setPatternData] = useState(null);
   const [patternLoading, setPatternLoading] = useState(true);
+  const [expandedPatternId, setExpandedPatternId] = useState(null);
   const [comparePeriod, setComparePeriod] = useState("general");
   const [evolutionPeriod, setEvolutionPeriod] = useState("3m");
   const [formSchema, setFormSchema] = useState(null);
@@ -956,11 +1359,29 @@ function GeneralInsights({ insights, trackerId }) {
   const hasPatternResults = Boolean(
     patternData &&
     (
+      (patternData.pattern_items || []).length > 0 ||
       (patternData.patterns_found > 0) ||
       (patternData.total_patterns_detected > 0) ||
       Object.keys(patternData.field_patterns || {}).length > 0
     )
   );
+
+  const rawPatternItems = useMemo(() => {
+    if (!patternData) return [];
+    if (patternData.pattern_items?.length) return patternData.pattern_items;
+    return Object.entries(patternData.field_patterns || {}).map(([fp, p]) => ({
+      id: fp,
+      field_path: fp,
+      pattern_type: "day_of_week",
+      title: "Pattern",
+      insight: p.key_insight,
+      confidence: p.pattern_strength || "medium",
+      visualization: null,
+    }));
+  }, [patternData]);
+
+  // Merge streak patterns into their sibling weekly/monthly cards
+  const patternItems = useMemo(() => mergePatternsByField(rawPatternItems), [rawPatternItems]);
 
   // Fetch correlations directly — 6 months, threshold 0.2 (wider than the
   // general-analysis default of 0.3) so we always show something meaningful.
@@ -1076,21 +1497,22 @@ function GeneralInsights({ insights, trackerId }) {
       )}
 
       {/* 2 ── Time Evolution */}
-      <SectionCard
+      <Expandable
         icon="trending-up-outline"
         iconColor={colors.primary}
         title="Time Evolution"
-        headerRight={
-          evolutionFieldOptions.length > 0 ? (
+      >
+        {evolutionFieldOptions.length > 0 ? (
+          <View style={s.evoFieldDropdownRow}>
             <EvolutionFieldDropdown
               options={evolutionFieldOptions}
               selectedFieldName={selectedEvolutionField}
               chartableFieldNames={chartableFieldNames}
               onSelect={setSelectedEvolutionField}
             />
-          ) : null
-        }
-      >
+          </View>
+        ) : null}
+
         {/* Period selector */}
         <View style={s.periodSel}>
           {EVOLUTION_PERIODS.map((o) => (
@@ -1134,7 +1556,7 @@ function GeneralInsights({ insights, trackerId }) {
             )}
           </View>
         )}
-      </SectionCard>
+      </Expandable>
 
       {/* 3 ── Comparisons */}
       {compareLoading ? (
@@ -1148,7 +1570,7 @@ function GeneralInsights({ insights, trackerId }) {
             : "Could not load comparison. Try again later."}
         />
       ) : (
-        <SectionCard
+        <Expandable
           icon="swap-vertical-outline"
           iconColor={colors.primary}
           title="Comparisons"
@@ -1202,7 +1624,7 @@ function GeneralInsights({ insights, trackerId }) {
               No field changes detected yet. Keep logging to see how your habits shift over time.
             </Text>
           )}
-        </SectionCard>
+        </Expandable>
       )}
 
       {/* 4 ── Correlations */}
@@ -1228,7 +1650,6 @@ function GeneralInsights({ insights, trackerId }) {
               color={colors.primary}
             />
           }
-          defaultOpen
         >
           <Text style={[s.detailText, { marginBottom: 10 }]}>
             How your tracked fields relate to each other:
@@ -1275,30 +1696,23 @@ function GeneralInsights({ insights, trackerId }) {
           iconColor={colors.textSecondary}
           title="Patterns"
           badge={
-            <Badge label={`${patternData.total_patterns_detected}`} color={colors.textSecondary} />
+            <Badge label={`${patternItems.length}`} color={colors.textSecondary} />
           }
         >
           <Text style={[s.detailText, { marginBottom: 10 }]}>
-            Recurring trends — weekdays, streaks, and time-of-month rhythms:
+            Tap a pattern to see when it happens — charts and dates below each one:
           </Text>
           {patternData.overall_insight ? (
             <Text style={[s.detailText, { marginBottom: 10 }]}>{patternData.overall_insight}</Text>
           ) : null}
-          {Object.entries(patternData.field_patterns || {}).map(([fp, p], i) => {
-            const strength = p.pattern_strength || "weak";
-            const sc = strength === "strong" ? colors.primary : strength === "medium" ? colors.warning : colors.textLight;
-            return (
-              <View key={i} style={[s.patternRow, i > 0 && s.corrItemBorder]}>
-                <View style={s.patternRowHeader}>
-                  <Text style={s.patternFieldLabel}>{formatFieldPath(fp)}</Text>
-                  <Badge label={strength} color={sc} />
-                </View>
-                {p.key_insight ? (
-                  <Text style={s.patternInsight}>{formatInsightText(p.key_insight)}</Text>
-                ) : null}
-              </View>
-            );
-          })}
+          {patternItems.map((item, i) => (
+            <PatternItemRow
+              key={item.id || i}
+              item={item}
+              expanded={expandedPatternId === item.id}
+              onToggle={() => setExpandedPatternId((prev) => (prev === item.id ? null : item.id))}
+            />
+          ))}
         </Expandable>
       )}
     </View>
@@ -1326,7 +1740,7 @@ function PeriodTrendsContent({ cycleHistory }) {
       )}
 
       {valid.length >= 2 ? (
-        <SectionCard icon="trending-up-outline" title="Cycle Length History">
+        <Expandable icon="trending-up-outline" title="Cycle Length History">
           <Text style={s.chartSub}>Last {valid.length} cycles (days)</Text>
           <ResponsiveChartWrap>
             {(width) => {
@@ -1359,13 +1773,13 @@ function PeriodTrendsContent({ cycleHistory }) {
               );
             }}
           </ResponsiveChartWrap>
-        </SectionCard>
+        </Expandable>
       ) : (
         <SectionEmpty title="Cycle Length Chart" icon="trending-up-outline" message="Need at least 2 complete cycles to show this chart." />
       )}
 
       {periCycles.length >= 2 ? (
-        <SectionCard icon="water-outline" iconColor={colors.menstrual} title="Period Length">
+        <Expandable icon="water-outline" iconColor={colors.menstrual} title="Period Length">
           <Text style={s.chartSub}>Days per cycle</Text>
           <ResponsiveChartWrap style={s.chartWrapBar}>
             {(width) => {
@@ -1397,7 +1811,7 @@ function PeriodTrendsContent({ cycleHistory }) {
               );
             }}
           </ResponsiveChartWrap>
-        </SectionCard>
+        </Expandable>
       ) : null}
     </View>
   );
@@ -1583,6 +1997,7 @@ const s = StyleSheet.create({
   noDataText: { fontSize: 13, color: colors.textLight, fontStyle: "italic" },
 
   // Numeric field chart
+  evoFieldDropdownRow: { alignItems: "flex-end", marginBottom: 12 },
   evoOptionsWrap: { gap: 28, marginTop: 4 },
   evoCatOptionsWrap: { gap: 24 },
   fieldChartWrap: { paddingBottom: 4 },
@@ -1624,7 +2039,7 @@ const s = StyleSheet.create({
   periodOptTextActive: { color: "#fff", fontWeight: "700" },
 
   // Time evolution field dropdown
-  evoFieldDropdownWrap: { position: "relative", zIndex: 20, maxWidth: 140, marginLeft: 8 },
+  evoFieldDropdownWrap: { position: "relative", zIndex: 20, maxWidth: 160 },
   evoFieldDropdownBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -1722,10 +2137,57 @@ const s = StyleSheet.create({
   corrStrength: { fontSize: 12, fontWeight: "700", minWidth: 36, flexShrink: 0, textAlign: "right" },
 
   // Patterns
+  patternItemBlock: { marginBottom: 10, borderRadius: 12, borderWidth: 1, borderColor: "#EDE5D8", overflow: "hidden" },
+  patternItemBlockOpen: { borderColor: colors.primaryLight, backgroundColor: "#FFFCF7", overflow: "visible" },
+  patternItemRow: { flexDirection: "row", alignItems: "flex-start", gap: 10, padding: 12 },
+  patternItemIcon: { width: 36, height: 36, borderRadius: 10, alignItems: "center", justifyContent: "center", marginTop: 2 },
+  patternItemBody: { flex: 1, minWidth: 0, gap: 3 },
+  patternItemTitle: { fontSize: 11, fontWeight: "700", color: colors.textSecondary, textTransform: "uppercase", letterSpacing: 0.4 },
+  patternVizPanel: { paddingHorizontal: 12, paddingBottom: 22, paddingTop: 4, borderTopWidth: 1, borderTopColor: "#EDE5D8" },
+  patternVizWrap: { gap: 10 },
+  patternLegend: { marginTop: 10, flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  patternLegendRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  patternLegendDot: { width: 10, height: 10, borderRadius: 99 },
+  patternLegendLabel: { fontSize: 11, fontWeight: "600", color: colors.text },
+  patternVizCaption: { fontSize: 12, fontWeight: "600", color: colors.text, lineHeight: 17 },
+  patternVizSubhead: { fontSize: 11, fontWeight: "700", color: colors.textLight, marginTop: 6, marginBottom: 4 },
+  patternVizEmpty: { fontSize: 12, color: colors.textLight, fontStyle: "italic", paddingVertical: 8 },
+  patternExampleWrap: { gap: 4, marginTop: 6 },
+  patternDateChips: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 2 },
+  patternDateChip: {
+    backgroundColor: "#F3EFE7", borderRadius: 8, paddingHorizontal: 9, paddingVertical: 5,
+    borderWidth: 1, borderColor: "#EDE5D8", flexDirection: "row", alignItems: "center",
+  },
+  patternDateChipText: { fontSize: 11, fontWeight: "600", color: colors.text },
   patternRow: { paddingVertical: 10, gap: 5 },
   patternRowHeader: { flexDirection: "row", alignItems: "center", gap: 8 },
   patternFieldLabel: { flex: 1, fontSize: 13, fontWeight: "600", color: colors.text },
   patternInsight: { fontSize: 12, color: colors.textLight, lineHeight: 17 },
+  // Peak tag
+  peakTag: { flexDirection: "row", alignItems: "center", gap: 5, marginTop: 2, backgroundColor: colors.primaryDark + "0D", borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, alignSelf: "flex-start" },
+  peakTagText: { fontSize: 11, fontWeight: "700", color: colors.primaryDark },
+  // Streak section (merged into weekly/monthly)
+  streakSection: { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: "#EDE5D8" },
+  streakSectionHeader: { flexDirection: "row", alignItems: "center", gap: 5, marginBottom: 8 },
+  streakSectionTitle: { fontSize: 12, fontWeight: "700", color: colors.warning },
+  streakPills: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  streakPill: { flexDirection: "row", alignItems: "center", gap: 4, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 5, borderWidth: 1 },
+  streakPillText: { fontSize: 10, fontWeight: "600" },
+  streakInsightText: { fontSize: 11, color: colors.textLight, marginTop: 8, lineHeight: 16, fontStyle: "italic" },
+  // Streak timeline (standalone pattern)
+  streakTimelineBarWrap: { flex: 1, height: 14, backgroundColor: "#EDE5D8", borderRadius: 7, overflow: "hidden" },
+  streakTimelineBar: { height: 14, borderRadius: 7 },
+  streakTimelineLen: { fontSize: 12, fontWeight: "700" },
+  streakTimelineDates: { fontSize: 10, color: colors.textLight },
+  // Standalone streak row (labeled)
+  streakRow: { gap: 6 },
+  streakRowHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  streakLabelBadge: { flexDirection: "row", alignItems: "center", gap: 4, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, borderWidth: 1, maxWidth: "78%" },
+  streakLabelText: { fontSize: 11, fontWeight: "700", flexShrink: 1 },
+  streakDurationText: { fontSize: 13, fontWeight: "800" },
+  streakBarDateRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  streakDateRange: { flexDirection: "row", alignItems: "center", gap: 3, minWidth: 72 },
+  streakDateRangeText: { fontSize: 10, color: colors.textLight },
 
   // Cycle status (period tracker)
   cycleStatusCard: { ...CARD_STYLE, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
