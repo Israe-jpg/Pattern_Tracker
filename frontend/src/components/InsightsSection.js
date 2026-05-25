@@ -7,11 +7,14 @@ import {
   useWindowDimensions,
   ActivityIndicator,
   Animated,
+  ScrollView,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LineChart, BarChart } from "react-native-chart-kit";
+import Svg, { G, Path } from "react-native-svg";
 import { colors } from "../constants/colors";
 import { dataTrackingService } from "../services/dataTrackingService";
+import { trackerService } from "../services/trackerService";
 
 // Container has 20px horizontal padding + card has 16px padding = 72px total.
 // Tab bar sits directly in the container (48px horizontal chrome).
@@ -107,10 +110,31 @@ const EVOLUTION_PERIODS = [
   { id: "6m",  label: "6M",  days: 180, gran: "week" },
 ];
 
+// Build non-masked tracker fields from form schema (parent fields, not individual options).
+const collectSchemaFields = (formSchema) => {
+  if (!formSchema?.field_groups) return [];
+  const fields = [];
+  Object.values(formSchema.field_groups).forEach((group) => {
+    if (!Array.isArray(group)) return;
+    group.forEach((field) => {
+      if (!field.field_name) return;
+      fields.push({
+        fieldName: field.field_name,
+        label: field.display_label || formatFieldCategory(field.field_name),
+      });
+    });
+  });
+  return fields;
+};
+
+const getFieldNameFromPath = (path) => (path || "").split(".")[0];
+
 // ─── Tracking-data processing ─────────────────────────────────────────────────
 // granularity: "day" (one point per entry) | "week" (averaged per calendar week)
 const processEntries = (entries, granularity = "week") => {
-  if (!entries || !entries.length) return { numericSeries: [], catSeries: [] };
+  if (!entries || !entries.length) {
+    return { numericSeries: [], catSeries: [], entryCounts: {} };
+  }
 
   // Collect all values per field path
   const raw = {};
@@ -126,6 +150,10 @@ const processEntries = (entries, granularity = "week") => {
       });
     });
   });
+
+  const entryCounts = Object.fromEntries(
+    Object.entries(raw).map(([path, vals]) => [path, vals.length])
+  );
 
   const numericSeries = [];
   const catSeries = [];
@@ -186,7 +214,7 @@ const processEntries = (entries, granularity = "week") => {
       const total = vals.length;
       const dist = Object.entries(counts)
         .sort(([, a], [, b]) => b - a)
-        .slice(0, 6)
+        .slice(0, 12)
         .map(([label, count]) => ({ label, count, pct: Math.round((count / total) * 100) }));
       if (dist.length >= 2) {
         catSeries.push({ fieldPath: path, label: formatFieldPath(path), distribution: dist });
@@ -194,7 +222,7 @@ const processEntries = (entries, granularity = "week") => {
     }
   });
 
-  return { numericSeries, catSeries };
+  return { numericSeries, catSeries, entryCounts };
 };
 
 // ─── Chart config ─────────────────────────────────────────────────────────────
@@ -213,6 +241,35 @@ const CHART_CFG = {
   barPercentage: 0.55,
   paddingRight: 28,
   paddingLeft: 4,
+};
+
+const DONUT_SLICE_COLORS = [
+  colors.primary,
+  colors.primaryLight,
+  colors.secondary,
+  "#8FA67A",
+  colors.secondaryDark,
+  "#A07850",
+];
+
+const polarToCartesian = (cx, cy, r, angleRad) => ({
+  x: cx + r * Math.cos(angleRad),
+  y: cy + r * Math.sin(angleRad),
+});
+
+const describeDonutSlice = (cx, cy, outerR, innerR, startAngle, endAngle) => {
+  const startOuter = polarToCartesian(cx, cy, outerR, startAngle);
+  const endOuter = polarToCartesian(cx, cy, outerR, endAngle);
+  const startInner = polarToCartesian(cx, cy, innerR, endAngle);
+  const endInner = polarToCartesian(cx, cy, innerR, startAngle);
+  const largeArc = endAngle - startAngle > Math.PI ? 1 : 0;
+  return [
+    `M ${startOuter.x} ${startOuter.y}`,
+    `A ${outerR} ${outerR} 0 ${largeArc} 1 ${endOuter.x} ${endOuter.y}`,
+    `L ${startInner.x} ${startInner.y}`,
+    `A ${innerR} ${innerR} 0 ${largeArc} 0 ${endInner.x} ${endInner.y}`,
+    "Z",
+  ].join(" ");
 };
 
 // ─── Phase / Regularity configs (period tracker) ──────────────────────────────
@@ -261,17 +318,95 @@ function ProgressBar({ value, max = 100, color = colors.primary, h = 7 }) {
 }
 
 // ─── Section Card wrapper ─────────────────────────────────────────────────────
-function SectionCard({ icon, iconColor = colors.primary, title, badge, children }) {
+function SectionCard({ icon, iconColor = colors.primary, title, badge, headerRight, children }) {
   return (
     <View style={s.sectionCard}>
       <View style={s.sectionCardHeader}>
         <View style={[s.sectionIconWrap, { backgroundColor: iconColor + "15" }]}>
           <Ionicons name={icon} size={18} color={iconColor} />
         </View>
-        <Text style={s.sectionCardTitle}>{title}</Text>
+        <Text style={[s.sectionCardTitle, headerRight ? { flex: 1 } : null]}>{title}</Text>
         {badge}
+        {headerRight}
       </View>
       {children}
+    </View>
+  );
+}
+
+// ─── Time evolution field picker ──────────────────────────────────────────────
+function EvolutionFieldDropdown({
+  options,
+  selectedFieldName,
+  chartableFieldNames,
+  onSelect,
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = options.find((o) => o.fieldName === selectedFieldName);
+  const selectedStale = selectedFieldName && !chartableFieldNames.has(selectedFieldName);
+
+  if (!options.length) return null;
+
+  return (
+    <View style={s.evoFieldDropdownWrap}>
+      <TouchableOpacity
+        style={[s.evoFieldDropdownBtn, selectedStale && s.evoFieldDropdownBtnStale]}
+        onPress={() => setOpen((prev) => !prev)}
+        activeOpacity={0.7}
+      >
+        <Text
+          style={[s.evoFieldDropdownBtnText, selectedStale && s.evoFieldDropdownTextStale]}
+          numberOfLines={1}
+        >
+          {selected?.label || "Select field"}
+        </Text>
+        <Ionicons
+          name="chevron-down"
+          size={14}
+          color={selectedStale ? colors.secondaryLight : colors.textSecondary}
+        />
+      </TouchableOpacity>
+
+      {open && (
+        <>
+          <TouchableOpacity
+            style={s.evoFieldDropdownBackdrop}
+            onPress={() => setOpen(false)}
+            activeOpacity={1}
+          />
+          <View style={s.evoFieldDropdownMenu}>
+            <ScrollView nestedScrollEnabled keyboardShouldPersistTaps="handled">
+              {options.map(({ fieldName, label }) => {
+                const stale = !chartableFieldNames.has(fieldName);
+                const isSelected = fieldName === selectedFieldName;
+                return (
+                  <TouchableOpacity
+                    key={fieldName}
+                    style={[s.evoFieldDropdownItem, isSelected && !stale && s.evoFieldDropdownItemActive]}
+                    onPress={() => {
+                      if (stale) return;
+                      onSelect(fieldName);
+                      setOpen(false);
+                    }}
+                    activeOpacity={stale ? 1 : 0.7}
+                  >
+                    <Text
+                      style={[
+                        s.evoFieldDropdownItemText,
+                        stale && s.evoFieldDropdownItemStale,
+                        isSelected && !stale && s.evoFieldDropdownItemTextActive,
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </>
+      )}
     </View>
   );
 }
@@ -400,20 +535,78 @@ function NumericFieldChart({ label, weeklyData }) {
 }
 
 // ─── Categorical distribution ──────────────────────────────────────────────────
-function CatDistribution({ label, distribution }) {
-  const maxCount = Math.max(...distribution.map((d) => d.count));
+function CatBarDistribution({ distribution }) {
   return (
-    <View style={s.catDistWrap}>
-      <Text style={s.fieldChartLabel}>{label}</Text>
-      {distribution.map(({ label: lbl, count, pct }, i) => (
+    <>
+      {distribution.map(({ label: lbl, pct }, i) => (
         <View key={i} style={s.catBarRow}>
           <Text style={s.catBarLabel} numberOfLines={1}>{lbl}</Text>
           <View style={s.catBarTrack}>
-            <View style={[s.catBarFill, { width: `${(count / maxCount) * 100}%` }]} />
+            <View style={[s.catBarFill, { width: `${Math.min(100, pct)}%` }]} />
           </View>
           <Text style={s.catBarPct}>{pct}%</Text>
         </View>
       ))}
+    </>
+  );
+}
+
+function CatDonutDistribution({ distribution }) {
+  const size = 132;
+  const cx = size / 2;
+  const cy = size / 2;
+  const outerR = size / 2 - 2;
+  const innerR = outerR * 0.58;
+  const totalPct = distribution.reduce((sum, item) => sum + item.pct, 0) || 100;
+
+  let angle = -Math.PI / 2;
+  const slices = distribution.map((item, i) => {
+    const sliceAngle = (item.pct / totalPct) * Math.PI * 2;
+    const start = angle;
+    const end = angle + sliceAngle;
+    angle = end;
+    return {
+      ...item,
+      color: DONUT_SLICE_COLORS[i % DONUT_SLICE_COLORS.length],
+      path: describeDonutSlice(cx, cy, outerR, innerR, start, end),
+    };
+  });
+
+  return (
+    <View style={s.catDonutWrap}>
+      <View style={s.catDonutChart}>
+        <Svg width={size} height={size}>
+          <G>
+            {slices.map((slice, i) => (
+              <Path key={i} d={slice.path} fill={slice.color} />
+            ))}
+          </G>
+        </Svg>
+      </View>
+      <View style={s.catDonutLegend}>
+        {slices.map((slice, i) => (
+          <View key={i} style={s.catDonutLegendRow}>
+            <View style={[s.catDonutDot, { backgroundColor: slice.color }]} />
+            <Text style={s.catDonutLegendLabel} numberOfLines={1}>{slice.label}</Text>
+            <Text style={s.catDonutLegendPct}>{slice.pct}%</Text>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function CatDistribution({ label, distribution }) {
+  const useBarLayout = distribution.length >= 7;
+
+  return (
+    <View style={s.catDistWrap}>
+      <Text style={[s.fieldChartLabel, s.catDistLabel]}>{label}</Text>
+      {useBarLayout ? (
+        <CatBarDistribution distribution={distribution} />
+      ) : (
+        <CatDonutDistribution distribution={distribution} />
+      )}
     </View>
   );
 }
@@ -674,6 +867,8 @@ function GeneralInsights({ insights, trackerId }) {
   const [patternLoading, setPatternLoading] = useState(true);
   const [comparePeriod, setComparePeriod] = useState("general");
   const [evolutionPeriod, setEvolutionPeriod] = useState("3m");
+  const [formSchema, setFormSchema] = useState(null);
+  const [selectedEvolutionField, setSelectedEvolutionField] = useState(null);
   // Correlations fetched directly with a generous threshold so more show up
   const [directCorr, setDirectCorr] = useState(null);
   const [corrLoading, setCorrLoading] = useState(true);
@@ -697,6 +892,22 @@ function GeneralInsights({ insights, trackerId }) {
   }, [trackerId]);
 
   useEffect(() => { loadEntries(evolutionPeriod); }, [loadEntries, evolutionPeriod]);
+
+  // Load form schema for non-masked field list
+  useEffect(() => {
+    if (!trackerId) return;
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const res = await trackerService.getFormSchema(trackerId);
+        if (!cancelled) setFormSchema(res?.data || res);
+      } catch {
+        if (!cancelled) setFormSchema(null);
+      }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [trackerId]);
 
   // Load comparison
   const loadCompare = useCallback(async (period) => {
@@ -759,10 +970,64 @@ function GeneralInsights({ insights, trackerId }) {
 
   // Process entries into series — granularity depends on selected period
   const evolutionGran = (EVOLUTION_PERIODS.find((p) => p.id === evolutionPeriod) || EVOLUTION_PERIODS[2]).gran;
-  const { numericSeries, catSeries } = useMemo(
-    () => (entries ? processEntries(entries, evolutionGran) : { numericSeries: [], catSeries: [] }),
+  const { numericSeries, catSeries, entryCounts } = useMemo(
+    () => (entries ? processEntries(entries, evolutionGran) : { numericSeries: [], catSeries: [], entryCounts: {} }),
     [entries, evolutionGran]
   );
+
+  const fieldEntryCounts = useMemo(() => {
+    const counts = {};
+    Object.entries(entryCounts).forEach(([path, count]) => {
+      const fieldName = getFieldNameFromPath(path);
+      counts[fieldName] = (counts[fieldName] || 0) + count;
+    });
+    return counts;
+  }, [entryCounts]);
+
+  const evolutionFieldOptions = useMemo(() => {
+    const schemaFields = collectSchemaFields(formSchema);
+    if (schemaFields.length) return schemaFields;
+    return Object.keys(fieldEntryCounts)
+      .sort((a, b) => (fieldEntryCounts[b] || 0) - (fieldEntryCounts[a] || 0))
+      .map((fieldName) => ({
+        fieldName,
+        label: formatFieldCategory(fieldName),
+      }));
+  }, [formSchema, fieldEntryCounts]);
+
+  const chartableFieldNames = useMemo(() => {
+    const names = new Set();
+    numericSeries.forEach(({ fieldPath }) => names.add(getFieldNameFromPath(fieldPath)));
+    catSeries.forEach(({ fieldPath }) => names.add(getFieldNameFromPath(fieldPath)));
+    return names;
+  }, [numericSeries, catSeries]);
+
+  const defaultEvolutionField = useMemo(() => {
+    if (!evolutionFieldOptions.length) return null;
+    return evolutionFieldOptions.reduce((best, { fieldName }) => {
+      if (!best) return fieldName;
+      return (fieldEntryCounts[fieldName] || 0) > (fieldEntryCounts[best] || 0) ? fieldName : best;
+    }, null);
+  }, [evolutionFieldOptions, fieldEntryCounts]);
+
+  useEffect(() => {
+    if (!defaultEvolutionField) {
+      setSelectedEvolutionField(null);
+      return;
+    }
+    setSelectedEvolutionField((prev) => {
+      if (prev && evolutionFieldOptions.some((o) => o.fieldName === prev)) return prev;
+      return defaultEvolutionField;
+    });
+  }, [defaultEvolutionField, evolutionFieldOptions]);
+
+  const selectedNumericSeries = numericSeries.filter(
+    (series) => getFieldNameFromPath(series.fieldPath) === selectedEvolutionField
+  );
+  const selectedCatSeries = catSeries.filter(
+    (series) => getFieldNameFromPath(series.fieldPath) === selectedEvolutionField
+  );
+  const selectedFieldIsChartable = selectedNumericSeries.length > 0 || selectedCatSeries.length > 0;
 
   const summary = insights?.tracking_summary;
   // Prefer the directly-fetched correlations (wider net) over the one baked
@@ -794,7 +1059,21 @@ function GeneralInsights({ insights, trackerId }) {
       )}
 
       {/* 2 ── Time Evolution */}
-      <SectionCard icon="trending-up-outline" iconColor={colors.primary} title="Time Evolution">
+      <SectionCard
+        icon="trending-up-outline"
+        iconColor={colors.primary}
+        title="Time Evolution"
+        headerRight={
+          evolutionFieldOptions.length > 0 ? (
+            <EvolutionFieldDropdown
+              options={evolutionFieldOptions}
+              selectedFieldName={selectedEvolutionField}
+              chartableFieldNames={chartableFieldNames}
+              onSelect={setSelectedEvolutionField}
+            />
+          ) : null
+        }
+      >
         {/* Period selector */}
         <View style={s.periodSel}>
           {EVOLUTION_PERIODS.map((o) => (
@@ -816,23 +1095,27 @@ function GeneralInsights({ insights, trackerId }) {
             <ActivityIndicator size="small" color={colors.primary} />
             <Text style={s.sectionLoadingText}>Loading…</Text>
           </View>
-        ) : numericSeries.length === 0 && catSeries.length === 0 ? (
+        ) : !selectedEvolutionField ? (
           <Text style={s.noDataText}>
-            Not enough entries in this window — try a longer period or keep logging.
+            No trackable fields yet — add fields to your tracker to see trends here.
+          </Text>
+        ) : !selectedFieldIsChartable ? (
+          <Text style={s.noDataText}>
+            Not enough entries for this field in this window — try a longer period or keep logging.
           </Text>
         ) : (
-          <>
-            {numericSeries.slice(0, 4).map(({ fieldPath, label, weeklyData }) => (
+          <View style={s.evoOptionsWrap}>
+            {selectedNumericSeries.map(({ fieldPath, label, weeklyData }) => (
               <NumericFieldChart key={fieldPath} label={label} weeklyData={weeklyData} />
             ))}
-            {catSeries.length > 0 && (
-              <View style={numericSeries.length > 0 ? s.catDivider : undefined}>
-                {catSeries.slice(0, 3).map(({ fieldPath, label, distribution }) => (
+            {selectedCatSeries.length > 0 && (
+              <View style={[s.evoCatOptionsWrap, selectedNumericSeries.length > 0 && s.catDivider]}>
+                {selectedCatSeries.map(({ fieldPath, label, distribution }) => (
                   <CatDistribution key={fieldPath} label={label} distribution={distribution} />
                 ))}
               </View>
             )}
-          </>
+          </View>
         )}
       </SectionCard>
 
@@ -1271,28 +1554,38 @@ const s = StyleSheet.create({
   noDataText: { fontSize: 13, color: colors.textLight, fontStyle: "italic" },
 
   // Numeric field chart
-  fieldChartWrap: { marginBottom: 20 },
-  fieldChartLabelRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 2 },
+  evoOptionsWrap: { gap: 28, marginTop: 4 },
+  evoCatOptionsWrap: { gap: 24 },
+  fieldChartWrap: { paddingBottom: 4 },
+  fieldChartLabelRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 },
   fieldChartLabel: { fontSize: 13, fontWeight: "600", color: colors.text },
   fieldChartMeta: { flexDirection: "row", alignItems: "center", gap: 4 },
   fieldChartAvg: { fontSize: 12, fontWeight: "600" },
-  fieldChartRange: { fontSize: 11, color: colors.textLight, marginBottom: 8 },
+  fieldChartRange: { fontSize: 11, color: colors.textLight, marginBottom: 12 },
   // chartWrap gives the SVG labels room below (overflow visible) and prevents
   // the card's borderRadius from clipping the bottom x-axis labels.
-  chartWrap: { overflow: "visible", paddingBottom: 8 },
+  chartWrap: { overflow: "visible", paddingBottom: 10 },
   chartWrapBar: { paddingBottom: 24 },
   chart: { borderRadius: 10 },
   chartBar: { borderRadius: 10, marginBottom: 6 },
   chartSub: { fontSize: 12, color: colors.textLight, marginBottom: 12 },
 
   // Categorical distribution
-  catDistWrap: { marginBottom: 16 },
-  catDivider: { marginTop: 6, paddingTop: 14, borderTopWidth: 1, borderTopColor: "#EDE5D8" },
-  catBarRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 7 },
-  catBarLabel: { width: 110, fontSize: 12, color: colors.text },
-  catBarTrack: { flex: 1, height: 9, backgroundColor: "#EDE5D8", borderRadius: 99, overflow: "hidden" },
-  catBarFill: { height: 9, borderRadius: 99, backgroundColor: colors.primary + "CC" },
-  catBarPct: { width: 34, fontSize: 11, fontWeight: "700", color: colors.textSecondary, textAlign: "right" },
+  catDistWrap: { paddingBottom: 4 },
+  catDistLabel: { marginBottom: 10 },
+  catDivider: { marginTop: 4, paddingTop: 20, borderTopWidth: 1, borderTopColor: "#EDE5D8" },
+  catBarRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 },
+  catBarLabel: { width: 96, fontSize: 12, color: colors.text },
+  catBarTrack: { flex: 1, height: 10, backgroundColor: "#EDE5D8", borderRadius: 99, overflow: "hidden" },
+  catBarFill: { height: 10, borderRadius: 99, backgroundColor: colors.primary + "CC" },
+  catBarPct: { width: 36, fontSize: 11, fontWeight: "700", color: colors.textSecondary, textAlign: "right" },
+  catDonutWrap: { flexDirection: "row", alignItems: "center", gap: 16 },
+  catDonutChart: { width: 132, height: 132, alignItems: "center", justifyContent: "center" },
+  catDonutLegend: { flex: 1, gap: 8 },
+  catDonutLegendRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  catDonutDot: { width: 10, height: 10, borderRadius: 5 },
+  catDonutLegendLabel: { flex: 1, fontSize: 12, color: colors.text },
+  catDonutLegendPct: { fontSize: 11, fontWeight: "700", color: colors.textSecondary, width: 36, textAlign: "right" },
 
   // Period selector
   periodSel: { flexDirection: "row", gap: 6, marginBottom: 14 },
@@ -1300,6 +1593,69 @@ const s = StyleSheet.create({
   periodOptActive: { backgroundColor: colors.primary },
   periodOptText: { fontSize: 12, fontWeight: "500", color: colors.textLight },
   periodOptTextActive: { color: "#fff", fontWeight: "700" },
+
+  // Time evolution field dropdown
+  evoFieldDropdownWrap: { position: "relative", zIndex: 20, maxWidth: 140, marginLeft: 8 },
+  evoFieldDropdownBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#F3EFE7",
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: "#EDE5D8",
+  },
+  evoFieldDropdownBtnStale: {
+    backgroundColor: "#F8F5EF",
+    borderColor: colors.secondaryLight,
+  },
+  evoFieldDropdownBtnText: {
+    flex: 1,
+    fontSize: 11,
+    fontWeight: "600",
+    color: colors.text,
+  },
+  evoFieldDropdownTextStale: { color: colors.secondaryLight },
+  evoFieldDropdownBackdrop: {
+    position: "absolute",
+    top: -400,
+    left: -400,
+    right: -400,
+    bottom: -400,
+    zIndex: 21,
+  },
+  evoFieldDropdownMenu: {
+    position: "absolute",
+    top: "100%",
+    right: 0,
+    marginTop: 4,
+    minWidth: 180,
+    maxWidth: 220,
+    maxHeight: 220,
+    backgroundColor: colors.background,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#EDE5D8",
+    zIndex: 22,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 8,
+    overflow: "hidden",
+  },
+  evoFieldDropdownItem: {
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F3EFE7",
+  },
+  evoFieldDropdownItemActive: { backgroundColor: colors.primary + "12" },
+  evoFieldDropdownItemText: { fontSize: 12, fontWeight: "500", color: colors.text },
+  evoFieldDropdownItemStale: { color: colors.secondaryLight, fontWeight: "400" },
+  evoFieldDropdownItemTextActive: { color: colors.primary, fontWeight: "700" },
 
   // Change rows
   changesList: { gap: 12 },
