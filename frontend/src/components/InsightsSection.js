@@ -20,6 +20,7 @@ import { trackerService } from "../services/trackerService";
 // Tab bar sits directly in the container (48px horizontal chrome).
 const getLayoutWidths = (screenWidth) => ({
   tabWidth: (screenWidth - 48) / 2,
+  tabWidth3: (screenWidth - 48) / 3,
 });
 
 const formatCompactChartLabel = (dateStr) => {
@@ -1826,12 +1827,14 @@ export default function InsightsSection({
   insightsLoading = false,
 }) {
   const { width: screenWidth } = useWindowDimensions();
-  const { tabWidth } = useMemo(() => getLayoutWidths(screenWidth), [screenWidth]);
+  const { tabWidth3 } = useMemo(() => getLayoutWidths(screenWidth), [screenWidth]);
   const [activeTab, setActiveTab] = useState("overview");
   const tabAnim = useRef(new Animated.Value(0)).current;
 
+  const PERIOD_TABS = ["overview", "trends", "fields"];
   const switchTab = (tab) => {
-    Animated.spring(tabAnim, { toValue: tab === "overview" ? 0 : 1, useNativeDriver: true, tension: 300, friction: 22 }).start();
+    const idx = PERIOD_TABS.indexOf(tab);
+    Animated.spring(tabAnim, { toValue: idx, useNativeDriver: true, tension: 300, friction: 22 }).start();
     setActiveTab(tab);
   };
 
@@ -1857,7 +1860,7 @@ export default function InsightsSection({
     }
   }
 
-  const indicatorX = tabAnim.interpolate({ inputRange: [0, 1], outputRange: [0, tabWidth] });
+  const indicatorX = tabAnim.interpolate({ inputRange: [0, 1, 2], outputRange: [0, tabWidth3, tabWidth3 * 2] });
 
   if (insightsLoading) {
     return (
@@ -1909,21 +1912,25 @@ export default function InsightsSection({
       </View>
 
       <View style={s.tabBar}>
-        <Animated.View style={[s.tabIndicator, { width: tabWidth, transform: [{ translateX: indicatorX }] }]} />
-        {["overview", "trends"].map((tab) => (
-          <TouchableOpacity key={tab} onPress={() => switchTab(tab)} style={[s.tabBtn, { width: tabWidth }]} activeOpacity={0.7}>
-            <Ionicons name={tab === "overview" ? "grid-outline" : "trending-up-outline"} size={14} color={activeTab === tab ? colors.primary : colors.textLight} />
-            <Text style={[s.tabLabel, activeTab === tab && s.tabLabelActive]}>
-              {tab === "overview" ? "Overview" : "Trends"}
-            </Text>
-          </TouchableOpacity>
-        ))}
+        <Animated.View style={[s.tabIndicator, { width: tabWidth3, transform: [{ translateX: indicatorX }] }]} />
+        {PERIOD_TABS.map((tab) => {
+          const TAB_ICONS = { overview: "grid-outline", trends: "trending-up-outline", fields: "stats-chart-outline" };
+          const TAB_LABELS = { overview: "Overview", trends: "Cycles", fields: "Fields" };
+          return (
+            <TouchableOpacity key={tab} onPress={() => switchTab(tab)} style={[s.tabBtn, { width: tabWidth3 }]} activeOpacity={0.7}>
+              <Ionicons name={TAB_ICONS[tab]} size={14} color={activeTab === tab ? colors.primary : colors.textLight} />
+              <Text style={[s.tabLabel, activeTab === tab && s.tabLabelActive]}>{TAB_LABELS[tab]}</Text>
+            </TouchableOpacity>
+          );
+        })}
       </View>
 
       {activeTab === "overview" ? (
         <PeriodOverview insights={insights} currentCycleDay={currentCycleDay} currentPhase={currentPhase} daysUntilNext={daysUntilNext} />
-      ) : (
+      ) : activeTab === "trends" ? (
         <PeriodTrendsContent cycleHistory={cycleHistory} />
+      ) : (
+        <GeneralInsights insights={insights} trackerId={trackerId} />
       )}
     </View>
   );
