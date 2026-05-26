@@ -7,9 +7,9 @@ export default {
     version: "1.0.0",
     orientation: "portrait",
     userInterfaceStyle: "light",
-    icon: "./assets/icon.png",
+    icon: "./assets/icon2.png",
     splash: {
-      image: "./assets/splash.png",
+      image: "./assets/splash2.png",
       resizeMode: "contain",
       backgroundColor: "#ffffff"
     },
@@ -25,7 +25,7 @@ export default {
       package: "com.israe.trackt",
       versionCode: 1,
       adaptiveIcon: {
-        foregroundImage: "./assets/adaptive-icon.png",
+        foregroundImage: "./assets/adaptive-icon2.png",
         backgroundColor: "#ffffff"
       }
     },
@@ -35,7 +35,10 @@ export default {
     scheme: "trackt",
     extra: {
       computerIp: process.env.COMPUTER_IP,
-      productionApiUrl: process.env.PRODUCTION_API_URL
+      productionApiUrl: process.env.PRODUCTION_API_URL,
+      eas: {
+        projectId: "a828ff6e-0c1c-42d9-b737-cccf2712d981"
+      }
     }
   }
 };
