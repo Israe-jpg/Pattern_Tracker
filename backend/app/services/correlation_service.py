@@ -138,8 +138,21 @@ class CorrelationService:
         )
         all_correlations.extend(within_corrs)
         
+        # Merge triple correlations that share the same predictor pair so the same
+        # cause (A+B) is only counted once even when it predicts multiple outcomes.
+        all_correlations = CorrelationService._group_triple_correlations(all_correlations)
+
+        # Stamp each correlation with a human-readable arity label used by the UI.
+        for c in all_correlations:
+            if c.get('type') == 'triple':
+                c['arity'] = '3-way'
+            elif c.get('scope') == 'within_field':
+                c['arity'] = 'same-field'
+            else:
+                c['arity'] = '2-way'
+
         CorrelationService._sort_correlation_results(all_correlations)
-        
+
         # Return only top 3 most meaningful correlations
         top_correlations = all_correlations[:3]
         cross_field_count = sum(1 for c in all_correlations if c.get('scope') == 'cross_field')
@@ -1009,6 +1022,79 @@ class CorrelationService:
             ),
             reverse=True
         )
+
+    @staticmethod
+    def _group_triple_correlations(correlations: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Merge triple correlations that share the same predictor pair so we don't
+        waste slots on repetitions like:
+            A=x AND B=y → C=z
+            A=x AND B=y → D=w   ← same cause, different outcome
+        These become a single entry:
+            A=x AND B=y → C=z AND D=w
+
+        Non-triple correlations are returned unchanged.
+        """
+        grouped: Dict[tuple, Dict[str, Any]] = {}
+        non_triples: List[Dict[str, Any]] = []
+
+        for c in correlations:
+            if c.get('type') != 'triple':
+                non_triples.append(c)
+                continue
+
+            key = (
+                c.get('predictor1'), c.get('predictor1_value'),
+                c.get('predictor2'), c.get('predictor2_value'),
+            )
+
+            if key not in grouped:
+                entry = dict(c)
+                entry['outcomes'] = [{
+                    'field': c.get('outcome'),
+                    'value': c.get('outcome_value'),
+                    'count': c.get('observation_count', 0),
+                }]
+                grouped[key] = entry
+            else:
+                existing = grouped[key]
+                seen_fields = {o['field'] for o in existing['outcomes']}
+                if c.get('outcome') not in seen_fields:
+                    existing['outcomes'].append({
+                        'field': c.get('outcome'),
+                        'value': c.get('outcome_value'),
+                        'count': c.get('observation_count', 0),
+                    })
+                existing['observation_count'] = max(
+                    existing.get('observation_count', 0),
+                    c.get('observation_count', 0),
+                )
+                existing['strength'] = max(
+                    existing.get('strength', 0),
+                    c.get('strength', 0),
+                )
+
+        # Rebuild human-readable insight for each merged group
+        merged_triples: List[Dict[str, Any]] = []
+        for (pred1, pred1_val, pred2, pred2_val), entry in grouped.items():
+            outcomes = entry['outcomes']
+            count = entry['observation_count']
+            if len(outcomes) == 1:
+                o = outcomes[0]
+                entry['insight'] = (
+                    f"When {pred1} is '{pred1_val}' AND {pred2} is '{pred2_val}', "
+                    f"{o['field']} is typically '{o['value']}' ({count} times)"
+                )
+            else:
+                parts = [f"{o['field']} \u2192 '{o['value']}'" for o in outcomes]
+                entry['insight'] = (
+                    f"When {pred1} is '{pred1_val}' AND {pred2} is '{pred2_val}': "
+                    + ", ".join(parts)
+                    + f" ({count} times)"
+                )
+            merged_triples.append(entry)
+
+        return merged_triples + non_triples
 
     @staticmethod
     def _group_fields_by_parent(fields: List[str]) -> Dict[str, List[str]]:

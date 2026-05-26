@@ -2502,14 +2502,20 @@ function GeneralInsights({ insights, trackerId }) {
             const str = corr.strength != null ? Math.abs(corr.strength) : Math.abs(corr.correlation ?? 0);
             const strPct = Math.round(str * 100);
             const barColor = strPct >= 60 ? colors.primary : strPct >= 35 ? colors.warning : colors.textLight;
+            const arityLabel = corr.arity || (corr.type === "triple" ? "3-way" : corr.scope === "within_field" ? "same-field" : "2-way");
+            const arityColor = arityLabel === "3-way" ? colors.primary : arityLabel === "same-field" ? colors.textSecondary : colors.warning;
+            const extraOutcomes = Array.isArray(corr.outcomes) && corr.outcomes.length > 1 ? corr.outcomes.slice(1) : [];
             return (
               <View key={i} style={[s.corrItem, i > 0 && s.corrItemBorder]}>
-                {corr.scope === "within_field" ? (
-                  <View style={{ marginBottom: 4 }}>
-                    <Badge label="Same field" color={colors.textSecondary} />
-                  </View>
-                ) : null}
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 6 }}>
+                  <Badge label={arityLabel} color={arityColor} />
+                </View>
                 <Text style={s.corrText}>{formatInsightText(corr.insight || "")}</Text>
+                {extraOutcomes.map((o, j) => (
+                  <Text key={j} style={[s.corrText, { marginTop: 3, color: colors.textSecondary }]}>
+                    {"  also: "}{formatInsightText(`${o.field} → '${o.value}'`)}
+                  </Text>
+                ))}
                 <View style={s.corrMeta}>
                   <View style={s.corrBarWrap}>
                     <ProgressBar value={strPct} max={100} color={barColor} h={5} />
@@ -3196,12 +3202,20 @@ function PeriodFieldInsights({ insights, trackerId, cycleHistory }) {
             const str    = corr.strength != null ? Math.abs(corr.strength) : Math.abs(corr.correlation ?? 0);
             const strPct = Math.round(str * 100);
             const barColor = strPct >= 60 ? colors.primary : strPct >= 35 ? colors.warning : colors.textLight;
+            const arityLabel = corr.arity || (corr.type === "triple" ? "3-way" : corr.scope === "within_field" ? "same-field" : "2-way");
+            const arityColor = arityLabel === "3-way" ? colors.primary : arityLabel === "same-field" ? colors.textSecondary : colors.warning;
+            const extraOutcomes = Array.isArray(corr.outcomes) && corr.outcomes.length > 1 ? corr.outcomes.slice(1) : [];
             return (
               <View key={i} style={[s.corrItem, i > 0 && s.corrItemBorder]}>
-                {corr.scope === "within_field" ? (
-                  <View style={{ marginBottom: 4 }}><Badge label="Same field" color={colors.textSecondary} /></View>
-                ) : null}
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 6 }}>
+                  <Badge label={arityLabel} color={arityColor} />
+                </View>
                 <Text style={s.corrText}>{formatInsightText(corr.insight || "")}</Text>
+                {extraOutcomes.map((o, j) => (
+                  <Text key={j} style={[s.corrText, { marginTop: 3, color: colors.textSecondary }]}>
+                    {"  also: "}{formatInsightText(`${o.field} → '${o.value}'`)}
+                  </Text>
+                ))}
                 <View style={s.corrMeta}>
                   <View style={s.corrBarWrap}><ProgressBar value={strPct} max={100} color={barColor} h={5} /></View>
                   <Text style={[s.corrStrength, { color: barColor }]}>{strPct}%</Text>
