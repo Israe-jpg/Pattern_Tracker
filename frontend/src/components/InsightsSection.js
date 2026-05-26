@@ -168,6 +168,18 @@ const getMonthRange = (offset) => {
   };
 };
 
+// Returns { start, end, label } for a rolling 7-day window offset weeks back.
+// offset=0 → today-6…today, offset=1 → today-13…today-7, etc.
+const getSevenDayWindow = (offset) => {
+  const now = new Date();
+  const endDate   = new Date(now.getFullYear(), now.getMonth(), now.getDate() - offset * 7);
+  const startDate = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate() - 6);
+  const start = localDateStr(startDate);
+  const end   = localDateStr(endDate);
+  const label = `${MONTH_SHORT[startDate.getMonth()]} ${startDate.getDate()} – ${MONTH_SHORT[endDate.getMonth()]} ${endDate.getDate()}`;
+  return { start, end, label };
+};
+
 // ─── Evolution period config ──────────────────────────────────────────────────
 const EVOLUTION_PERIODS = [
   { id: "1w",  label: "1W",  days: 7,   gran: "day"  },
@@ -1879,27 +1891,37 @@ function GeneralInsights({ insights, trackerId }) {
   // Correlations fetched directly with a generous threshold so more show up
   const [directCorr, setDirectCorr] = useState(null);
   const [corrLoading, setCorrLoading] = useState(true);
-  // How many periods back the user has navigated (0 = current week/month)
+  // How many periods back the user has navigated (0 = current week/month) — Compare section
   const [compareWeekOffset, setCompareWeekOffset] = useState(0);
   const [compareMonthOffset, setCompareMonthOffset] = useState(0);
+  // Time Evolution navigation offsets (separate from compare)
+  const [evoWeekOffset,  setEvoWeekOffset]  = useState(0);
+  const [evoMonthOffset, setEvoMonthOffset] = useState(0);
 
   // Load tracking data (for time evolution charts).
-  // Uses local-timezone dates so "7 days ago" means today minus 7 calendar days
-  // in the user's timezone, not a UTC day that may shift by 1.
-  const loadEntries = useCallback(async (periodId) => {
+  // wOff/mOff drive sliding windows for "1w"/"1m" periods; ignored for "3m"/"6m".
+  const loadEntries = useCallback(async (periodId, wOff = 0, mOff = 0) => {
     if (!trackerId) return;
-    const cfg = EVOLUTION_PERIODS.find((p) => p.id === periodId) || EVOLUTION_PERIODS[2];
-    const now = new Date();
-    const end = localDateStr(now);
-    const startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - cfg.days);
-    const start = localDateStr(startDate);
+    let start, end;
+    if (periodId === "1w") {
+      const win = getSevenDayWindow(wOff);
+      start = win.start; end = win.end;
+    } else if (periodId === "1m") {
+      const { target } = getMonthRange(mOff);
+      start = target.start; end = target.end;
+    } else {
+      const cfg = EVOLUTION_PERIODS.find((p) => p.id === periodId) || EVOLUTION_PERIODS[2];
+      const now = new Date();
+      end   = localDateStr(now);
+      start = localDateStr(new Date(now.getFullYear(), now.getMonth(), now.getDate() - cfg.days));
+    }
     try {
       setEntriesLoading(true);
       const raw = await dataTrackingService.fetchAllTrackingEntries(trackerId, start, end);
-      // Extra guard: filter out any entries returned outside the window (API edge cases)
-      const filtered = (Array.isArray(raw) ? raw : []).filter(
-        (e) => (e.entry_date || "") >= start && (e.entry_date || "") <= end
-      );
+      const filtered = (Array.isArray(raw) ? raw : []).filter((e) => {
+        const d = e.entry_date || e.date || "";
+        return d >= start && d <= end;
+      });
       setEntries(filtered);
     } catch {
       setEntries([]);
@@ -1908,7 +1930,34 @@ function GeneralInsights({ insights, trackerId }) {
     }
   }, [trackerId]);
 
-  useEffect(() => { loadEntries(evolutionPeriod); }, [loadEntries, evolutionPeriod]);
+  // Reset evo navigation offsets when period changes, then reload
+  useEffect(() => {
+    setEvoWeekOffset(0);
+    setEvoMonthOffset(0);
+    loadEntries(evolutionPeriod, 0, 0);
+  }, [loadEntries, evolutionPeriod]);
+
+  // Stable ref so the PanResponder always reads the latest state/callbacks
+  const evoNavRef = useRef({});
+  evoNavRef.current = { evolutionPeriod, evoWeekOffset, evoMonthOffset, loadEntries };
+
+  const evoPanResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, g) =>
+        Math.abs(g.dx) > 30 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
+      onPanResponderRelease: (_, g) => {
+        const { evolutionPeriod: p, evoWeekOffset: wOff, evoMonthOffset: mOff, loadEntries: le } = evoNavRef.current;
+        const MAX = 5;
+        if (g.dx > 50) {
+          if (p === "1w" && wOff < MAX) { const n = wOff + 1; setEvoWeekOffset(n);  le("1w", n, 0); }
+          else if (p === "1m" && mOff < MAX) { const n = mOff + 1; setEvoMonthOffset(n); le("1m", 0, n); }
+        } else if (g.dx < -50) {
+          if (p === "1w" && wOff > 0) { const n = wOff - 1; setEvoWeekOffset(n);  le("1w", n, 0); }
+          else if (p === "1m" && mOff > 0) { const n = mOff - 1; setEvoMonthOffset(n); le("1m", 0, n); }
+        }
+      },
+    })
+  ).current;
 
   // Load form schema for non-masked field list
   useEffect(() => {
@@ -2187,36 +2236,89 @@ function GeneralInsights({ insights, trackerId }) {
           ))}
         </View>
 
-        {entriesLoading ? (
-          <View style={s.sectionLoadingRow}>
-            <ActivityIndicator size="small" color={colors.primary} />
-            <Text style={s.sectionLoadingText}>Loading…</Text>
-          </View>
-        ) : !selectedEvolutionField ? (
-          <Text style={s.noDataText}>
-            No trackable fields yet — add fields to your tracker to see trends here.
-          </Text>
-        ) : !chartableFieldNames.has(selectedEvolutionField) ? (
-          <Text style={s.noDataText}>
-            No entries logged for this field yet — start tracking to see trends here.
-          </Text>
-        ) : !selectedFieldIsChartable ? (
-          <Text style={s.noDataText}>
-            Not enough entries for this field in this window — try a longer period or keep logging.
-          </Text>
-        ) : (
-          <View style={s.evoOptionsWrap}>
-            {selectedNumericSeries.map(({ fieldPath, label, weeklyData }) => (
-              <NumericFieldChart key={fieldPath} label={label} weeklyData={weeklyData} cycleMode={false} />
-            ))}
-            {selectedCatSeries.length > 0 && (
-              <View style={[s.evoCatOptionsWrap, selectedNumericSeries.length > 0 && s.catDivider]}>
-                {selectedCatSeries.map(({ fieldPath, label, distribution }) => (
-                  <CatDistribution key={fieldPath} label={label} distribution={distribution} />
+        {/* Navigation row + chart — all wrapped in PanResponder for 1W/1M */}
+        {(evolutionPeriod === "1w" || evolutionPeriod === "1m") ? (() => {
+          const isWeek       = evolutionPeriod === "1w";
+          const offset       = isWeek ? evoWeekOffset : evoMonthOffset;
+          const navLabel     = isWeek ? getSevenDayWindow(offset).label : getMonthRange(offset).label;
+          const canGoBack    = offset < 5;
+          const canGoForward = offset > 0;
+          const onPrev = () => {
+            if (!canGoBack) return;
+            if (isWeek) { const n = evoWeekOffset + 1;  setEvoWeekOffset(n);  loadEntries("1w", n, 0); }
+            else        { const n = evoMonthOffset + 1; setEvoMonthOffset(n); loadEntries("1m", 0, n); }
+          };
+          const onNext = () => {
+            if (!canGoForward) return;
+            if (isWeek) { const n = evoWeekOffset - 1;  setEvoWeekOffset(n);  loadEntries("1w", n, 0); }
+            else        { const n = evoMonthOffset - 1; setEvoMonthOffset(n); loadEntries("1m", 0, n); }
+          };
+          return (
+            <View {...evoPanResponder.panHandlers}>
+              <View style={s.compareNavRow}>
+                <TouchableOpacity onPress={onPrev} style={[s.compareNavBtn, !canGoBack && s.compareNavBtnDisabled]} activeOpacity={canGoBack ? 0.7 : 1}>
+                  <Ionicons name="chevron-back" size={18} color={canGoBack ? colors.primary : colors.textLight} />
+                </TouchableOpacity>
+                <Text style={s.compareNavLabel}>{navLabel}</Text>
+                <TouchableOpacity onPress={onNext} style={[s.compareNavBtn, !canGoForward && s.compareNavBtnDisabled]} activeOpacity={canGoForward ? 0.7 : 1}>
+                  <Ionicons name="chevron-forward" size={18} color={canGoForward ? colors.primary : colors.textLight} />
+                </TouchableOpacity>
+              </View>
+              {entriesLoading ? (
+                <View style={s.sectionLoadingRow}>
+                  <ActivityIndicator size="small" color={colors.primary} />
+                  <Text style={s.sectionLoadingText}>Loading…</Text>
+                </View>
+              ) : !selectedEvolutionField ? (
+                <Text style={s.noDataText}>No trackable fields yet — add fields to your tracker to see trends here.</Text>
+              ) : !chartableFieldNames.has(selectedEvolutionField) ? (
+                <Text style={s.noDataText}>No entries logged for this field yet — start tracking to see trends here.</Text>
+              ) : !selectedFieldIsChartable ? (
+                <Text style={s.noDataText}>No entries for this field in this window — swipe right to go back or try a longer period.</Text>
+              ) : (
+                <View style={s.evoOptionsWrap}>
+                  {selectedNumericSeries.map(({ fieldPath, label, weeklyData }) => (
+                    <NumericFieldChart key={fieldPath} label={label} weeklyData={weeklyData} cycleMode={false} />
+                  ))}
+                  {selectedCatSeries.length > 0 && (
+                    <View style={[s.evoCatOptionsWrap, selectedNumericSeries.length > 0 && s.catDivider]}>
+                      {selectedCatSeries.map(({ fieldPath, label, distribution }) => (
+                        <CatDistribution key={fieldPath} label={label} distribution={distribution} />
+                      ))}
+                    </View>
+                  )}
+                </View>
+              )}
+            </View>
+          );
+        })() : (
+          <>
+            {entriesLoading ? (
+              <View style={s.sectionLoadingRow}>
+                <ActivityIndicator size="small" color={colors.primary} />
+                <Text style={s.sectionLoadingText}>Loading…</Text>
+              </View>
+            ) : !selectedEvolutionField ? (
+              <Text style={s.noDataText}>No trackable fields yet — add fields to your tracker to see trends here.</Text>
+            ) : !chartableFieldNames.has(selectedEvolutionField) ? (
+              <Text style={s.noDataText}>No entries logged for this field yet — start tracking to see trends here.</Text>
+            ) : !selectedFieldIsChartable ? (
+              <Text style={s.noDataText}>Not enough entries for this field in this window — try a longer period or keep logging.</Text>
+            ) : (
+              <View style={s.evoOptionsWrap}>
+                {selectedNumericSeries.map(({ fieldPath, label, weeklyData }) => (
+                  <NumericFieldChart key={fieldPath} label={label} weeklyData={weeklyData} cycleMode={false} />
                 ))}
+                {selectedCatSeries.length > 0 && (
+                  <View style={[s.evoCatOptionsWrap, selectedNumericSeries.length > 0 && s.catDivider]}>
+                    {selectedCatSeries.map(({ fieldPath, label, distribution }) => (
+                      <CatDistribution key={fieldPath} label={label} distribution={distribution} />
+                    ))}
+                  </View>
+                )}
               </View>
             )}
-          </View>
+          </>
         )}
       </Expandable>
 
@@ -2469,6 +2571,7 @@ function PeriodFieldInsights({ insights, trackerId, cycleHistory }) {
   const [compareLoading,   setCompareLoading]   = useState(true);
   const [compareMode,      setCompareMode]      = useState("prev_cycle");
   const [evoMode,          setEvoMode]          = useState("week");
+  const [evoWeekOffset,    setEvoWeekOffset]    = useState(0);
   const [phaseLoading,     setPhaseLoading]     = useState(false);
   const [patternData,      setPatternData]      = useState(null);
   const [patternLoading,   setPatternLoading]   = useState(true);
@@ -2519,6 +2622,29 @@ function PeriodFieldInsights({ insights, trackerId, cycleHistory }) {
   }, [trackerId, sortedCycles]);
 
   useEffect(() => { loadEntries(); }, [loadEntries]);
+
+  // Reset week offset when switching away from "By Week" evo mode
+  useEffect(() => {
+    if (evoMode !== "week") setEvoWeekOffset(0);
+  }, [evoMode]);
+
+  // Stable ref so the PanResponder can read latest state without re-creation
+  const evoPeriodNavRef = useRef({});
+  evoPeriodNavRef.current = { evoMode, evoWeekOffset };
+
+  const evoPanResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, g) =>
+        Math.abs(g.dx) > 30 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
+      onPanResponderRelease: (_, g) => {
+        const { evoMode: mode, evoWeekOffset: off } = evoPeriodNavRef.current;
+        if (mode !== "week") return;
+        const MAX_WEEKS = 5;
+        if (g.dx > 50 && off < MAX_WEEKS) setEvoWeekOffset(off + 1);
+        else if (g.dx < -50 && off > 0)  setEvoWeekOffset(off - 1);
+      },
+    })
+  ).current;
 
   // Form schema (for field picker)
   useEffect(() => {
@@ -2685,22 +2811,20 @@ function PeriodFieldInsights({ insights, trackerId, cycleHistory }) {
   const isCycleMode = evoMode !== "week";
   const cycleLookback = evoMode === "3c" ? 3 : evoMode === "6c" ? 6 : null;
 
-  // "By Week" mode shows the last 7 days as individual daily points (rolling window).
+  // "By Week" mode shows a rolling 7-day window (offset=0 → current 7 days).
   // Cycle modes use all loaded entries for per-cycle assignment.
-  const sevenDayEntries = useMemo(() => {
+  const windowEntries = useMemo(() => {
     if (!entries) return null;
-    const now = new Date();
-    const cutoff = localDateStr(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7));
-    const today = localDateStr(now);
+    const { start, end } = getSevenDayWindow(evoWeekOffset);
     return entries.filter((e) => {
       const d = e.entry_date || e.date || "";
-      return d >= cutoff && d <= today;
+      return d >= start && d <= end;
     });
-  }, [entries]);
+  }, [entries, evoWeekOffset]);
 
   const { numericSeries: weeklyNumeric, catSeries: weeklyCat, entryCounts } = useMemo(
-    () => (!isCycleMode && sevenDayEntries ? processEntries(sevenDayEntries, "day") : { numericSeries: [], catSeries: [], entryCounts: {} }),
-    [sevenDayEntries, isCycleMode]
+    () => (!isCycleMode && windowEntries ? processEntries(windowEntries, "day") : { numericSeries: [], catSeries: [], entryCounts: {} }),
+    [windowEntries, isCycleMode]
   );
 
   const { numericSeries: cycleNumeric, catSeries: cycleCat } = useMemo(
@@ -2834,7 +2958,7 @@ function PeriodFieldInsights({ insights, trackerId, cycleHistory }) {
         </View>
         <Text style={[s.detailText, { marginBottom: 8, color: colors.textLight }]}>
           {evoMode === "week"
-            ? "Daily entries — last 7 days"
+            ? getSevenDayWindow(evoWeekOffset).label
             : (() => {
                 const n = sortedCycles.length;
                 const lookback = evoMode === "3c" ? 3 : evoMode === "6c" ? 6 : n;
@@ -2845,34 +2969,86 @@ function PeriodFieldInsights({ insights, trackerId, cycleHistory }) {
               })()}
         </Text>
 
-        {entriesLoading ? (
-          <View style={s.sectionLoadingRow}>
-            <ActivityIndicator size="small" color={colors.primary} />
-            <Text style={s.sectionLoadingText}>Loading…</Text>
-          </View>
-        ) : !selectedEvoField ? (
-          <Text style={s.noDataText}>No trackable fields yet — add fields to see trends here.</Text>
-        ) : !fieldsWithData.has(selectedEvoField) ? (
-          <Text style={s.noDataText}>No entries logged for this field yet — start tracking to see trends here.</Text>
-        ) : !selectedFieldIsChartable ? (
-          <Text style={s.noDataText}>
-            {isCycleMode
-              ? `No data for this field in the selected ${evoMode === "3c" ? "3" : evoMode === "6c" ? "6" : "all"} cycle${evoMode !== "all_c" ? "s" : "s"} — try a wider range or By Week.`
-              : "No entries logged in the last 7 days for this field — keep tracking or try a cycle view."}
-          </Text>
-        ) : (
-          <View style={s.evoOptionsWrap}>
-            {selectedNumericSeries.map(({ fieldPath, label, weeklyData }) => (
-              <NumericFieldChart key={fieldPath} label={label} weeklyData={weeklyData} cycleMode={isCycleMode} />
-            ))}
-            {selectedCatSeries.length > 0 && (
-              <View style={[s.evoCatOptionsWrap, selectedNumericSeries.length > 0 && s.catDivider]}>
-                {selectedCatSeries.map(({ fieldPath, label, distribution }) => (
-                  <CatDistribution key={fieldPath} label={label} distribution={distribution} />
+        {/* "By Week" — nav row + chart all wrapped in one PanResponder surface */}
+        {evoMode === "week" ? (() => {
+          const canGoBack    = evoWeekOffset < 5;
+          const canGoForward = evoWeekOffset > 0;
+          return (
+            <View {...evoPanResponder.panHandlers}>
+              <View style={s.compareNavRow}>
+                <TouchableOpacity
+                  onPress={() => canGoBack && setEvoWeekOffset(evoWeekOffset + 1)}
+                  style={[s.compareNavBtn, !canGoBack && s.compareNavBtnDisabled]}
+                  activeOpacity={canGoBack ? 0.7 : 1}
+                >
+                  <Ionicons name="chevron-back" size={18} color={canGoBack ? colors.primary : colors.textLight} />
+                </TouchableOpacity>
+                <Text style={s.compareNavLabel}>{getSevenDayWindow(evoWeekOffset).label}</Text>
+                <TouchableOpacity
+                  onPress={() => canGoForward && setEvoWeekOffset(evoWeekOffset - 1)}
+                  style={[s.compareNavBtn, !canGoForward && s.compareNavBtnDisabled]}
+                  activeOpacity={canGoForward ? 0.7 : 1}
+                >
+                  <Ionicons name="chevron-forward" size={18} color={canGoForward ? colors.primary : colors.textLight} />
+                </TouchableOpacity>
+              </View>
+              {entriesLoading ? (
+                <View style={s.sectionLoadingRow}>
+                  <ActivityIndicator size="small" color={colors.primary} />
+                  <Text style={s.sectionLoadingText}>Loading…</Text>
+                </View>
+              ) : !selectedEvoField ? (
+                <Text style={s.noDataText}>No trackable fields yet — add fields to see trends here.</Text>
+              ) : !fieldsWithData.has(selectedEvoField) ? (
+                <Text style={s.noDataText}>No entries logged for this field yet — start tracking to see trends here.</Text>
+              ) : !selectedFieldIsChartable ? (
+                <Text style={s.noDataText}>No entries for this field in the selected window — swipe right to go back or try a cycle view.</Text>
+              ) : (
+                <View style={s.evoOptionsWrap}>
+                  {selectedNumericSeries.map(({ fieldPath, label, weeklyData }) => (
+                    <NumericFieldChart key={fieldPath} label={label} weeklyData={weeklyData} cycleMode={false} />
+                  ))}
+                  {selectedCatSeries.length > 0 && (
+                    <View style={[s.evoCatOptionsWrap, selectedNumericSeries.length > 0 && s.catDivider]}>
+                      {selectedCatSeries.map(({ fieldPath, label, distribution }) => (
+                        <CatDistribution key={fieldPath} label={label} distribution={distribution} />
+                      ))}
+                    </View>
+                  )}
+                </View>
+              )}
+            </View>
+          );
+        })() : (
+          <>
+            {entriesLoading ? (
+              <View style={s.sectionLoadingRow}>
+                <ActivityIndicator size="small" color={colors.primary} />
+                <Text style={s.sectionLoadingText}>Loading…</Text>
+              </View>
+            ) : !selectedEvoField ? (
+              <Text style={s.noDataText}>No trackable fields yet — add fields to see trends here.</Text>
+            ) : !fieldsWithData.has(selectedEvoField) ? (
+              <Text style={s.noDataText}>No entries logged for this field yet — start tracking to see trends here.</Text>
+            ) : !selectedFieldIsChartable ? (
+              <Text style={s.noDataText}>
+                {`No data for this field in the selected ${evoMode === "3c" ? "3" : evoMode === "6c" ? "6" : "all"} cycle${evoMode !== "all_c" ? "s" : "s"} — try a wider range or By Week.`}
+              </Text>
+            ) : (
+              <View style={s.evoOptionsWrap}>
+                {selectedNumericSeries.map(({ fieldPath, label, weeklyData }) => (
+                  <NumericFieldChart key={fieldPath} label={label} weeklyData={weeklyData} cycleMode={isCycleMode} />
                 ))}
+                {selectedCatSeries.length > 0 && (
+                  <View style={[s.evoCatOptionsWrap, selectedNumericSeries.length > 0 && s.catDivider]}>
+                    {selectedCatSeries.map(({ fieldPath, label, distribution }) => (
+                      <CatDistribution key={fieldPath} label={label} distribution={distribution} />
+                    ))}
+                  </View>
+                )}
               </View>
             )}
-          </View>
+          </>
         )}
       </Expandable>
 
