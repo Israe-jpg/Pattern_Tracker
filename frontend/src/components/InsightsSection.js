@@ -8,13 +8,16 @@ import {
   ActivityIndicator,
   Animated,
   ScrollView,
+  Modal,
+  PanResponder,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LineChart, BarChart } from "react-native-chart-kit";
-import Svg, { G, Path } from "react-native-svg";
+import Svg, { G, Path, Circle } from "react-native-svg";
 import { colors } from "../constants/colors";
 import { dataTrackingService } from "../services/dataTrackingService";
 import { trackerService } from "../services/trackerService";
+import { calculateCycleDayForDate } from "../utils/cycleCalculations";
 
 // Container has 20px horizontal padding + card has 16px padding = 72px total.
 // Tab bar sits directly in the container (48px horizontal chrome).
@@ -30,18 +33,26 @@ const formatCompactChartLabel = (dateStr) => {
 };
 
 // react-native-chart-kit needs ~36px per x-axis label; cap points on narrow screens.
+// Weekly mode cap (dense data — avoid crowding)
 const getMaxChartPoints = (width) => {
+  if (width < 260) return 8;
+  if (width < 320) return 10;
+  if (width < 380) return 12;
+  return 16;
+};
+
+// Cycle mode cap (one point per cycle — show all cycles up to a generous limit)
+const getMaxCycleChartPoints = (width) => {
+  if (width < 260) return 8;
+  if (width < 320) return 12;
+  return 20;
+};
+
+const getMaxVisibleLabels = (width) => {
   if (width < 260) return 4;
   if (width < 320) return 5;
   if (width < 380) return 6;
   return 8;
-};
-
-const getMaxVisibleLabels = (width) => {
-  if (width < 260) return 3;
-  if (width < 320) return 4;
-  if (width < 380) return 5;
-  return 6;
 };
 
 // Hide intermediate labels so dates/bars do not overlap.
@@ -72,11 +83,13 @@ function ResponsiveChartWrap({ children, style }) {
 const toTitleCase = (s) =>
   (s || "").replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
-// "sleep.time_i_woke_up" → "Time I Woke Up"
+// "sleep.hours_slept" → "Sleep : Hours Slept"
+// "sleep"             → "Sleep"
 const formatFieldPath = (path) => {
   if (!path) return "";
   const parts = path.split(".");
-  return toTitleCase(parts.length > 1 ? parts.slice(1).join(" ") : parts[0]);
+  if (parts.length < 2) return toTitleCase(parts[0]);
+  return `${toTitleCase(parts[0])} : ${toTitleCase(parts.slice(1).join(" "))}`;
 };
 
 // "sleep.hours_slept" → "Sleep"
@@ -84,23 +97,75 @@ const formatFieldCategory = (path) =>
   toTitleCase((path || "").split(".")[0].replace(/_/g, " "));
 
 // Replace "category.option_name" occurrences in backend text strings
+// e.g. "sleep.hours" → "Sleep : Hours"
 const formatInsightText = (text) =>
-  (text || "").replace(/\b([a-z_]+)\.([a-z_]+(?:_[a-z]+)*)\b/g, (_m, _c, opt) =>
-    toTitleCase(opt)
+  (text || "").replace(/\b([a-z_]+)\.([a-z_]+(?:_[a-z]+)*)\b/g, (_m, cat, opt) =>
+    `${toTitleCase(cat)} : ${toTitleCase(opt)}`
   );
 
 // ─── Date / grouping helpers ──────────────────────────────────────────────────
+// All date helpers use UTC-only arithmetic so local timezone never shifts the date.
 const getMondayKey = (dateStr) => {
-  const d = new Date(dateStr);
-  const day = d.getDay() || 7;
-  d.setDate(d.getDate() - day + 1);
-  return d.toISOString().split("T")[0];
+  const [year, month, day] = dateStr.substring(0, 10).split("-").map(Number);
+  const d = new Date(Date.UTC(year, month - 1, day));
+  const dow = d.getUTCDay() || 7; // 1=Mon … 7=Sun
+  d.setUTCDate(d.getUTCDate() - dow + 1);
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(d.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${dd}`;
 };
 
 const MONTH_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const formatWeekLabel = (mondayStr) => {
-  const d = new Date(mondayStr);
-  return `${MONTH_SHORT[d.getMonth()]} ${d.getDate()}`;
+  // Parse directly from the "YYYY-MM-DD" string — no Date object needed, no TZ shift.
+  const [, m, d] = mondayStr.split("-").map(Number);
+  return `${MONTH_SHORT[m - 1]} ${d}`;
+};
+
+// ─── Local-timezone date helpers ─────────────────────────────────────────────
+// Avoids UTC-shift issues where new Date().toISOString() can return yesterday
+// for users in UTC+N timezones after midnight UTC.
+const localDateStr = (d) => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+};
+
+// Returns { target, prev, label } for a given week offset (0 = current week).
+// target/prev each have { start, end } as local "YYYY-MM-DD" strings.
+const getWeekRange = (offset) => {
+  const today = new Date();
+  const dow = today.getDay() === 0 ? 7 : today.getDay(); // Mon=1 … Sun=7
+  const targetMon = new Date(today.getFullYear(), today.getMonth(), today.getDate() - dow + 1 - offset * 7);
+  const targetSun = new Date(targetMon.getFullYear(), targetMon.getMonth(), targetMon.getDate() + 6);
+  // Cap current week's end to today so the label never shows future dates.
+  const targetEnd = offset === 0 && targetSun > today ? today : targetSun;
+  const prevMon = new Date(targetMon.getFullYear(), targetMon.getMonth(), targetMon.getDate() - 7);
+  const prevSun = new Date(prevMon.getFullYear(), prevMon.getMonth(), prevMon.getDate() + 6);
+  const label = `${MONTH_SHORT[targetMon.getMonth()]} ${targetMon.getDate()} – ${MONTH_SHORT[targetEnd.getMonth()]} ${targetEnd.getDate()}`;
+  return {
+    target: { start: localDateStr(targetMon), end: localDateStr(targetEnd) },
+    prev:   { start: localDateStr(prevMon),   end: localDateStr(prevSun) },
+    label,
+  };
+};
+
+// Returns { target, prev, label } for a given month offset (0 = current month).
+const getMonthRange = (offset) => {
+  const today = new Date();
+  const tDate = new Date(today.getFullYear(), today.getMonth() - offset, 1);
+  const tY = tDate.getFullYear(); const tM = tDate.getMonth();
+  const tLastDay = new Date(tY, tM + 1, 0).getDate();
+  const pDate = new Date(tY, tM - 1, 1);
+  const pY = pDate.getFullYear(); const pM = pDate.getMonth();
+  const pLastDay = new Date(pY, pM + 1, 0).getDate();
+  return {
+    target: { start: localDateStr(new Date(tY, tM, 1)),  end: localDateStr(new Date(tY, tM, tLastDay)) },
+    prev:   { start: localDateStr(new Date(pY, pM, 1)),  end: localDateStr(new Date(pY, pM, pLastDay)) },
+    label: `${MONTH_SHORT[tM]} ${tY}`,
+  };
 };
 
 // ─── Evolution period config ──────────────────────────────────────────────────
@@ -111,24 +176,224 @@ const EVOLUTION_PERIODS = [
   { id: "6m",  label: "6M",  days: 180, gran: "week" },
 ];
 
-// Build non-masked tracker fields from form schema (parent fields, not individual options).
-const collectSchemaFields = (formSchema) => {
-  if (!formSchema?.field_groups) return [];
-  const fields = [];
-  Object.values(formSchema.field_groups).forEach((group) => {
+// ─── Period-tracker Fields tab config ─────────────────────────────────────────
+const CYCLE_EVO_MODES = [
+  { id: "3c",   label: "3 Cycles" },
+  { id: "6c",   label: "6 Cycles" },
+  { id: "all_c", label: "All Cycles" },
+  { id: "week", label: "By Week" },
+];
+
+const CYCLE_COMPARE_MODES = [
+  { id: "prev_cycle", label: "vs Prev Cycle" },
+  { id: "avg_cycle",  label: "vs Avg Cycle" },
+  { id: "week",       label: "By Week" },
+];
+
+// Build field groups from form schema (supports both API key styles).
+// Merges options when the same field_name appears in multiple schema groups
+// (e.g. "symptoms" in both baseline and period_tracker groups).
+const getSchemaFieldGroups = (formSchema) => {
+  const groups = formSchema?.field_groups || formSchema?.fieldGroups;
+  if (!groups) return [];
+  const fieldMap = new Map();
+  Object.values(groups).forEach((group) => {
     if (!Array.isArray(group)) return;
     group.forEach((field) => {
-      if (!field.field_name) return;
-      fields.push({
-        fieldName: field.field_name,
-        label: field.display_label || formatFieldCategory(field.field_name),
+      if (!field?.field_name) return;
+      const options = (field.options || [])
+        .filter((opt) => opt?.option_name && opt.is_active !== false)
+        .map((opt) => ({
+          optionName: opt.option_name,
+          label: opt.display_label || toTitleCase(opt.option_name),
+          path: `${field.field_name}.${opt.option_name}`,
+        }));
+      if (fieldMap.has(field.field_name)) {
+        // Merge additional options from duplicate group entries
+        const existing = fieldMap.get(field.field_name);
+        const existingPaths = new Set(existing.options.map((o) => o.path));
+        const newOpts = options.filter((o) => !existingPaths.has(o.path));
+        if (newOpts.length) existing.options = [...existing.options, ...newOpts];
+      } else {
+        fieldMap.set(field.field_name, {
+          fieldName: field.field_name,
+          label: field.display_label || formatFieldCategory(field.field_name),
+          options,
+        });
+      }
+    });
+  });
+  return Array.from(fieldMap.values());
+};
+
+// Parent fields only — for field-level pickers (Time Evolution, Phase Breakdown).
+const collectSchemaFields = (formSchema) =>
+  getSchemaFieldGroups(formSchema).map(({ fieldName, label }) => ({ fieldName, label }));
+
+// A value counts as logged (includes explicit false / 0 for yes-no and numeric fields).
+const hasLoggedValue = (val) => {
+  if (val === false || val === 0) return true;
+  if (val === null || val === undefined || val === "") return false;
+  if (typeof val === "string" && !val.trim()) return false;
+  return true;
+};
+
+// Count logged days per parent field (a day counts if any option under the field has data).
+const countEntriesByField = (entries) => {
+  const counts = {};
+  if (!entries?.length) return counts;
+  entries.forEach((e) => {
+    Object.entries(e.data || {}).forEach(([cat, opts]) => {
+      if (typeof opts !== "object" || opts === null) return;
+      const hasData = Object.values(opts).some(hasLoggedValue);
+      if (hasData) counts[cat] = (counts[cat] || 0) + 1;
+    });
+  });
+  return counts;
+};
+
+// Merge schema fields with any fields found in logged entry data.
+const buildMergedFieldOptions = (formSchema, entries) => {
+  const map = new Map();
+  collectSchemaFields(formSchema).forEach((f) => map.set(f.fieldName, f));
+  Object.keys(countEntriesByField(entries)).forEach((fieldName) => {
+    if (!map.has(fieldName)) {
+      map.set(fieldName, { fieldName, label: formatFieldCategory(fieldName) });
+    }
+  });
+  return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label));
+};
+
+const FRONTEND_TO_BACKEND_PHASE = {
+  menstrual: "menstruation",
+  follicular: "follicular",
+  ovulation: "ovulation",
+  luteal: "luteal",
+};
+
+// Client-side phase breakdown fallback when the API has no cycle-linked results.
+const computePhaseBreakdownFromEntries = (entries, cycleHistory, fieldName, optionName) => {
+  const numericByPhase = { menstruation: [], follicular: [], ovulation: [], luteal: [] };
+  const catByPhase = { menstruation: {}, follicular: {}, ovulation: {}, luteal: {} };
+
+  (entries || []).forEach((entry) => {
+    const rawVal = entry.data?.[fieldName]?.[optionName];
+    if (!hasLoggedValue(rawVal)) return;
+    const dateStr = entry.entry_date || entry.date;
+    if (!dateStr) return;
+    const { phase } = calculateCycleDayForDate(dateStr, cycleHistory || []);
+    if (!phase) return;
+    const phaseKey = FRONTEND_TO_BACKEND_PHASE[phase] || phase;
+    const val = normalizeTrackingValue(rawVal);
+
+    if (isNumericTrackingValue(val)) {
+      numericByPhase[phaseKey].push(val);
+    } else if (typeof val === "boolean") {
+      const key = val ? "Yes" : "No";
+      catByPhase[phaseKey][key] = (catByPhase[phaseKey][key] || 0) + 1;
+    } else {
+      const key = toTitleCase(String(val));
+      catByPhase[phaseKey][key] = (catByPhase[phaseKey][key] || 0) + 1;
+    }
+  });
+
+  const phase_analysis = {};
+  ["menstruation", "follicular", "ovulation", "luteal"].forEach((phase) => {
+    const nums = numericByPhase[phase];
+    if (nums.length) {
+      phase_analysis[phase] = {
+        count: nums.length,
+        mean: nums.reduce((s, v) => s + v, 0) / nums.length,
+        min: Math.min(...nums),
+        max: Math.max(...nums),
+      };
+      return;
+    }
+    const cats = catByPhase[phase];
+    const total = Object.values(cats).reduce((s, n) => s + n, 0);
+    if (total > 0) {
+      phase_analysis[phase] = {
+        count: total,
+        frequency: Object.fromEntries(
+          Object.entries(cats).map(([k, n]) => [k, n / total])
+        ),
+      };
+    }
+  });
+
+  if (!Object.keys(phase_analysis).length) {
+    return {
+      message: "No phase data — log on days that fall within a tracked cycle.",
+      field: fieldName,
+      option: optionName,
+    };
+  }
+
+  return {
+    symptom_field: fieldName,
+    option: optionName,
+    phase_analysis,
+    insights: [],
+    source: "local",
+  };
+};
+
+const hasPhaseAnalysis = (data) =>
+  Boolean(data?.phase_analysis && Object.keys(data.phase_analysis).length > 0);
+
+const pickDefaultField = (fieldOptions, entryCountsByField) => {
+  if (!fieldOptions.length) return null;
+  return fieldOptions.reduce((best, { fieldName }) => {
+    if (!best) return fieldName;
+    return (entryCountsByField[fieldName] || 0) > (entryCountsByField[best] || 0)
+      ? fieldName
+      : best;
+  }, null);
+};
+
+const fieldsWithLoggedData = (entryCountsByField) =>
+  new Set(Object.keys(entryCountsByField).filter((k) => entryCountsByField[k] > 0));
+
+// Option paths discovered in logged entry data (fallback when schema is unavailable).
+const collectEntryOptionPaths = (entries, minEntries = 1) => {
+  if (!entries?.length) return [];
+  const pathCounts = {};
+  entries.forEach((e) => {
+    Object.entries(e.data || {}).forEach(([cat, opts]) => {
+      if (typeof opts !== "object" || opts === null) return;
+      Object.entries(opts).forEach(([opt, val]) => {
+        if (!hasLoggedValue(val)) return;
+        const p = `${cat}.${opt}`;
+        pathCounts[p] = (pathCounts[p] || 0) + 1;
       });
     });
   });
-  return fields;
+  return Object.keys(pathCounts)
+    .filter((p) => pathCounts[p] >= minEntries)
+    .sort((a, b) => pathCounts[b] - pathCounts[a])
+    .map((path) => ({ fieldName: path, label: formatFieldPath(path) }));
 };
 
 const getFieldNameFromPath = (path) => (path || "").split(".")[0];
+
+// Coerce stored values for charting — handles numeric strings like "7.5".
+const normalizeTrackingValue = (val) => {
+  if (val === null || val === undefined || val === "") return null;
+  if (typeof val === "number" && !Number.isNaN(val)) return val;
+  if (typeof val === "boolean") return val;
+  if (typeof val === "string") {
+    const trimmed = val.trim();
+    if (!trimmed) return null;
+    const num = Number(trimmed);
+    if (!Number.isNaN(num)) return num;
+    return trimmed;
+  }
+  return val;
+};
+
+const isEmptyTrackingValue = (val) => normalizeTrackingValue(val) === null;
+
+const isNumericTrackingValue = (val) => typeof normalizeTrackingValue(val) === "number";
 
 // ─── Tracking-data processing ─────────────────────────────────────────────────
 // granularity: "day" (one point per entry) | "week" (averaged per calendar week)
@@ -145,9 +410,10 @@ const processEntries = (entries, granularity = "week") => {
     Object.entries(data).forEach(([cat, opts]) => {
       if (typeof opts !== "object" || opts === null) return;
       Object.entries(opts).forEach(([opt, val]) => {
+        if (isEmptyTrackingValue(val)) return;
         const path = `${cat}.${opt}`;
         if (!raw[path]) raw[path] = [];
-        raw[path].push({ date: entry_date, value: val });
+        raw[path].push({ date: entry_date, value: normalizeTrackingValue(val) });
       });
     });
   });
@@ -158,14 +424,13 @@ const processEntries = (entries, granularity = "week") => {
 
   const numericSeries = [];
   const catSeries = [];
-  // Lower the min-entries threshold for short windows (1W / 1M)
-  const minEntries = granularity === "day" ? 2 : 4;
+  const minEntries = granularity === "day" ? 2 : 1;
 
   Object.entries(raw).forEach(([path, vals]) => {
     if (vals.length < minEntries) return;
 
-    const numVals = vals.filter((v) => typeof v.value === "number");
-    const isNumeric = numVals.length >= Math.max(minEntries, vals.length * 0.6);
+    const numVals = vals.filter((v) => isNumericTrackingValue(v.value));
+    const isNumeric = numVals.length >= Math.min(minEntries, vals.length);
 
     if (isNumeric) {
       let points;
@@ -196,7 +461,7 @@ const processEntries = (entries, granularity = "week") => {
           }))
           .slice(-12); // last 12 weeks
       }
-      if (points.length >= 2) {
+      if (points.length >= 1) {
         numericSeries.push({ fieldPath: path, label: formatFieldPath(path), weeklyData: points });
       }
     } else {
@@ -217,13 +482,123 @@ const processEntries = (entries, granularity = "week") => {
         .sort(([, a], [, b]) => b - a)
         .slice(0, 12)
         .map(([label, count]) => ({ label, count, pct: Math.round((count / total) * 100) }));
-      if (dist.length >= 2) {
+      if (dist.length >= 1) {
         catSeries.push({ fieldPath: path, label: formatFieldPath(path), distribution: dist });
       }
     }
   });
 
   return { numericSeries, catSeries, entryCounts };
+};
+
+// ─── Cycle-based data processing (period tracker) ─────────────────────────────
+// Returns the cycle index (0-based) that contains the given date string, or -1.
+const getEntryCycleIndex = (entryDateStr, sortedCycles) => {
+  const d = new Date(entryDateStr);
+  if (isNaN(d)) return -1;
+  // First try exact range match
+  for (let i = 0; i < sortedCycles.length; i++) {
+    const c = sortedCycles[i];
+    const start = new Date(c.cycle_start_date || c.period_start_date);
+    const end = c.cycle_end_date
+      ? new Date(c.cycle_end_date)
+      : new Date(Date.now() + 86400000); // ongoing cycle — open end
+    if (d >= start && d <= end) return i;
+  }
+  // Fallback: entry falls in a gap between cycles — assign to the most recent preceding cycle
+  let bestIdx = -1;
+  for (let i = 0; i < sortedCycles.length; i++) {
+    const start = new Date(sortedCycles[i].cycle_start_date || sortedCycles[i].period_start_date);
+    if (d >= start) bestIdx = i;
+    else break;
+  }
+  return bestIdx;
+};
+
+// Group entries by cycle, returning numericSeries/catSeries shaped like processEntries output.
+// maxCycles: null = all cycles, number = use only the last N cycles.
+const processByCycles = (entries, cycleHistory, maxCycles = null) => {
+  if (!entries?.length || !cycleHistory?.length)
+    return { numericSeries: [], catSeries: [] };
+
+  const sorted = [...cycleHistory]
+    .filter((c) => c.cycle_start_date || c.period_start_date)
+    .sort(
+      (a, b) =>
+        new Date(a.cycle_start_date || a.period_start_date) -
+        new Date(b.cycle_start_date || b.period_start_date)
+    );
+
+  const usedCycles = maxCycles ? sorted.slice(-maxCycles) : sorted;
+  const startIdxInFull = sorted.length - usedCycles.length;
+
+  // raw[fieldPath][relativeIndex] = [values]
+  const raw = {};
+  entries.forEach((entry) => {
+    const dateStr = entry.entry_date || entry.date || "";
+    const fullIdx = getEntryCycleIndex(dateStr, sorted);
+    if (fullIdx < startIdxInFull) return;
+    const relIdx = fullIdx - startIdxInFull;
+    const data = entry.data || {};
+    Object.entries(data).forEach(([cat, opts]) => {
+      if (typeof opts !== "object" || opts === null) return;
+      Object.entries(opts).forEach(([opt, val]) => {
+        if (isEmptyTrackingValue(val)) return;
+        const path = `${cat}.${opt}`;
+        if (!raw[path]) raw[path] = {};
+        if (!raw[path][relIdx]) raw[path][relIdx] = [];
+        raw[path][relIdx].push(normalizeTrackingValue(val));
+      });
+    });
+  });
+
+  const labels = usedCycles.map((_, i) => `C${startIdxInFull + i + 1}`);
+  const numericSeries = [];
+  const catSeries = [];
+
+  Object.entries(raw).forEach(([path, cycleMap]) => {
+    const allVals = Object.values(cycleMap).flat();
+    // Require at least 1 value across the selected window to display the field
+    if (allVals.length < 1) return;
+    const numVals = allVals.filter((v) => isNumericTrackingValue(v));
+    const isNumeric = numVals.length >= Math.min(2, allVals.length);
+
+    if (isNumeric) {
+      const points = labels
+        .map((label, i) => {
+          const vals = (cycleMap[i] || []).filter((v) => isNumericTrackingValue(v));
+          return vals.length
+            ? { label, avg: Math.round((vals.reduce((s, v) => s + v, 0) / vals.length) * 10) / 10 }
+            : null;
+        })
+        .filter(Boolean);
+      if (points.length >= 1) {
+        numericSeries.push({ fieldPath: path, label: formatFieldPath(path), weeklyData: points });
+      }
+    } else {
+      const counts = {};
+      allVals.forEach((v) => {
+        const list = Array.isArray(v)
+          ? v
+          : [v === true ? "Yes" : v === false ? "No" : String(v)];
+        list.forEach((k) => {
+          if (!k) return;
+          const key = toTitleCase(String(k));
+          counts[key] = (counts[key] || 0) + 1;
+        });
+      });
+      const total = allVals.length || 1;
+      const dist = Object.entries(counts)
+        .sort(([, a], [, b]) => b - a)
+        .slice(0, 8)
+        .map(([lbl, count]) => ({ label: lbl, count, pct: Math.round((count / total) * 100) }));
+      if (dist.length >= 1) {
+        catSeries.push({ fieldPath: path, label: formatFieldPath(path), distribution: dist });
+      }
+    }
+  });
+
+  return { numericSeries, catSeries };
 };
 
 // ─── Chart config ─────────────────────────────────────────────────────────────
@@ -324,10 +699,16 @@ function EvolutionFieldDropdown({
   selectedFieldName,
   chartableFieldNames,
   onSelect,
+  onOpenChange,
 }) {
   const [open, setOpen] = useState(false);
   const selected = options.find((o) => o.fieldName === selectedFieldName);
   const selectedStale = selectedFieldName && !chartableFieldNames.has(selectedFieldName);
+
+  const setDropdownOpen = (next) => {
+    setOpen(next);
+    onOpenChange?.(next);
+  };
 
   if (!options.length) return null;
 
@@ -335,7 +716,7 @@ function EvolutionFieldDropdown({
     <View style={s.evoFieldDropdownWrap}>
       <TouchableOpacity
         style={[s.evoFieldDropdownBtn, selectedStale && s.evoFieldDropdownBtnStale]}
-        onPress={() => setOpen((prev) => !prev)}
+        onPress={() => setDropdownOpen(!open)}
         activeOpacity={0.7}
       >
         <Text
@@ -351,14 +732,13 @@ function EvolutionFieldDropdown({
         />
       </TouchableOpacity>
 
-      {open && (
-        <>
-          <TouchableOpacity
-            style={s.evoFieldDropdownBackdrop}
-            onPress={() => setOpen(false)}
-            activeOpacity={1}
-          />
-          <View style={s.evoFieldDropdownMenu}>
+      <Modal visible={open} transparent animationType="fade" onRequestClose={() => setDropdownOpen(false)}>
+        <TouchableOpacity
+          style={s.evoFieldDropdownModalBackdrop}
+          onPress={() => setDropdownOpen(false)}
+          activeOpacity={1}
+        >
+          <View style={s.evoFieldDropdownModalMenu} onStartShouldSetResponder={() => true}>
             <ScrollView nestedScrollEnabled keyboardShouldPersistTaps="handled">
               {options.map(({ fieldName, label }) => {
                 const stale = !chartableFieldNames.has(fieldName);
@@ -366,21 +746,20 @@ function EvolutionFieldDropdown({
                 return (
                   <TouchableOpacity
                     key={fieldName}
-                    style={[s.evoFieldDropdownItem, isSelected && !stale && s.evoFieldDropdownItemActive]}
+                    style={[s.evoFieldDropdownItem, isSelected && s.evoFieldDropdownItemActive]}
                     onPress={() => {
-                      if (stale) return;
                       onSelect(fieldName);
-                      setOpen(false);
+                      setDropdownOpen(false);
                     }}
-                    activeOpacity={stale ? 1 : 0.7}
+                    activeOpacity={0.7}
                   >
                     <Text
                       style={[
                         s.evoFieldDropdownItemText,
                         stale && s.evoFieldDropdownItemStale,
-                        isSelected && !stale && s.evoFieldDropdownItemTextActive,
+                        isSelected && s.evoFieldDropdownItemTextActive,
                       ]}
-                      numberOfLines={1}
+                      numberOfLines={2}
                     >
                       {label}
                     </Text>
@@ -389,8 +768,8 @@ function EvolutionFieldDropdown({
               })}
             </ScrollView>
           </View>
-        </>
-      )}
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
@@ -445,8 +824,8 @@ function SectionEmpty({ title, icon, message, iconColor = colors.primaryLight })
 }
 
 // ─── Numeric line-chart card ──────────────────────────────────────────────────
-function NumericFieldChart({ label, weeklyData }) {
-  if (weeklyData.length < 2) return null;
+function NumericFieldChart({ label, weeklyData, cycleMode = false }) {
+  if (!weeklyData?.length) return null;
 
   const trendSlice = weeklyData.slice(-8);
   const min = Math.min(...trendSlice.map((w) => w.avg));
@@ -458,6 +837,23 @@ function NumericFieldChart({ label, weeklyData }) {
     : "stable";
   const trendColor = trend === "up" ? colors.success : trend === "down" ? colors.error : colors.textLight;
   const trendIcon = trend === "up" ? "trending-up-outline" : trend === "down" ? "trending-down-outline" : "remove-outline";
+
+  if (weeklyData.length === 1) {
+    const point = weeklyData[0];
+    return (
+      <View style={s.fieldChartWrap}>
+        <View style={s.fieldChartLabelRow}>
+          <Text style={s.fieldChartLabel}>{label}</Text>
+        </View>
+        <Text style={s.fieldChartRange}>
+          {point.avg} · {point.label || formatCompactChartLabel(point.date)}
+        </Text>
+        <Text style={s.noDataText}>
+          {cycleMode ? "Log on more cycles to see a trend line." : "Log on more weeks to see a trend line."}
+        </Text>
+      </View>
+    );
+  }
 
   return (
     <View style={s.fieldChartWrap}>
@@ -475,7 +871,8 @@ function NumericFieldChart({ label, weeklyData }) {
       </Text>
       <ResponsiveChartWrap>
         {(width) => {
-          const slice = weeklyData.slice(-getMaxChartPoints(width));
+          const maxPts = cycleMode ? getMaxCycleChartPoints(width) : getMaxChartPoints(width);
+          const slice = weeklyData.slice(-maxPts);
           const labels = thinChartLabels(
             slice.map((w) => formatCompactChartLabel(w.date || w.label)),
             getMaxVisibleLabels(width)
@@ -529,6 +926,12 @@ function CatDonutDistribution({ distribution }) {
   const innerR = outerR * 0.58;
   const totalPct = distribution.reduce((sum, item) => sum + item.pct, 0) || 100;
 
+  // SVG arcs cannot represent a full 360° (start === end point). When only one
+  // slice fills the whole circle, use two <Circle> elements (outer ring + inner
+  // hole) instead of the arc-based path.
+  const isSingleSlice = distribution.length === 1;
+  const singleColor = isSingleSlice ? DONUT_SLICE_COLORS[0] : null;
+
   let angle = -Math.PI / 2;
   const slices = distribution.map((item, i) => {
     const sliceAngle = (item.pct / totalPct) * Math.PI * 2;
@@ -547,9 +950,16 @@ function CatDonutDistribution({ distribution }) {
       <View style={s.catDonutChart}>
         <Svg width={size} height={size}>
           <G>
-            {slices.map((slice, i) => (
-              <Path key={i} d={slice.path} fill={slice.color} />
-            ))}
+            {isSingleSlice ? (
+              <>
+                <Circle cx={cx} cy={cy} r={outerR} fill={singleColor} />
+                <Circle cx={cx} cy={cy} r={innerR} fill="#FFF8EE" />
+              </>
+            ) : (
+              slices.map((slice, i) => (
+                <Path key={i} d={slice.path} fill={slice.color} />
+              ))
+            )}
           </G>
         </Svg>
       </View>
@@ -1171,6 +1581,199 @@ function ComparisonBars({ changes }) {
   );
 }
 
+// ─── Phase breakdown visualization (period tracker Fields tab) ────────────────
+const PHASE_DISPLAY_CFG = {
+  menstruation: { label: "Period",     color: "#8B1538", bg: "#FFF0F3", icon: "water-outline"            },
+  follicular:   { label: "Follicular", color: "#C2839A", bg: "#FDF0F4", icon: "flower-outline"           },
+  ovulation:    { label: "Ovulation",  color: "#10B981", bg: "#ECFDF5", icon: "radio-button-on-outline"  },
+  luteal:       { label: "Luteal",     color: "#A07850", bg: "#FDF5EE", icon: "moon-outline"             },
+};
+const PHASE_ORDER = ["menstruation", "follicular", "ovulation", "luteal"];
+
+// Compact horizontal legend strip so users understand the 4 phases at a glance.
+
+function PhaseBreakdownViz({ phaseData, fieldName }) {
+  const analysis = phaseData?.phase_analysis || {};
+  const insights = phaseData?.insights || [];
+  const phases = PHASE_ORDER.filter((p) => analysis[p]);
+  const fieldLabel = fieldName ? formatFieldPath(fieldName) : null;
+
+  if (phases.length === 0) {
+    return (
+      <Text style={s.noDataText}>
+        {phaseData?.message || "No phase data yet — keep logging across your full cycle."}
+      </Text>
+    );
+  }
+
+  const isNumeric = phases.some((p) => analysis[p]?.mean != null);
+
+  // Boolean-like: all phases have values only in [0, 1] range (yes/no fields stored as 1/0)
+  const isBooleanLike =
+    isNumeric &&
+    phases.every((p) => {
+      const a = analysis[p];
+      return a && (a.max == null || a.max <= 1) && (a.min == null || a.min >= 0);
+    });
+
+  if (isNumeric) {
+    // For booleans treat the mean as a 0–1 frequency; for true numerics use the raw mean.
+    const values  = phases.map((p) => {
+      const mean = analysis[p]?.mean ?? 0;
+      return isBooleanLike ? Math.round(mean * 100) : mean; // pct for booleans
+    });
+    const maxV    = Math.max(...values, 0.01);
+    const peakIdx = values.reduce((mi, v, i) => (v > values[mi] ? i : mi), 0);
+    const ySuffix = isBooleanLike ? "%" : "";
+
+    return (
+      <View style={{ gap: 12 }}>
+        {/* Field context header */}
+        {fieldLabel && (
+          <View style={s.phaseFieldHeader}>
+            <Text style={s.phaseFieldHeaderLabel}>{fieldLabel}</Text>
+            <Text style={s.phaseFieldHeaderSub}>
+              {isBooleanLike ? "How often logged per cycle phase" : "Average value per cycle phase"}
+            </Text>
+          </View>
+        )}
+        {/* Bar chart */}
+        <View style={{ flexDirection: "row", alignItems: "flex-end", height: 144, paddingTop: 8 }}>
+          {phases.map((phase, i) => (
+            <PBarCol
+              key={phase}
+              label={PHASE_DISPLAY_CFG[phase].label}
+              value={values[i]}
+              maxV={maxV}
+              isPeak={i === peakIdx}
+              color={PHASE_DISPLAY_CFG[phase].color}
+              ySuffix={ySuffix}
+              chartH={96}
+            />
+          ))}
+        </View>
+
+        {/* Phase detail rows */}
+        <View style={{ gap: 8 }}>
+          {phases.map((phase) => {
+            const cfg = PHASE_DISPLAY_CFG[phase];
+            const a   = analysis[phase];
+            const displayVal = isBooleanLike
+              ? `${Math.round((a.mean ?? 0) * 100)}% of days`
+              : a.mean?.toFixed(1);
+            return (
+              <View key={phase} style={[s.phaseDetailRow, { backgroundColor: cfg.bg }]}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                  <Ionicons name={cfg.icon} size={14} color={cfg.color} />
+                  <Text style={[s.phaseDetailName, { color: cfg.color }]}>{cfg.label}</Text>
+                </View>
+                {isBooleanLike ? (
+                  <View style={s.catBarRow}>
+                    <Text style={[s.catBarLabel, { color: cfg.color + "AA" }]}>Frequency</Text>
+                    <View style={s.catBarTrack}>
+                      <View style={[s.catBarFill, {
+                        width: `${Math.min(100, Math.round((a.mean ?? 0) * 100))}%`,
+                        backgroundColor: cfg.color,
+                      }]} />
+                    </View>
+                    <Text style={[s.catBarPct, { color: cfg.color }]}>
+                      {Math.round((a.mean ?? 0) * 100)}%
+                    </Text>
+                  </View>
+                ) : (
+                  <View style={{ flexDirection: "row", gap: 12 }}>
+                    <Text style={s.phaseDetailStat}>
+                      Avg: <Text style={s.phaseDetailStatVal}>{displayVal}</Text>
+                    </Text>
+                    {a.min != null && a.max != null && (
+                      <Text style={s.phaseDetailStat}>Range: {a.min}–{a.max}</Text>
+                    )}
+                  </View>
+                )}
+                <Text style={[s.phaseDetailStat, { marginTop: 4 }]}>
+                  {a.count} {a.count === 1 ? "day" : "days"} logged
+                </Text>
+              </View>
+            );
+          })}
+        </View>
+
+        {insights.length > 0 && (
+          <View style={{ gap: 4, marginTop: 4 }}>
+            {insights.slice(0, 3).map((ins, i) => (
+              <Text key={i} style={s.detailText}>• {ins}</Text>
+            ))}
+          </View>
+        )}
+      </View>
+    );
+  }
+
+  // Categorical: most common value(s) per phase
+  return (
+    <View style={{ gap: 10 }}>
+      {fieldLabel && (
+        <View style={s.phaseFieldHeader}>
+          <Text style={s.phaseFieldHeaderLabel}>{fieldLabel}</Text>
+          <Text style={s.phaseFieldHeaderSub}>How often each value was logged per cycle phase</Text>
+        </View>
+      )}
+      {phases.map((phase) => {
+        const cfg = PHASE_DISPLAY_CFG[phase];
+        const a   = analysis[phase];
+        const totalDays = a?.count || 0;
+        // Sort by frequency and show top 4; compute actual day count from ratio
+        const topEntries = Object.entries(a?.frequency || {})
+          .sort(([, b1], [, b2]) => b2 - b1)
+          .slice(0, 4)
+          .map(([val, pct]) => ({
+            val,
+            pct,
+            days: Math.max(1, Math.round(pct * totalDays)),
+          }));
+        // Max days among shown options — used to scale bar widths relatively
+        const maxDays = Math.max(...topEntries.map((e) => e.days), 1);
+        return (
+          <View key={phase} style={[s.phaseDetailRow, { backgroundColor: cfg.bg }]}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8 }}>
+              <Ionicons name={cfg.icon} size={14} color={cfg.color} />
+              <Text style={[s.phaseDetailName, { color: cfg.color }]}>{cfg.label}</Text>
+              <Text style={s.phaseDetailStat}>
+                {totalDays} {totalDays === 1 ? "day" : "days"} logged
+              </Text>
+            </View>
+            {topEntries.length === 0 ? (
+              <Text style={s.noDataText}>No data for this phase</Text>
+            ) : (
+              topEntries.map(({ val, days, pct }, i) => (
+                <View key={i} style={[s.catBarRow, { marginBottom: 6 }]}>
+                  <Text style={s.catBarLabel} numberOfLines={1}>{toTitleCase(val)}</Text>
+                  <View style={s.catBarTrack}>
+                    <View style={[s.catBarFill, {
+                      width: `${Math.round((days / maxDays) * 100)}%`,
+                      backgroundColor: cfg.color + "BB",
+                    }]} />
+                  </View>
+                  <Text style={s.catBarPct}>
+                    {days} {days === 1 ? "day" : "days"}
+                  </Text>
+                </View>
+              ))
+            )}
+          </View>
+        );
+      })}
+      {insights.length > 0 && (
+        <View style={{ gap: 4, marginTop: 4 }}>
+          {insights.slice(0, 3).map((ins, i) => (
+            <Text key={i} style={s.detailText}>• {ins}</Text>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
 // ─── Period Tracker Overview content ─────────────────────────────────────────
 function PeriodOverview({ insights, currentCycleDay, currentPhase, daysUntilNext }) {
   const reg = insights?.regularity;
@@ -1276,18 +1879,28 @@ function GeneralInsights({ insights, trackerId }) {
   // Correlations fetched directly with a generous threshold so more show up
   const [directCorr, setDirectCorr] = useState(null);
   const [corrLoading, setCorrLoading] = useState(true);
+  // How many periods back the user has navigated (0 = current week/month)
+  const [compareWeekOffset, setCompareWeekOffset] = useState(0);
+  const [compareMonthOffset, setCompareMonthOffset] = useState(0);
 
-  // Load tracking data (for time evolution charts)
+  // Load tracking data (for time evolution charts).
+  // Uses local-timezone dates so "7 days ago" means today minus 7 calendar days
+  // in the user's timezone, not a UTC day that may shift by 1.
   const loadEntries = useCallback(async (periodId) => {
     if (!trackerId) return;
     const cfg = EVOLUTION_PERIODS.find((p) => p.id === periodId) || EVOLUTION_PERIODS[2];
-    const end = new Date().toISOString().split("T")[0];
-    const start = new Date(Date.now() - cfg.days * 86400000).toISOString().split("T")[0];
+    const now = new Date();
+    const end = localDateStr(now);
+    const startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - cfg.days);
+    const start = localDateStr(startDate);
     try {
       setEntriesLoading(true);
-      const res = await dataTrackingService.getDataRange(trackerId, start, end, { params: { per_page: 100 } });
-      const raw = res?.data?.tracking_data || res?.tracking_data || (Array.isArray(res?.data) ? res.data : []);
-      setEntries(Array.isArray(raw) ? raw : []);
+      const raw = await dataTrackingService.fetchAllTrackingEntries(trackerId, start, end);
+      // Extra guard: filter out any entries returned outside the window (API edge cases)
+      const filtered = (Array.isArray(raw) ? raw : []).filter(
+        (e) => (e.entry_date || "") >= start && (e.entry_date || "") <= end
+      );
+      setEntries(filtered);
     } catch {
       setEntries([]);
     } finally {
@@ -1313,12 +1926,30 @@ function GeneralInsights({ insights, trackerId }) {
     return () => { cancelled = true; };
   }, [trackerId]);
 
-  // Load comparison
-  const loadCompare = useCallback(async (period) => {
+  // Load comparison.
+  // wOff / mOff: how many weeks/months back we've navigated (0 = current period).
+  // For non-zero offsets on week/month, uses compare-custom with explicit date ranges.
+  const loadCompare = useCallback(async (period, wOff = 0, mOff = 0) => {
     if (!trackerId) return;
     try {
       setCompareLoading(true);
-      const res = await dataTrackingService.getCompare(trackerId, { comparison_type: period });
+      let res;
+      if (period === "week" && wOff > 0) {
+        const { target, prev } = getWeekRange(wOff);
+        res = await dataTrackingService.getCompareCustom(trackerId, {
+          target_start: target.start, target_end: target.end,
+          comparison_start: prev.start, comparison_end: prev.end,
+        });
+      } else if (period === "month" && mOff > 0) {
+        const { target, prev } = getMonthRange(mOff);
+        res = await dataTrackingService.getCompareCustom(trackerId, {
+          target_start: target.start, target_end: target.end,
+          comparison_start: prev.start, comparison_end: prev.end,
+        });
+      } else {
+        const apiType = period === "week" ? "week" : period === "month" ? "month" : "general";
+        res = await dataTrackingService.getCompare(trackerId, { comparison_type: apiType });
+      }
       setCompareData(res?.data || res);
     } catch { setCompareData(null); }
     finally { setCompareLoading(false); }
@@ -1327,10 +1958,44 @@ function GeneralInsights({ insights, trackerId }) {
   useEffect(() => { loadCompare("general"); }, [loadCompare]);
 
   const handleComparePeriodChange = (p) => {
-    const apiType = p === "week" ? "week" : p === "month" ? "month" : "general";
+    // Reset navigation offsets when switching period type
+    setCompareWeekOffset(0);
+    setCompareMonthOffset(0);
     setComparePeriod(p);
-    loadCompare(apiType);
+    loadCompare(p, 0, 0);
   };
+
+  // Keep a stable mutable ref so the PanResponder can always read the latest
+  // state and callbacks without being recreated on every render.
+  const compareNavStateRef = useRef({});
+  compareNavStateRef.current = { comparePeriod, compareWeekOffset, compareMonthOffset, loadCompare };
+
+  const comparePanResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, g) =>
+        Math.abs(g.dx) > 30 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
+      onPanResponderRelease: (_, g) => {
+        const { comparePeriod: p, compareWeekOffset: wOff, compareMonthOffset: mOff, loadCompare: lc } =
+          compareNavStateRef.current;
+        if (p === "general") return;
+        if (g.dx > 50) {
+          // Swipe right → go further back in time
+          if (p === "week") {
+            const n = wOff + 1; setCompareWeekOffset(n); lc("week", n, mOff);
+          } else if (p === "month") {
+            const n = mOff + 1; setCompareMonthOffset(n); lc("month", wOff, n);
+          }
+        } else if (g.dx < -50) {
+          // Swipe left → come forward (toward present), minimum offset 0
+          if (p === "week" && wOff > 0) {
+            const n = wOff - 1; setCompareWeekOffset(n); lc("week", n, mOff);
+          } else if (p === "month" && mOff > 0) {
+            const n = mOff - 1; setCompareMonthOffset(n); lc("month", wOff, n);
+          }
+        }
+      },
+    })
+  ).current;
 
   // Load patterns
   useEffect(() => {
@@ -1415,40 +2080,32 @@ function GeneralInsights({ insights, trackerId }) {
     [entries, evolutionGran]
   );
 
-  const fieldEntryCounts = useMemo(() => {
-    const counts = {};
-    Object.entries(entryCounts).forEach(([path, count]) => {
-      const fieldName = getFieldNameFromPath(path);
-      counts[fieldName] = (counts[fieldName] || 0) + count;
-    });
-    return counts;
-  }, [entryCounts]);
+  // Compute entry counts first so we can merge data-derived fields below.
+  const entryCountsByField = useMemo(
+    () => countEntriesByField(entries),
+    [entries]
+  );
 
+  const chartableFieldNames = useMemo(
+    () => fieldsWithLoggedData(entryCountsByField),
+    [entryCountsByField]
+  );
+
+  // Merge schema fields with any fields present in the logged data but missing
+  // from the schema (e.g. after schema changes or custom field deletions).
   const evolutionFieldOptions = useMemo(() => {
     const schemaFields = collectSchemaFields(formSchema);
-    if (schemaFields.length) return schemaFields;
-    return Object.keys(fieldEntryCounts)
-      .sort((a, b) => (fieldEntryCounts[b] || 0) - (fieldEntryCounts[a] || 0))
-      .map((fieldName) => ({
-        fieldName,
-        label: formatFieldCategory(fieldName),
-      }));
-  }, [formSchema, fieldEntryCounts]);
+    const schemaNames = new Set(schemaFields.map((f) => f.fieldName));
+    const dataOnly = Object.keys(entryCountsByField)
+      .filter((k) => entryCountsByField[k] > 0 && !schemaNames.has(k))
+      .map((k) => ({ fieldName: k, label: toTitleCase(k.replace(/_/g, " ")) }));
+    return [...schemaFields, ...dataOnly];
+  }, [formSchema, entryCountsByField]);
 
-  const chartableFieldNames = useMemo(() => {
-    const names = new Set();
-    numericSeries.forEach(({ fieldPath }) => names.add(getFieldNameFromPath(fieldPath)));
-    catSeries.forEach(({ fieldPath }) => names.add(getFieldNameFromPath(fieldPath)));
-    return names;
-  }, [numericSeries, catSeries]);
-
-  const defaultEvolutionField = useMemo(() => {
-    if (!evolutionFieldOptions.length) return null;
-    return evolutionFieldOptions.reduce((best, { fieldName }) => {
-      if (!best) return fieldName;
-      return (fieldEntryCounts[fieldName] || 0) > (fieldEntryCounts[best] || 0) ? fieldName : best;
-    }, null);
-  }, [evolutionFieldOptions, fieldEntryCounts]);
+  const defaultEvolutionField = useMemo(
+    () => pickDefaultField(evolutionFieldOptions, entryCountsByField),
+    [evolutionFieldOptions, entryCountsByField]
+  );
 
   useEffect(() => {
     if (!defaultEvolutionField) {
@@ -1539,6 +2196,10 @@ function GeneralInsights({ insights, trackerId }) {
           <Text style={s.noDataText}>
             No trackable fields yet — add fields to your tracker to see trends here.
           </Text>
+        ) : !chartableFieldNames.has(selectedEvolutionField) ? (
+          <Text style={s.noDataText}>
+            No entries logged for this field yet — start tracking to see trends here.
+          </Text>
         ) : !selectedFieldIsChartable ? (
           <Text style={s.noDataText}>
             Not enough entries for this field in this window — try a longer period or keep logging.
@@ -1546,7 +2207,7 @@ function GeneralInsights({ insights, trackerId }) {
         ) : (
           <View style={s.evoOptionsWrap}>
             {selectedNumericSeries.map(({ fieldPath, label, weeklyData }) => (
-              <NumericFieldChart key={fieldPath} label={label} weeklyData={weeklyData} />
+              <NumericFieldChart key={fieldPath} label={label} weeklyData={weeklyData} cycleMode={false} />
             ))}
             {selectedCatSeries.length > 0 && (
               <View style={[s.evoCatOptionsWrap, selectedNumericSeries.length > 0 && s.catDivider]}>
@@ -1560,15 +2221,13 @@ function GeneralInsights({ insights, trackerId }) {
       </Expandable>
 
       {/* 3 ── Comparisons */}
-      {compareLoading ? (
+      {compareLoading && comparePeriod === "general" ? (
         <SectionLoading title="Comparisons" icon="swap-vertical-outline" />
-      ) : !compareData || !compareData.has_comparison ? (
+      ) : !compareData && comparePeriod === "general" ? (
         <SectionEmpty
           title="Comparisons"
           icon="swap-vertical-outline"
-          message={compareData
-            ? "Not enough data for a comparison yet. Keep logging consistently."
-            : "Could not load comparison. Try again later."}
+          message="Could not load comparison. Try again later."
         />
       ) : (
         <Expandable
@@ -1601,29 +2260,111 @@ function GeneralInsights({ insights, trackerId }) {
             ))}
           </View>
 
-          {/* Summary insight */}
-          {(compareData.insights || []).slice(0, 1).map((ins, i) => (
-            <Text key={i} style={[s.detailText, { marginBottom: 12 }]}>{formatInsightText(ins)}</Text>
-          ))}
+          {/* Week / month swipe navigation — visible only in those modes */}
+          {(comparePeriod === "week" || comparePeriod === "month") && (() => {
+            const offset = comparePeriod === "week" ? compareWeekOffset : compareMonthOffset;
+            const rangeLabel = comparePeriod === "week"
+              ? getWeekRange(offset).label
+              : getMonthRange(offset).label;
+            const canGoForward = offset > 0;
+            const onPrev = () => {
+              if (comparePeriod === "week") {
+                const n = compareWeekOffset + 1; setCompareWeekOffset(n); loadCompare("week", n, compareMonthOffset);
+              } else {
+                const n = compareMonthOffset + 1; setCompareMonthOffset(n); loadCompare("month", compareWeekOffset, n);
+              }
+            };
+            const onNext = () => {
+              if (!canGoForward) return;
+              if (comparePeriod === "week") {
+                const n = compareWeekOffset - 1; setCompareWeekOffset(n); loadCompare("week", n, compareMonthOffset);
+              } else {
+                const n = compareMonthOffset - 1; setCompareMonthOffset(n); loadCompare("month", compareWeekOffset, n);
+              }
+            };
+            return (
+              <View style={s.compareNavRow}>
+                <TouchableOpacity onPress={onPrev} style={s.compareNavBtn} activeOpacity={0.7}>
+                  <Ionicons name="chevron-back" size={18} color={colors.primary} />
+                </TouchableOpacity>
+                <Text style={s.compareNavLabel}>{rangeLabel}</Text>
+                <TouchableOpacity
+                  onPress={onNext}
+                  style={[s.compareNavBtn, !canGoForward && s.compareNavBtnDisabled]}
+                  activeOpacity={canGoForward ? 0.7 : 1}
+                >
+                  <Ionicons name="chevron-forward" size={18} color={canGoForward ? colors.primary : colors.textLight} />
+                </TouchableOpacity>
+              </View>
+            );
+          })()}
 
-          {/* Numeric before/now comparison bars */}
-          <ComparisonBars changes={allChanges} />
-
-          {/* All non-stable changes */}
-          {allChanges.length > 0 ? (
-            <View style={[s.changesList, allChanges.length > 0 && { borderTopWidth: 1, borderTopColor: "#EDE5D8", paddingTop: 12 }]}>
-              {allChanges.map(([field, data]) => (
-                <ChangeRow key={field} fieldPath={field} changeData={data} />
-              ))}
+          {/* Swipe-gesture layer wraps actual data so users can swipe left/right */}
+          {(comparePeriod === "week" || comparePeriod === "month") ? (
+            <View {...comparePanResponder.panHandlers}>
+              {compareLoading ? (
+                <View style={s.sectionLoadingRow}>
+                  <ActivityIndicator size="small" color={colors.primary} />
+                  <Text style={s.sectionLoadingText}>Loading…</Text>
+                </View>
+              ) : !compareData || !compareData.has_comparison ? (
+                <Text style={s.noDataText}>
+                  No entries were made this {comparePeriod} — swipe right to go back or left to come forward.
+                </Text>
+              ) : (
+                <>
+                  {(compareData.insights || []).slice(0, 1).map((ins, i) => (
+                    <Text key={i} style={[s.detailText, { marginBottom: 12 }]}>{formatInsightText(ins)}</Text>
+                  ))}
+                  <ComparisonBars changes={allChanges} />
+                  {allChanges.length > 0 ? (
+                    <View style={[s.changesList, { borderTopWidth: 1, borderTopColor: "#EDE5D8", paddingTop: 12 }]}>
+                      {allChanges.map(([field, data]) => (
+                        <ChangeRow key={field} fieldPath={field} changeData={data} />
+                      ))}
+                    </View>
+                  ) : (
+                    <Text style={s.noDataText}>
+                      Everything is tracking consistently — no notable shifts for this {comparePeriod}.
+                    </Text>
+                  )}
+                </>
+              )}
             </View>
-          ) : compareData?.top_changes && Object.keys(compareData.top_changes).length > 0 ? (
-            <Text style={s.noDataText}>
-              Everything is tracking consistently — no notable shifts for this period.
-            </Text>
           ) : (
-            <Text style={s.noDataText}>
-              No field changes detected yet. Keep logging to see how your habits shift over time.
-            </Text>
+            /* Baseline (general) mode — no swipe nav */
+            compareLoading ? (
+              <View style={s.sectionLoadingRow}>
+                <ActivityIndicator size="small" color={colors.primary} />
+                <Text style={s.sectionLoadingText}>Loading…</Text>
+              </View>
+            ) : !compareData || !compareData.has_comparison ? (
+              <Text style={s.noDataText}>
+                Not enough data for a comparison yet. Keep logging consistently.
+              </Text>
+            ) : (
+              <>
+                {(compareData.insights || []).slice(0, 1).map((ins, i) => (
+                  <Text key={i} style={[s.detailText, { marginBottom: 12 }]}>{formatInsightText(ins)}</Text>
+                ))}
+                <ComparisonBars changes={allChanges} />
+                {allChanges.length > 0 ? (
+                  <View style={[s.changesList, { borderTopWidth: 1, borderTopColor: "#EDE5D8", paddingTop: 12 }]}>
+                    {allChanges.map(([field, data]) => (
+                      <ChangeRow key={field} fieldPath={field} changeData={data} />
+                    ))}
+                  </View>
+                ) : compareData?.top_changes && Object.keys(compareData.top_changes).length > 0 ? (
+                  <Text style={s.noDataText}>
+                    Everything is tracking consistently — no notable shifts for this period.
+                  </Text>
+                ) : (
+                  <Text style={s.noDataText}>
+                    No field changes detected yet. Keep logging to see how your habits shift over time.
+                  </Text>
+                )}
+              </>
+            )
           )}
         </Expandable>
       )}
@@ -1704,6 +2445,617 @@ function GeneralInsights({ insights, trackerId }) {
             Tap a pattern to see when it happens — charts and dates below each one:
           </Text>
           {patternData.overall_insight ? (
+            <Text style={[s.detailText, { marginBottom: 10 }]}>{patternData.overall_insight}</Text>
+          ) : null}
+          {patternItems.map((item, i) => (
+            <PatternItemRow
+              key={item.id || i}
+              item={item}
+              expanded={expandedPatternId === item.id}
+              onToggle={() => setExpandedPatternId((prev) => (prev === item.id ? null : item.id))}
+            />
+          ))}
+        </Expandable>
+      )}
+    </View>
+  );
+}
+
+// ─── Period-aware Fields Insights (Fields tab for Period Tracker) ─────────────
+function PeriodFieldInsights({ insights, trackerId, cycleHistory }) {
+  const [entries,          setEntries]          = useState(null);
+  const [entriesLoading,   setEntriesLoading]   = useState(true);
+  const [compareData,      setCompareData]      = useState(null);
+  const [compareLoading,   setCompareLoading]   = useState(true);
+  const [compareMode,      setCompareMode]      = useState("prev_cycle");
+  const [evoMode,          setEvoMode]          = useState("week");
+  const [phaseLoading,     setPhaseLoading]     = useState(false);
+  const [patternData,      setPatternData]      = useState(null);
+  const [patternLoading,   setPatternLoading]   = useState(true);
+  const [expandedPatternId,setExpandedPatternId]= useState(null);
+  const [formSchema,       setFormSchema]       = useState(null);
+  const [selectedEvoField, setSelectedEvoField] = useState(null);
+  const [selectedPhaseField,setSelectedPhaseField]=useState(null);
+  const [phaseDataByOption, setPhaseDataByOption] = useState([]);
+  const [directCorr,       setDirectCorr]       = useState(null);
+  const [corrLoading,      setCorrLoading]      = useState(true);
+
+  // Sort cycles chronologically
+  const sortedCycles = useMemo(
+    () =>
+      [...(cycleHistory || [])]
+        .filter((c) => c.cycle_start_date || c.period_start_date)
+        .sort(
+          (a, b) =>
+            new Date(a.cycle_start_date || a.period_start_date) -
+            new Date(b.cycle_start_date || b.period_start_date)
+        ),
+    [cycleHistory]
+  );
+  const currentCycle  = useMemo(() => sortedCycles.find((c) => !c.cycle_end_date), [sortedCycles]);
+  const completedCycles = useMemo(() => sortedCycles.filter((c) => c.cycle_end_date), [sortedCycles]);
+  const prevCycle     = completedCycles[completedCycles.length - 1] || null;
+
+  // Load all entries from the first cycle start (needed for cycle-based grouping)
+  const loadEntries = useCallback(async () => {
+    if (!trackerId) return;
+    const end = new Date().toISOString().split("T")[0];
+    const lookback180 = new Date(Date.now() - 180 * 86400000).toISOString().split("T")[0];
+    const first = sortedCycles[0];
+    const cycleStart = first
+      ? new Date(first.cycle_start_date || first.period_start_date).toISOString().split("T")[0]
+      : lookback180;
+    // Always load at least 6 months so weekly charts have enough history
+    const startDate = cycleStart < lookback180 ? cycleStart : lookback180;
+    try {
+      setEntriesLoading(true);
+      const raw = await dataTrackingService.fetchAllTrackingEntries(trackerId, startDate, end);
+      setEntries(Array.isArray(raw) ? raw : []);
+    } catch {
+      setEntries([]);
+    } finally {
+      setEntriesLoading(false);
+    }
+  }, [trackerId, sortedCycles]);
+
+  useEffect(() => { loadEntries(); }, [loadEntries]);
+
+  // Form schema (for field picker)
+  useEffect(() => {
+    if (!trackerId) return;
+    let cancelled = false;
+    trackerService.getFormSchema(trackerId)
+      .then((res) => { if (!cancelled) setFormSchema(res?.data || res); })
+      .catch(() => { if (!cancelled) setFormSchema(null); });
+    return () => { cancelled = true; };
+  }, [trackerId]);
+
+  // Comparison loading
+  const loadCompare = useCallback(async (mode) => {
+    if (!trackerId) return;
+    try {
+      setCompareLoading(true);
+      let res;
+      if (mode === "prev_cycle") {
+        if (!currentCycle || !prevCycle) {
+          setCompareData({ has_comparison: false });
+          setCompareLoading(false);
+          return;
+        }
+        const today      = new Date().toISOString().split("T")[0];
+        const targetStart = currentCycle.cycle_start_date || currentCycle.period_start_date;
+        const compStart   = prevCycle.cycle_start_date || prevCycle.period_start_date;
+        const compEnd     = prevCycle.cycle_end_date;
+        res = await dataTrackingService.getCompareCustom(trackerId, {
+          target_start: targetStart, target_end: today,
+          comparison_start: compStart, comparison_end: compEnd,
+        });
+      } else if (mode === "avg_cycle") {
+        if (!currentCycle) {
+          setCompareData({ has_comparison: false });
+          setCompareLoading(false);
+          return;
+        }
+        const today        = new Date().toISOString().split("T")[0];
+        const targetStart  = currentCycle.cycle_start_date || currentCycle.period_start_date;
+        const tsDate       = new Date(targetStart);
+        const compEnd      = new Date(tsDate - 86400000).toISOString().split("T")[0];
+        const compStart    = new Date(tsDate - 90 * 86400000).toISOString().split("T")[0];
+        res = await dataTrackingService.getCompareCustom(trackerId, {
+          target_start: targetStart, target_end: today,
+          comparison_start: compStart, comparison_end: compEnd,
+        });
+      } else {
+        // "week" fallback
+        res = await dataTrackingService.getCompare(trackerId, { comparison_type: "week" });
+      }
+      setCompareData(res?.data || res);
+    } catch {
+      setCompareData(null);
+    } finally {
+      setCompareLoading(false);
+    }
+  }, [trackerId, currentCycle, prevCycle]);
+
+  useEffect(() => { loadCompare("prev_cycle"); }, [loadCompare]);
+
+  const handleCompareModeChange = (mode) => {
+    setCompareMode(mode);
+    loadCompare(mode);
+  };
+
+  // Phase breakdown — fetch all options for the selected parent field
+  const schemaFieldGroups = useMemo(() => getSchemaFieldGroups(formSchema), [formSchema]);
+
+  useEffect(() => {
+    if (!trackerId || !selectedPhaseField) {
+      setPhaseDataByOption([]);
+      return;
+    }
+    let cancelled = false;
+    setPhaseLoading(true);
+    setPhaseDataByOption([]);
+
+    const fieldGroup = schemaFieldGroups.find((f) => f.fieldName === selectedPhaseField);
+    const options = fieldGroup?.options?.length
+      ? fieldGroup.options
+      : collectEntryOptionPaths(entries, 1)
+          .filter((p) => p.fieldName.startsWith(`${selectedPhaseField}.`))
+          .map((p) => ({
+            optionName: p.fieldName.split(".")[1],
+            label: formatFieldPath(p.fieldName),
+            path: p.fieldName,
+          }));
+
+    if (!options.length) {
+      setPhaseLoading(false);
+      return;
+    }
+
+    Promise.all(
+      options.map(async (opt) => {
+        const path = opt.path;
+        const label = formatFieldPath(path);
+        try {
+          const res = await dataTrackingService.getSymptomsbyPhase(
+            trackerId,
+            selectedPhaseField,
+            6,
+            opt.optionName
+          );
+          let data = res?.data || res;
+          if (!hasPhaseAnalysis(data) && entries?.length) {
+            data = computePhaseBreakdownFromEntries(
+              entries,
+              cycleHistory,
+              selectedPhaseField,
+              opt.optionName
+            );
+          }
+          return { path, label, data };
+        } catch {
+          const data = entries?.length
+            ? computePhaseBreakdownFromEntries(
+                entries,
+                cycleHistory,
+                selectedPhaseField,
+                opt.optionName
+              )
+            : null;
+          return { path, label, data };
+        }
+      })
+    )
+      .then((results) => { if (!cancelled) setPhaseDataByOption(results); })
+      .finally(() => { if (!cancelled) setPhaseLoading(false); });
+
+    return () => { cancelled = true; };
+  }, [trackerId, selectedPhaseField, schemaFieldGroups, entries, cycleHistory]);
+
+  // Patterns
+  useEffect(() => {
+    if (!trackerId) return;
+    let cancelled = false;
+    setPatternLoading(true);
+    dataTrackingService.getPatternSummary(trackerId, [], 6)
+      .then((res) => { if (!cancelled) setPatternData(res?.data || res); })
+      .catch((err) => {
+        if (!cancelled) setPatternData({
+          patterns_found: 0, total_patterns_detected: 0,
+          message: err?.response?.data?.error || "Could not load patterns.",
+        });
+      })
+      .finally(() => { if (!cancelled) setPatternLoading(false); });
+    return () => { cancelled = true; };
+  }, [trackerId]);
+
+  // Correlations
+  useEffect(() => {
+    if (!trackerId) return;
+    let cancelled = false;
+    setCorrLoading(true);
+    dataTrackingService.getCorrelations(trackerId, { months: 6, min_correlation: 0.2 })
+      .then((res) => { if (!cancelled) setDirectCorr(res?.data || res); })
+      .catch(() => { if (!cancelled) setDirectCorr(null); })
+      .finally(() => { if (!cancelled) setCorrLoading(false); });
+    return () => { cancelled = true; };
+  }, [trackerId]);
+
+  // ── Process entries based on selected evolution mode ──────────────────────
+  const isCycleMode = evoMode !== "week";
+  const cycleLookback = evoMode === "3c" ? 3 : evoMode === "6c" ? 6 : null;
+
+  // "By Week" mode shows the last 7 days as individual daily points (rolling window).
+  // Cycle modes use all loaded entries for per-cycle assignment.
+  const sevenDayEntries = useMemo(() => {
+    if (!entries) return null;
+    const now = new Date();
+    const cutoff = localDateStr(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7));
+    const today = localDateStr(now);
+    return entries.filter((e) => {
+      const d = e.entry_date || e.date || "";
+      return d >= cutoff && d <= today;
+    });
+  }, [entries]);
+
+  const { numericSeries: weeklyNumeric, catSeries: weeklyCat, entryCounts } = useMemo(
+    () => (!isCycleMode && sevenDayEntries ? processEntries(sevenDayEntries, "day") : { numericSeries: [], catSeries: [], entryCounts: {} }),
+    [sevenDayEntries, isCycleMode]
+  );
+
+  const { numericSeries: cycleNumeric, catSeries: cycleCat } = useMemo(
+    () => (isCycleMode && entries ? processByCycles(entries, sortedCycles, cycleLookback) : { numericSeries: [], catSeries: [] }),
+    [entries, isCycleMode, sortedCycles, cycleLookback]
+  );
+
+  const numericSeries = isCycleMode ? cycleNumeric : weeklyNumeric;
+  const catSeries     = isCycleMode ? cycleCat     : weeklyCat;
+
+  // entryCountsByField must be computed BEFORE fieldOptions so we can merge
+  // data-derived field names into the picker (handles the contextual period schema
+  // which only exposes fields for the current cycle phase — data logged in a
+  // different phase would otherwise be invisible).
+  const entryCountsByField = useMemo(
+    () => countEntriesByField(entries),
+    [entries]
+  );
+
+  const fieldsWithData = useMemo(
+    () => fieldsWithLoggedData(entryCountsByField),
+    [entryCountsByField]
+  );
+
+  // Merge schema fields with any fields found in logged data that the current
+  // contextual schema doesn't include (e.g. "symptoms" logged during period
+  // won't be in the "not_menstruating" schema but the user still has that data).
+  const fieldOptions = useMemo(
+    () => buildMergedFieldOptions(formSchema, entries),
+    [formSchema, entries]
+  );
+
+  const defaultField = useMemo(
+    () => pickDefaultField(fieldOptions, entryCountsByField),
+    [fieldOptions, entryCountsByField]
+  );
+
+  useEffect(() => {
+    setSelectedEvoField((prev) => {
+      if (!defaultField) return null;
+      if (prev && fieldOptions.some((o) => o.fieldName === prev)) return prev;
+      return defaultField;
+    });
+  }, [defaultField, fieldOptions]);
+
+  useEffect(() => {
+    setSelectedPhaseField((prev) => {
+      if (!defaultField) return null;
+      if (prev && fieldOptions.some((o) => o.fieldName === prev)) return prev;
+      return defaultField;
+    });
+  }, [defaultField, fieldOptions]);
+
+  const selectedNumericSeries = numericSeries.filter(
+    (sr) => getFieldNameFromPath(sr.fieldPath) === selectedEvoField
+  );
+  const selectedCatSeries = catSeries.filter(
+    (sr) => getFieldNameFromPath(sr.fieldPath) === selectedEvoField
+  );
+  const selectedFieldIsChartable = selectedNumericSeries.length > 0 || selectedCatSeries.length > 0;
+
+  const summary      = insights?.tracking_summary;
+  const correlations = directCorr ?? insights?.correlations;
+  const allChanges   = Object.entries(compareData?.top_changes || {}).filter(
+    ([, v]) => v.change_direction !== "stable" && v.changed !== false
+  );
+  const significantChanges = allChanges.filter(([, v]) => v.is_significant);
+
+  const hasPatternResults = Boolean(
+    patternData && (
+      (patternData.pattern_items || []).length > 0 ||
+      patternData.patterns_found > 0 ||
+      patternData.total_patterns_detected > 0 ||
+      Object.keys(patternData.field_patterns || {}).length > 0
+    )
+  );
+  const rawPatternItems = useMemo(() => {
+    if (!patternData) return [];
+    if (patternData.pattern_items?.length) return patternData.pattern_items;
+    return Object.entries(patternData.field_patterns || {}).map(([fp, p]) => ({
+      id: fp, field_path: fp, pattern_type: "day_of_week",
+      title: "Pattern", insight: p.key_insight,
+      confidence: p.pattern_strength || "medium", visualization: null,
+    }));
+  }, [patternData]);
+  const patternItems = useMemo(() => mergePatternsByField(rawPatternItems), [rawPatternItems]);
+
+  return (
+    <View style={s.sections}>
+
+      {/* 1 ── Summary stats */}
+      {summary && (
+        <View style={s.statsRow}>
+          <StatBox icon="layers-outline" value={summary.total_entries} label="Entries" />
+          <View style={s.statsDiv} />
+          <StatBox icon="calendar-outline" value={summary.tracking_days} label="Days tracked" color={colors.textSecondary} />
+          {summary.first_entry && (
+            <>
+              <View style={s.statsDiv} />
+              <StatBox icon="time-outline" value={summary.first_entry?.slice(0, 7)} label="Since" color={colors.textLight} />
+            </>
+          )}
+        </View>
+      )}
+
+      {/* 2 ── Time Evolution (cycle-aware) */}
+      <Expandable icon="trending-up-outline" iconColor={colors.primary} title="Time Evolution">
+        {fieldOptions.length > 0 && (
+          <View style={s.evoFieldDropdownRow}>
+            <EvolutionFieldDropdown
+              options={fieldOptions}
+              selectedFieldName={selectedEvoField}
+              chartableFieldNames={fieldsWithData}
+              onSelect={setSelectedEvoField}
+            />
+          </View>
+        )}
+
+        {/* Cycle / week mode selector */}
+        <View style={s.periodSel}>
+          {CYCLE_EVO_MODES.map((o) => (
+            <TouchableOpacity
+              key={o.id}
+              onPress={() => setEvoMode(o.id)}
+              style={[s.periodOpt, evoMode === o.id && s.periodOptActive]}
+              activeOpacity={0.7}
+            >
+              <Text style={[s.periodOptText, evoMode === o.id && s.periodOptTextActive]}>{o.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        <Text style={[s.detailText, { marginBottom: 8, color: colors.textLight }]}>
+          {evoMode === "week"
+            ? "Daily entries — last 7 days"
+            : (() => {
+                const n = sortedCycles.length;
+                const lookback = evoMode === "3c" ? 3 : evoMode === "6c" ? 6 : n;
+                const shown = Math.min(lookback, n);
+                const first = n - shown + 1;
+                if (shown === n) return `All ${n} cycle${n !== 1 ? "s" : ""} — C1 (oldest) → C${n} (most recent)`;
+                return `Last ${shown} cycle${shown !== 1 ? "s" : ""} — C${first} → C${n} (most recent)`;
+              })()}
+        </Text>
+
+        {entriesLoading ? (
+          <View style={s.sectionLoadingRow}>
+            <ActivityIndicator size="small" color={colors.primary} />
+            <Text style={s.sectionLoadingText}>Loading…</Text>
+          </View>
+        ) : !selectedEvoField ? (
+          <Text style={s.noDataText}>No trackable fields yet — add fields to see trends here.</Text>
+        ) : !fieldsWithData.has(selectedEvoField) ? (
+          <Text style={s.noDataText}>No entries logged for this field yet — start tracking to see trends here.</Text>
+        ) : !selectedFieldIsChartable ? (
+          <Text style={s.noDataText}>
+            {isCycleMode
+              ? `No data for this field in the selected ${evoMode === "3c" ? "3" : evoMode === "6c" ? "6" : "all"} cycle${evoMode !== "all_c" ? "s" : "s"} — try a wider range or By Week.`
+              : "No entries logged in the last 7 days for this field — keep tracking or try a cycle view."}
+          </Text>
+        ) : (
+          <View style={s.evoOptionsWrap}>
+            {selectedNumericSeries.map(({ fieldPath, label, weeklyData }) => (
+              <NumericFieldChart key={fieldPath} label={label} weeklyData={weeklyData} cycleMode={isCycleMode} />
+            ))}
+            {selectedCatSeries.length > 0 && (
+              <View style={[s.evoCatOptionsWrap, selectedNumericSeries.length > 0 && s.catDivider]}>
+                {selectedCatSeries.map(({ fieldPath, label, distribution }) => (
+                  <CatDistribution key={fieldPath} label={label} distribution={distribution} />
+                ))}
+              </View>
+            )}
+          </View>
+        )}
+      </Expandable>
+
+      {/* 3 ── Phase Breakdown */}
+      <Expandable
+        icon="moon-outline"
+        iconColor={colors.menstrual}
+        title="Phase Breakdown"
+        badge={<Badge label="Cycle phases" color={colors.menstrual} bg="#FFF0F3" />}
+      >
+        <Text style={[s.detailText, { marginBottom: 6 }]}>
+          See how a tracked field behaves across your cycle phases. Pick a field below — each option
+          shows its average or frequency during the Period, Follicular, Ovulation, and Luteal phases.
+        </Text>
+        <Text style={[s.detailText, { marginBottom: 12, color: colors.textLight }]}>
+          Tip: fields shown in grey haven't been logged yet.
+        </Text>
+
+        {fieldOptions.length > 0 ? (
+          <View style={s.evoFieldDropdownRow}>
+            <EvolutionFieldDropdown
+              options={fieldOptions}
+              selectedFieldName={selectedPhaseField}
+              chartableFieldNames={fieldsWithData}
+              onSelect={setSelectedPhaseField}
+            />
+          </View>
+        ) : (
+          <Text style={s.noDataText}>No trackable fields found in your tracker schema.</Text>
+        )}
+
+        {!selectedPhaseField ? (
+          <Text style={s.noDataText}>Select a field above to get started.</Text>
+        ) : !fieldsWithData.has(selectedPhaseField) ? (
+          <Text style={s.noDataText}>No entries logged for this field yet — start logging to see how it changes across your cycle.</Text>
+        ) : phaseLoading ? (
+          <View style={s.sectionLoadingRow}>
+            <ActivityIndicator size="small" color={colors.menstrual} />
+            <Text style={s.sectionLoadingText}>Analysing phases…</Text>
+          </View>
+        ) : phaseDataByOption.length === 0 ? (
+          <Text style={s.noDataText}>No options found for this field. Make sure your tracker has options configured.</Text>
+        ) : (
+          <View style={s.phaseOptionsWrap}>
+            {phaseDataByOption.map(({ path, label, data }, i) => (
+              <View key={path} style={[s.phaseOptionBlock, i > 0 && s.phaseOptionBlockDivider]}>
+                <PhaseBreakdownViz phaseData={data} fieldName={path} />
+              </View>
+            ))}
+          </View>
+        )}
+      </Expandable>
+
+      {/* 4 ── Cycle Comparison */}
+      <Expandable
+        icon="swap-vertical-outline"
+        iconColor={colors.primary}
+        title="Comparison"
+        badge={
+          !compareLoading && compareData?.has_comparison && significantChanges.length > 0 ? (
+            <Badge label={`${significantChanges.length} significant`} color={colors.primary} />
+          ) : null
+        }
+      >
+        {/* Mode selector — always visible */}
+        <View style={s.periodSel}>
+          {CYCLE_COMPARE_MODES.map((o) => (
+            <TouchableOpacity
+              key={o.id}
+              onPress={() => handleCompareModeChange(o.id)}
+              style={[s.periodOpt, compareMode === o.id && s.periodOptActive]}
+              activeOpacity={0.7}
+            >
+              <Text style={[s.periodOptText, compareMode === o.id && s.periodOptTextActive]}>{o.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <Text style={[s.detailText, { marginBottom: 8, color: colors.textLight }]}>
+          {compareMode === "prev_cycle"
+            ? "This cycle vs. your previous cycle"
+            : compareMode === "avg_cycle"
+              ? "This cycle vs. your 3-month average"
+              : "This week vs. last week"}
+        </Text>
+
+        {compareLoading ? (
+          <View style={s.sectionLoadingRow}>
+            <ActivityIndicator size="small" color={colors.primary} />
+            <Text style={s.sectionLoadingText}>Loading comparison…</Text>
+          </View>
+        ) : !compareData || !compareData.has_comparison ? (
+          <Text style={s.noDataText}>
+            {compareMode === "prev_cycle" && (!currentCycle || !prevCycle)
+              ? "Need at least 2 logged cycles to compare."
+              : compareMode === "avg_cycle" && !currentCycle
+                ? "No active cycle found."
+                : compareData
+                  ? "Not enough data for this comparison yet. Keep logging consistently."
+                  : "Could not load comparison. Try again later."}
+          </Text>
+        ) : (
+          <>
+            {(compareData.insights || []).slice(0, 1).map((ins, i) => (
+              <Text key={i} style={[s.detailText, { marginBottom: 12 }]}>{formatInsightText(ins)}</Text>
+            ))}
+
+            <ComparisonBars changes={allChanges} />
+
+            {allChanges.length > 0 ? (
+              <View style={[s.changesList, { borderTopWidth: 1, borderTopColor: "#EDE5D8", paddingTop: 12 }]}>
+                {allChanges.map(([field, data]) => (
+                  <ChangeRow key={field} fieldPath={field} changeData={data} />
+                ))}
+              </View>
+            ) : compareData?.top_changes && Object.keys(compareData.top_changes).length > 0 ? (
+              <Text style={s.noDataText}>No notable shifts — everything tracking consistently.</Text>
+            ) : (
+              <Text style={s.noDataText}>
+                No field changes detected yet. Keep logging to see how your habits shift across cycles.
+              </Text>
+            )}
+          </>
+        )}
+      </Expandable>
+
+      {/* 5 ── Correlations */}
+      {corrLoading ? (
+        <SectionLoading title="Correlations" icon="git-branch-outline" />
+      ) : !correlations || !correlations.has_correlations ? (
+        <SectionEmpty
+          title="Correlations"
+          icon="git-branch-outline"
+          message={correlations?.message || "Keep logging consistently — correlations appear once patterns emerge."}
+        />
+      ) : (
+        <Expandable
+          icon="git-branch-outline"
+          iconColor={colors.primary}
+          title="Correlations"
+          badge={<Badge label={`${(correlations.correlations || correlations.top_correlations || []).length} found`} color={colors.primary} />}
+        >
+          <Text style={[s.detailText, { marginBottom: 10 }]}>How your tracked fields relate to each other:</Text>
+          {(correlations.correlations || correlations.top_correlations || []).slice(0, 5).map((corr, i) => {
+            const str    = corr.strength != null ? Math.abs(corr.strength) : Math.abs(corr.correlation ?? 0);
+            const strPct = Math.round(str * 100);
+            const barColor = strPct >= 60 ? colors.primary : strPct >= 35 ? colors.warning : colors.textLight;
+            return (
+              <View key={i} style={[s.corrItem, i > 0 && s.corrItemBorder]}>
+                {corr.scope === "within_field" ? (
+                  <View style={{ marginBottom: 4 }}><Badge label="Same field" color={colors.textSecondary} /></View>
+                ) : null}
+                <Text style={s.corrText}>{formatInsightText(corr.insight || "")}</Text>
+                <View style={s.corrMeta}>
+                  <View style={s.corrBarWrap}><ProgressBar value={strPct} max={100} color={barColor} h={5} /></View>
+                  <Text style={[s.corrStrength, { color: barColor }]}>{strPct}%</Text>
+                </View>
+              </View>
+            );
+          })}
+        </Expandable>
+      )}
+
+      {/* 6 ── Patterns (cycle_phases pattern type is highlighted here) */}
+      {patternLoading ? (
+        <SectionLoading title="Patterns" icon="repeat-outline" />
+      ) : !hasPatternResults ? (
+        <SectionEmpty
+          title="Patterns"
+          icon="repeat-outline"
+          message={patternData?.message || "Keep tracking consistently to detect recurring patterns."}
+        />
+      ) : (
+        <Expandable
+          icon="repeat-outline"
+          iconColor={colors.textSecondary}
+          title="Patterns"
+          badge={<Badge label={`${patternItems.length}`} color={colors.textSecondary} />}
+        >
+          <Text style={[s.detailText, { marginBottom: 10 }]}>
+            Tap a pattern to see when it happens — including cycle phase patterns:
+          </Text>
+          {patternData?.overall_insight ? (
             <Text style={[s.detailText, { marginBottom: 10 }]}>{patternData.overall_insight}</Text>
           ) : null}
           {patternItems.map((item, i) => (
@@ -1930,7 +3282,7 @@ export default function InsightsSection({
       ) : activeTab === "trends" ? (
         <PeriodTrendsContent cycleHistory={cycleHistory} />
       ) : (
-        <GeneralInsights insights={insights} trackerId={trackerId} />
+        <PeriodFieldInsights insights={insights} trackerId={trackerId} cycleHistory={cycleHistory} />
       )}
     </View>
   );
@@ -2038,12 +3390,40 @@ const s = StyleSheet.create({
   catDonutLegendLabel: { flex: 1, fontSize: 12, color: colors.text },
   catDonutLegendPct: { fontSize: 11, fontWeight: "700", color: colors.textSecondary, width: 36, textAlign: "right" },
 
+  // Phase breakdown (period tracker Fields tab)
+  phaseFieldHeader: { marginBottom: 4 },
+  phaseFieldHeaderLabel: { fontSize: 14, fontWeight: "700", color: colors.text },
+  phaseFieldHeaderSub: { fontSize: 11, color: colors.textLight, marginTop: 2 },
+  phaseDetailRow: { borderRadius: 10, padding: 10, marginBottom: 2 },
+  phaseDetailName: { fontSize: 13, fontWeight: "600" },
+  phaseDetailStat: { fontSize: 12, color: colors.textSecondary },
+  phaseDetailStatVal: { fontWeight: "600", color: colors.text },
+  phaseBoolBar: { height: 6, backgroundColor: "#EDE5D8", borderRadius: 99, overflow: "hidden", width: "100%" },
+  phaseBoolFill: { height: 6, borderRadius: 99 },
+  phaseOptionsWrap: { gap: 20 },
+  phaseOptionBlock: { paddingTop: 4 },
+  phaseOptionBlockDivider: {
+    borderTopWidth: 1,
+    borderTopColor: "#F0E8D8",
+    paddingTop: 16,
+  },
+
   // Period selector
   periodSel: { flexDirection: "row", gap: 6, marginBottom: 14 },
   periodOpt: { flex: 1, paddingVertical: 7, borderRadius: 10, alignItems: "center", backgroundColor: "#F3EFE7" },
   periodOptActive: { backgroundColor: colors.primary },
   periodOptText: { fontSize: 12, fontWeight: "500", color: colors.textLight },
   periodOptTextActive: { color: "#fff", fontWeight: "700" },
+
+  // Week / month navigation row (arrows + date label)
+  compareNavRow: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    backgroundColor: "#F3EFE7", borderRadius: 10, paddingHorizontal: 4, paddingVertical: 4,
+    marginBottom: 14,
+  },
+  compareNavBtn: { padding: 6 },
+  compareNavBtnDisabled: { opacity: 0.3 },
+  compareNavLabel: { fontSize: 13, fontWeight: "600", color: colors.text, flex: 1, textAlign: "center" },
 
   // Time evolution field dropdown
   evoFieldDropdownWrap: { position: "relative", zIndex: 20, maxWidth: 160 },
@@ -2076,6 +3456,25 @@ const s = StyleSheet.create({
     right: -400,
     bottom: -400,
     zIndex: 21,
+  },
+  evoFieldDropdownModalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.25)",
+    justifyContent: "center",
+    paddingHorizontal: 32,
+  },
+  evoFieldDropdownModalMenu: {
+    maxHeight: 320,
+    backgroundColor: colors.background,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#EDE5D8",
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 12,
   },
   evoFieldDropdownMenu: {
     position: "absolute",

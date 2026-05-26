@@ -1002,7 +1002,7 @@ class CorrelationService:
         """Rank correlations: cross-field before within-field, then type, frequency, strength."""
         correlations.sort(
             key=lambda x: (
-                0 if x.get('scope') == 'cross_field' else 1,
+                1 if x.get('scope') == 'cross_field' else 0,   # cross_field ranks higher
                 2 if x.get('type') == 'triple' else 1,
                 x.get('observation_count', 0),
                 abs(x.get('strength', 0)),
@@ -1082,8 +1082,14 @@ class CorrelationService:
         """
         triple_correlations = []
         
-        # Limit fields to avoid explosion (focus on most tracked ones)
-        frequent_fields = all_fields[:15] if len(all_fields) > 15 else all_fields
+        # Prioritise most-frequently-logged fields (same as dual correlations) so
+        # alphabetically-late fields like sleep/stress/symptoms are not silently cut off.
+        sorted_fields = sorted(
+            all_fields,
+            key=lambda f: len(field_data_by_date.get(f, {})),
+            reverse=True
+        )
+        frequent_fields = sorted_fields[:20] if len(sorted_fields) > 20 else sorted_fields
         
         # Try each field as outcome
         for outcome_field in frequent_fields:
@@ -1196,9 +1202,22 @@ class CorrelationService:
     ) -> List[Dict[str, Any]]:
         """Find dual correlations ranked by observation frequency."""
         dual_correlations = []
-        
+
+        # Sort fields by how frequently they appear so the most-logged fields
+        # (baseline fields logged every day) are always analysed first, regardless
+        # of alphabetical order.  This prevents alphabetically-late fields like
+        # sleep/stress/symptoms from being silently excluded by the cap below.
+        sorted_fields = sorted(
+            all_fields,
+            key=lambda f: len(field_data_by_date.get(f, {})),
+            reverse=True
+        )
+
+        # Cap at 20 fields to keep complexity manageable (C(20,2)=190 pairs)
+        candidate_fields = sorted_fields[:20]
+
         # Analyze pairs
-        for field1, field2 in combinations(all_fields[:15], 2):
+        for field1, field2 in combinations(candidate_fields, 2):
             # Skip same-parent fields
             if '.' in field1 and '.' in field2:
                 if field1.split('.')[0] == field2.split('.')[0]:
