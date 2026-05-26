@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, render_template_string
 from flask_jwt_extended import create_access_token, create_refresh_token, get_jwt_identity, jwt_required
 from marshmallow import ValidationError
 from app import db
@@ -223,3 +223,203 @@ def obtain_optional_user_info():
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': f'Failed to update user info: {str(e)}'}), 500
+
+
+@auth_bp.route('/delete-account', methods=['DELETE'])
+@jwt_required()
+def delete_account():
+    """
+    Permanently delete the authenticated user's account and all associated data.
+    Requires a valid JWT access token.
+    """
+    try:
+        current_user_id = get_jwt_identity()
+        user = User.query.filter_by(id=current_user_id).first()
+
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+
+        db.session.delete(user)
+        db.session.commit()
+
+        return jsonify({'message': 'Account and all associated data have been permanently deleted.'}), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Failed to delete account: {str(e)}'}), 500
+
+
+_DELETE_PAGE_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Delete Account – Health Tracker</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f5f7fa;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 24px;
+    }
+    .card {
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+      max-width: 480px;
+      width: 100%;
+      padding: 40px 36px;
+    }
+    .icon { font-size: 48px; text-align: center; margin-bottom: 16px; }
+    h1 { font-size: 22px; font-weight: 700; color: #1a1a2e; text-align: center; margin-bottom: 8px; }
+    .subtitle { font-size: 14px; color: #666; text-align: center; margin-bottom: 28px; line-height: 1.5; }
+    label { display: block; font-size: 13px; font-weight: 600; color: #444; margin-bottom: 6px; }
+    input[type=email], input[type=password] {
+      width: 100%;
+      padding: 12px 14px;
+      border: 1.5px solid #e0e0e0;
+      border-radius: 10px;
+      font-size: 14px;
+      margin-bottom: 16px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    input:focus { border-color: #e05a5a; }
+    .warning {
+      background: #fff3f3;
+      border: 1px solid #f8c6c6;
+      border-radius: 10px;
+      padding: 12px 14px;
+      font-size: 13px;
+      color: #c0392b;
+      margin-bottom: 20px;
+      line-height: 1.5;
+    }
+    button {
+      width: 100%;
+      padding: 14px;
+      background: #e05a5a;
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    button:hover { background: #c0392b; }
+    .success {
+      background: #f0fff4;
+      border: 1px solid #b2f2c6;
+      border-radius: 10px;
+      padding: 16px;
+      color: #217a4a;
+      font-size: 14px;
+      text-align: center;
+      display: none;
+    }
+    .error-msg {
+      color: #c0392b;
+      font-size: 13px;
+      margin-bottom: 12px;
+      display: none;
+    }
+    .data-list { font-size: 13px; color: #555; margin: 0 0 20px 18px; line-height: 1.8; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">⚠️</div>
+    <h1>Delete Your Account</h1>
+    <p class="subtitle">Health Tracker &mdash; Account &amp; Data Deletion</p>
+
+    <div class="warning">
+      This action is <strong>permanent and cannot be undone</strong>. All your data will be deleted immediately.
+    </div>
+
+    <p style="font-size:13px;color:#444;margin-bottom:8px;font-weight:600;">Data that will be deleted:</p>
+    <ul class="data-list">
+      <li>Your account and profile information</li>
+      <li>All health tracking data and logs</li>
+      <li>Custom trackers and settings</li>
+      <li>Period cycle and wellness data</li>
+    </ul>
+
+    <div id="errorMsg" class="error-msg"></div>
+
+    <form id="deleteForm">
+      <label for="email">Email address</label>
+      <input type="email" id="email" placeholder="you@example.com" required />
+
+      <label for="password">Password</label>
+      <input type="password" id="password" placeholder="Your password" required />
+
+      <button type="submit">Permanently Delete My Account</button>
+    </form>
+
+    <div id="successMsg" class="success">
+      ✅ Your account and all associated data have been permanently deleted.
+    </div>
+  </div>
+
+  <script>
+    const form = document.getElementById('deleteForm');
+    const errorMsg = document.getElementById('errorMsg');
+    const successMsg = document.getElementById('successMsg');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      errorMsg.style.display = 'none';
+
+      const email = document.getElementById('email').value.trim();
+      const password = document.getElementById('password').value;
+
+      try {
+        const loginRes = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password })
+        });
+        const loginData = await loginRes.json();
+
+        if (!loginRes.ok) {
+          errorMsg.textContent = loginData.error || 'Invalid email or password.';
+          errorMsg.style.display = 'block';
+          return;
+        }
+
+        const deleteRes = await fetch('/api/auth/delete-account', {
+          method: 'DELETE',
+          headers: { 'Authorization': 'Bearer ' + loginData.access_token }
+        });
+        const deleteData = await deleteRes.json();
+
+        if (!deleteRes.ok) {
+          errorMsg.textContent = deleteData.error || 'Failed to delete account. Please try again.';
+          errorMsg.style.display = 'block';
+          return;
+        }
+
+        form.style.display = 'none';
+        successMsg.style.display = 'block';
+
+      } catch (err) {
+        errorMsg.textContent = 'Network error. Please check your connection and try again.';
+        errorMsg.style.display = 'block';
+      }
+    });
+  </script>
+</body>
+</html>
+"""
+
+
+@auth_bp.route('/delete-account-page', methods=['GET'])
+def delete_account_page():
+    """Serves the account deletion web page required by Google Play Store."""
+    return render_template_string(_DELETE_PAGE_HTML)
