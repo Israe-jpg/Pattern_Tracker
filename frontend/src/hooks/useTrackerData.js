@@ -197,7 +197,7 @@ export const useTrackerData = () => {
         
         try {
           const cyclesResponse = await trackerService.getCyclesHistory(tracker.id, {
-            params: { months: 12, include_current: true }, // Get last 12 months of cycles, including current
+            params: { include_current: true }, // No date limit — load every cycle ever recorded
           });
           // Backend returns { data: { cycles: [...], total_count: ..., filters_applied: {...} } }
           allCycles = cyclesResponse.data?.cycles || cyclesResponse.cycles || [];

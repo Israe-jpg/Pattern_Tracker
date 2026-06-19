@@ -213,8 +213,9 @@ export default function HomeScreen({ navigation }) {
     <PanGestureHandler
       onGestureEvent={onSwipeGestureEvent}
       onHandlerStateChange={onSwipeHandlerStateChange}
-      activeOffsetX={[-10, 10]} // Format: [negative, positive] - we check direction in handler
-      failOffsetY={[-10, 10]} // Prevent conflicts with vertical scrolling
+      activeOffsetX={[-10000, 10]}
+      failOffsetY={[-15, 15]}
+      hitSlop={{ right: -(SCREEN_WIDTH - SWIPE_THRESHOLD) }}
     >
       <View style={styles.container}>
         <HomeHeader

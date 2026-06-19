@@ -113,6 +113,11 @@ export const API_ENDPOINTS = {
   PATTERN_SUMMARY: (id) => `/data-tracking/${id}/pattern-summary`,
   DETECT_PATTERNS: (id) => `/data-tracking/${id}/detect-patterns`,
 
+  // Period-tracker phase / cycle analytics
+  SYMPTOMS_BY_PHASE: (id) => `/data-tracking/${id}/symptoms-by-phase`,
+  RECURRING_PATTERNS: (id) => `/data-tracking/${id}/recurring-symptom-patterns`,
+  COMPARE_CUSTOM: (id) => `/data-tracking/${id}/compare-custom`,
+
   // Charts
   CHART: (id) => `/data-tracking/${id}/chart`,
   TIME_EVOLUTION_CHART: (id) => `/data-tracking/${id}/time-evolution-chart`,

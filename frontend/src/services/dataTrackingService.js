@@ -33,6 +33,24 @@ export const dataTrackingService = {
     return response.data;
   },
 
+  // Fetch all pages for a date range (backend caps per_page at 100)
+  fetchAllTrackingEntries: async (trackerId, startDate, endDate) => {
+    const all = [];
+    let page = 1;
+    while (page <= 50) {
+      const response = await api.get(API_ENDPOINTS.GET_DATA_RANGE(trackerId), {
+        params: { start_date: startDate, end_date: endDate, per_page: 100, page },
+      });
+      const payload = response.data?.data || response.data;
+      const batch = payload?.tracking_data || [];
+      all.push(...batch);
+      const pagination = payload?.pagination;
+      if (!pagination?.has_next || batch.length === 0) break;
+      page += 1;
+    }
+    return all;
+  },
+
   // Get calendar data (for period tracker)
   getCalendar: async (trackerId, options = {}) => {
     const response = await api.get(API_ENDPOINTS.CALENDAR(trackerId), {
@@ -100,6 +118,22 @@ export const dataTrackingService = {
     const params = { months };
     if (fields.length > 0) params.fields = fields.join(",");
     const response = await api.get(API_ENDPOINTS.PATTERN_SUMMARY(trackerId), { params });
+    return response.data;
+  },
+
+  // Get symptom analysis by cycle phase (period tracker only)
+  getSymptomsbyPhase: async (trackerId, symptomField, months = 6, option = null) => {
+    const params = { symptom_field: symptomField, months };
+    if (option) params.option = option;
+    const response = await api.get(API_ENDPOINTS.SYMPTOMS_BY_PHASE(trackerId), { params });
+    return response.data;
+  },
+
+  // Compare two arbitrary date ranges
+  getCompareCustom: async (trackerId, { target_start, target_end, comparison_start, comparison_end }) => {
+    const response = await api.get(API_ENDPOINTS.COMPARE_CUSTOM(trackerId), {
+      params: { target_start, target_end, comparison_start, comparison_end },
+    });
     return response.data;
   },
 };
