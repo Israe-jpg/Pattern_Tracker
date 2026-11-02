@@ -20,32 +20,15 @@ The Expo display name in `frontend/app.config.js` is **Trackt**.
 
 ## Screenshots
 
-| Screen | File | Caption |
-| --- | --- | --- |
-| Sign in | [docs/screenshots/login.jpeg](docs/screenshots/login.jpeg) | Email/password sign-in (app name Trackt). |
-| Profile | [docs/screenshots/profile.jpeg](docs/screenshots/profile.jpeg) | Account and health profile (name, username, email, date of birth, units). |
-| Log form (sleep) | [docs/screenshots/log-sleep.jpeg](docs/screenshots/log-sleep.jpeg) | Daily form: times, yes/no, and multi-select chips. |
-| Log form (sliders) | [docs/screenshots/log-sleep-details.jpeg](docs/screenshots/log-sleep-details.jpeg) | Numeric sliders and submit on the same form. |
-| Field charts | [docs/screenshots/sleep-charts.jpeg](docs/screenshots/sleep-charts.jpeg) | Category breakdowns (donut and bar) for a custom Sleep Journal. |
-| Comparisons and correlations | [docs/screenshots/comparisons-correlations.jpeg](docs/screenshots/comparisons-correlations.jpeg) | Period-over-period changes and field co-occurrence rates. |
-| Patterns | [docs/screenshots/patterns.jpeg](docs/screenshots/patterns.jpeg) | Detected weekly/monthly rhythms and streaks with confidence labels. |
-| Period calendar | [docs/screenshots/period-calendar.jpeg](docs/screenshots/period-calendar.jpeg) | Month calendar coloured by menstrual / follicular / ovulation / luteal phase. |
-| Cycle overview | [docs/screenshots/period-insights.jpeg](docs/screenshots/period-insights.jpeg) | Current cycle day, regularity score, prediction accuracy. |
-| Cycle charts | [docs/screenshots/cycle-charts.jpeg](docs/screenshots/cycle-charts.jpeg) | Cycle length history (line) and period length (bars). |
-
-TODO: add screenshot of Register.  
-TODO: add screenshot of tracker menu / switching trackers.  
-TODO: add screenshot of Create custom tracker.  
-TODO: add screenshot of field/option editor.  
-TODO: add screenshot of year calendar overview.  
-TODO: add screenshot of Workout Tracker.  
-TODO: add screenshot of Symptom Tracker.
-
 <p align="center">
   <img src="docs/screenshots/login.jpeg" width="180" alt="Sign in" />
   <img src="docs/screenshots/period-calendar.jpeg" width="180" alt="Period calendar" />
   <img src="docs/screenshots/comparisons-correlations.jpeg" width="180" alt="Comparisons and correlations" />
   <img src="docs/screenshots/patterns.jpeg" width="180" alt="Patterns" />
+  <img src="docs/screenshots/log-sleep-details.jpeg" width="180" alt="Patterns" />
+  <img src="docs/screenshots/sleep-charts.jpeg" width="180" alt="Patterns" />
+  <img src="docs/screenshots/cycle-charts.jpeg" width="180" alt="Patterns" />
+  
 </p>
 
 ## Features
